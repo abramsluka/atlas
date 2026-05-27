@@ -2,28 +2,145 @@
 
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import type { WorkoutWithExercises } from '@/features/workouts/types'
+import { useUpdateSet, useToggleSetComplete } from '@/features/workouts/mutations'
 
 interface Props {
   workout: WorkoutWithExercises
   initialCoachResponse: string | null
+  backHref: string
 }
 
-function totalVolume(workout: WorkoutWithExercises): number {
-  return workout.exercises.reduce((total, ex) => {
-    return total + ex.sets.reduce((s, set) => {
-      if (!set.completed) return s
-      return s + (set.weight_lbs ?? 0) * (set.reps ?? 0)
-    }, 0)
-  }, 0)
+// --- Editable set row ---
+
+interface LocalSet {
+  reps: string
+  weight_lbs: string
+  rpe: string
+  completed: boolean
 }
 
-export default function WorkoutDetail({ workout, initialCoachResponse }: Props) {
+type ActiveField = 'reps' | 'weight_lbs' | 'rpe'
+
+const SLIDER_CONFIG: Record<ActiveField, { min: number; max: number; step: number }> = {
+  reps:       { min: 0, max: 20,  step: 1   },
+  weight_lbs: { min: 0, max: 300, step: 2.5 },
+  rpe:        { min: 0, max: 10,  step: 1   },
+}
+
+interface SetRowProps {
+  set: LocalSet
+  setIndex: number
+  onFieldChange: (field: ActiveField, value: string) => void
+  onToggle: () => void
+}
+
+function SetRow({ set, setIndex, onFieldChange, onToggle }: SetRowProps) {
+  const [activeField, setActiveField] = useState<ActiveField | null>(null)
+
+  function tap(field: ActiveField) {
+    if (set.completed) onToggle()
+    setActiveField((f) => (f === field && !set.completed ? null : field))
+  }
+
+  function handleToggle() {
+    setActiveField(null)
+    onToggle()
+  }
+
+  function handleSlider(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!activeField) return
+    const v = parseFloat(e.target.value)
+    const rounded = Math.round(v * 10) / 10
+    onFieldChange(activeField, v === 0 ? '' : String(rounded))
+  }
+
+  const cfg = activeField ? SLIDER_CONFIG[activeField] : null
+  const sliderVal = activeField && set[activeField] !== '' ? parseFloat(set[activeField]) : 0
+
+  function fieldLabel(field: ActiveField) {
+    const v = set[field]
+    if (v === '') return '—'
+    if (field === 'weight_lbs') return String(Math.round(parseFloat(v) * 10) / 10)
+    return v
+  }
+
+  return (
+    <div className={`mb-2 ${set.completed ? 'opacity-60' : ''}`}>
+      <div className="flex items-center gap-2">
+        <span className="w-8 flex-shrink-0 text-center text-sm text-zinc-500">
+          {setIndex + 1}
+        </span>
+
+        {(['reps', 'weight_lbs', 'rpe'] as ActiveField[]).map((field) => (
+          <button
+            key={field}
+            onClick={() => tap(field)}
+            className={`flex h-9 flex-1 items-center justify-center rounded-lg text-sm font-medium transition-colors active:opacity-80 ${
+              activeField === field
+                ? 'bg-zinc-700 text-white'
+                : 'bg-zinc-800 text-zinc-400'
+            }`}
+          >
+            {fieldLabel(field)}
+          </button>
+        ))}
+
+        <button
+          onClick={handleToggle}
+          className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-base transition-colors ${
+            set.completed ? 'bg-white text-black' : 'bg-zinc-800 text-zinc-600'
+          } active:opacity-80`}
+        >
+          ✓
+        </button>
+      </div>
+
+      {activeField && cfg && (
+        <div className="mt-2 px-1">
+          <input
+            type="range"
+            min={cfg.min}
+            max={cfg.max}
+            step={cfg.step}
+            value={sliderVal}
+            onChange={handleSlider}
+            className="w-full accent-white"
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// --- Main component ---
+
+export default function WorkoutDetail({ workout, initialCoachResponse, backHref }: Props) {
+  const router = useRouter()
   const [coachText, setCoachText] = useState(initialCoachResponse ?? '')
   const [streaming, setStreaming] = useState(false)
   const [streamError, setStreamError] = useState<string | null>(null)
   const hasStreamed = useRef(false)
+
+  const [localSets, setLocalSets] = useState<Record<string, LocalSet>>(() => {
+    const map: Record<string, LocalSet> = {}
+    for (const ex of workout.exercises) {
+      for (const set of ex.sets) {
+        map[set.id] = {
+          reps: set.reps != null ? String(set.reps) : '',
+          weight_lbs: set.weight_lbs != null ? String(set.weight_lbs) : '',
+          rpe: set.rpe != null ? String(set.rpe) : '',
+          completed: set.completed,
+        }
+      }
+    }
+    return map
+  })
+
+  const updateSet = useUpdateSet()
+  const toggleComplete = useToggleSetComplete(workout.id)
 
   useEffect(() => {
     if (initialCoachResponse) return
@@ -67,14 +184,58 @@ export default function WorkoutDetail({ workout, initialCoachResponse }: Props) 
     return () => controller.abort()
   }, [workout.id, workout.completed_at, initialCoachResponse])
 
-  const vol = totalVolume(workout)
+  function handleSetFieldChange(setId: string, field: ActiveField, value: string) {
+    setLocalSets((prev) => ({
+      ...prev,
+      [setId]: { ...prev[setId], [field]: value },
+    }))
+
+    const currentSet = localSets[setId]
+    setTimeout(() => {
+      const updated = { ...currentSet, [field]: value }
+      updateSet.mutate({
+        id: setId,
+        reps: updated.reps !== '' ? parseInt(updated.reps) : null,
+        weight_lbs: updated.weight_lbs !== '' ? parseFloat(updated.weight_lbs) : null,
+        rpe: updated.rpe !== '' ? parseInt(updated.rpe) : null,
+      })
+    }, 500)
+  }
+
+  function handleToggleComplete(setId: string) {
+    const next = !localSets[setId].completed
+    setLocalSets((prev) => ({
+      ...prev,
+      [setId]: { ...prev[setId], completed: next },
+    }))
+    toggleComplete.mutate({ id: setId, completed: next })
+  }
+
+  function calcVolume() {
+    let total = 0
+    for (const ex of workout.exercises) {
+      for (const set of ex.sets) {
+        const local = localSets[set.id]
+        if (!local?.completed) continue
+        const w = local.weight_lbs !== '' ? parseFloat(local.weight_lbs) : 0
+        const r = local.reps !== '' ? parseInt(local.reps) : 0
+        total += w * r
+      }
+    }
+    return total
+  }
+
+  const vol = calcVolume()
 
   return (
-    <main className="min-h-screen px-6 pb-10 pt-14">
+    <main className="min-h-screen px-6 pb-24 pt-14">
       <div className="mb-8 flex items-center gap-4">
-        <Link href="/workouts" className="text-sm text-zinc-500 active:text-zinc-300">
-          ← History
-        </Link>
+        <button
+          onClick={() => { router.push(backHref); router.refresh() }}
+          className="text-sm text-zinc-500 active:text-zinc-300"
+        >
+          ← {backHref === '/workouts' ? 'Gym' : 'History'}
+        </button>
       </div>
 
       <h1 className="mb-1 text-3xl font-bold tracking-tight">
@@ -99,31 +260,40 @@ export default function WorkoutDetail({ workout, initialCoachResponse }: Props) 
           .map((exercise) => (
             <div key={exercise.id} className="rounded-xl bg-zinc-900 px-4 py-4">
               <h2 className="mb-3 font-semibold">{exercise.name || 'Unnamed exercise'}</h2>
+
               {exercise.sets.length === 0 && (
                 <p className="text-sm text-zinc-500">No sets</p>
               )}
-              {exercise.sets
-                .slice()
-                .sort((a, b) => a.order_index - b.order_index)
-                .map((set, i) => (
-                  <div
-                    key={set.id}
-                    className={`mb-1 flex items-center gap-3 text-sm ${
-                      set.completed ? '' : 'opacity-40'
-                    }`}
-                  >
-                    <span className="w-5 text-zinc-500">{i + 1}</span>
-                    <span className="font-semibold">
-                      {set.reps ?? '—'} × {set.weight_lbs ?? '—'} lbs
-                    </span>
-                    {set.rpe != null && (
-                      <span className="text-zinc-400">RPE {set.rpe}</span>
-                    )}
-                    {set.completed && (
-                      <span className="ml-auto text-zinc-500">✓</span>
-                    )}
+
+              {exercise.sets.length > 0 && (
+                <div>
+                  <div className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-zinc-600">
+                    <span className="w-8 flex-shrink-0" />
+                    <span className="flex-1 text-center">Reps</span>
+                    <span className="flex-1 text-center">Weight</span>
+                    <span className="flex-1 text-center">RPE</span>
+                    <span className="w-9 flex-shrink-0" />
                   </div>
-                ))}
+                  {exercise.sets
+                    .slice()
+                    .sort((a, b) => a.order_index - b.order_index)
+                    .map((set, i) => {
+                      const local = localSets[set.id]
+                      if (!local) return null
+                      return (
+                        <SetRow
+                          key={set.id}
+                          set={local}
+                          setIndex={i}
+                          onFieldChange={(field, value) =>
+                            handleSetFieldChange(set.id, field, value)
+                          }
+                          onToggle={() => handleToggleComplete(set.id)}
+                        />
+                      )
+                    })}
+                </div>
+              )}
             </div>
           ))}
       </div>

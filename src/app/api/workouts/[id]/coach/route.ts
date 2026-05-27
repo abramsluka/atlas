@@ -1,7 +1,8 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest } from 'next/server'
-import { subWeeks } from 'date-fns'
+import { format, subDays, subWeeks } from 'date-fns'
+import { getOuraContextRange, summarizeOuraForCoach } from '@/features/health/ouraContext'
 
 export async function POST(
   _request: NextRequest,
@@ -9,15 +10,16 @@ export async function POST(
 ) {
   const { id: workoutId } = await params
 
-  const supabase = await createClient()
-
+  const authClient = await createClient()
   const {
     data: { user },
-  } = await supabase.auth.getUser()
+  } = await authClient.auth.getUser()
 
   if (!user) {
     return new Response('Unauthorized', { status: 401 })
   }
+
+  const supabase = createServiceClient()
 
   const { data: workout, error: workoutError } = await supabase
     .from('workouts')
@@ -78,14 +80,20 @@ export async function POST(
     .map(formatWorkout)
     .join('\n\n')
 
-  const userMessage = `Today's workout:\n${todaySection}${historySection ? `\n\nRecent history (last 4 weeks):\n${historySection}` : ''}`
+  // Pull last 7 days of Oura recovery context
+  const today = format(new Date(), 'yyyy-MM-dd')
+  const sevenDaysAgo = format(subDays(new Date(), 7), 'yyyy-MM-dd')
+  const ouraRows = await getOuraContextRange(supabase, user.id, sevenDaysAgo, today)
+  const recoverySummary = summarizeOuraForCoach(ouraRows)
+
+  const userMessage = `Today's workout:\n${todaySection}${historySection ? `\n\nRecent history (last 4 weeks):\n${historySection}` : ''}${recoverySummary ? `\n\nRecovery context (Oura, last 7 days):\n${recoverySummary}` : ''}`
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
   const stream = anthropic.messages.stream({
     model: 'claude-sonnet-4-6',
     max_tokens: 400,
-    system: `You are a direct, no-nonsense strength training coach. Give honest, specific feedback on the user's workout in 3-5 sentences. Call out personal records if you spot them. Flag concerning patterns like missed sessions or volume drops. Note meaningful trends. Be direct — no cheerleading, no filler.`,
+    system: `You are a direct, no-nonsense strength training coach. Give honest, specific feedback on the user's workout in 3-5 sentences. Call out personal records if you spot them. Flag concerning patterns like missed sessions or volume drops. Note meaningful trends. If recovery context (sleep, HRV, readiness) is provided and is notably low or short, factor it into your read on the session — but don't make excuses, just calibrate. Be direct — no cheerleading, no filler.`,
     messages: [{ role: 'user', content: userMessage }],
   })
 

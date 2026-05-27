@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/browser'
-import type { MorningCheckinInput, EveningCheckinInput } from './types'
+import type { MorningCheckinInput, EveningCheckinInput, WorkoutWithExercises } from './types'
 
 export function useSaveMorningCheckin(today: string) {
   const queryClient = useQueryClient()
@@ -8,8 +8,9 @@ export function useSaveMorningCheckin(today: string) {
   return useMutation({
     mutationFn: async (input: MorningCheckinInput) => {
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Not authenticated')
+      const user = session.user
 
       const { data, error } = await supabase
         .from('daily_checkins')
@@ -39,8 +40,9 @@ export function useSaveEveningCheckin(today: string) {
   return useMutation({
     mutationFn: async (input: EveningCheckinInput) => {
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Not authenticated')
+      const user = session.user
 
       const { data, error } = await supabase
         .from('daily_checkins')
@@ -68,18 +70,14 @@ export function useCreateWorkout() {
   const queryClient = useQueryClient()
 
   return useMutation({
+    mutationKey: ['create-workout'],
     mutationFn: async () => {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
-
-      const { data, error } = await supabase
-        .from('workouts')
-        .insert({ user_id: user.id })
-        .select()
-        .single()
-      if (error) throw error
-      return data
+      const res = await fetch('/api/workouts', { method: 'POST' })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error ?? `Failed to create workout (${res.status})`)
+      }
+      return res.json() as Promise<{ id: string; name: string | null; created_at: string }>
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workouts'] })
@@ -105,16 +103,18 @@ export function useFinishWorkout() {
 
   return useMutation({
     mutationFn: async (workoutId: string) => {
-      const supabase = createClient()
-      const { error } = await supabase
-        .from('workouts')
-        .update({ completed_at: new Date().toISOString() })
-        .eq('id', workoutId)
-      if (error) throw error
-      return workoutId
+      const res = await fetch(`/api/workouts/${workoutId}`, { method: 'PATCH' })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error ?? `Failed to finish workout (${res.status})`)
+      }
+      const data = await res.json()
+      return data.id as string
     },
-    onSuccess: () => {
+    onSuccess: (workoutId) => {
       queryClient.invalidateQueries({ queryKey: ['workouts'] })
+      queryClient.invalidateQueries({ queryKey: ['workout', workoutId] })
+      queryClient.invalidateQueries({ queryKey: ['workout', 'in-progress'] })
     },
   })
 }
@@ -124,14 +124,16 @@ export function useAddExercise(workoutId: string) {
 
   return useMutation({
     mutationFn: async (orderIndex: number) => {
-      const supabase = createClient()
-      const { data, error } = await supabase
-        .from('exercises')
-        .insert({ workout_id: workoutId, name: '', order_index: orderIndex })
-        .select()
-        .single()
-      if (error) throw error
-      return data
+      const res = await fetch(`/api/workouts/${workoutId}/exercises`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderIndex }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error ?? `Failed to add exercise (${res.status})`)
+      }
+      return res.json()
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workout', workoutId] })
@@ -163,18 +165,19 @@ export function useAddSet(workoutId: string) {
       exerciseId: string
       orderIndex: number
     }) => {
-      const supabase = createClient()
-      const { data, error } = await supabase
-        .from('sets')
-        .insert({
-          exercise_id: exerciseId,
-          order_index: orderIndex,
-          completed: false,
-        })
-        .select()
-        .single()
-      if (error) throw error
-      return data
+      const res = await fetch(
+        `/api/workouts/${workoutId}/exercises/${exerciseId}/sets`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderIndex }),
+        }
+      )
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error ?? `Failed to add set (${res.status})`)
+      }
+      return res.json()
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workout', workoutId] })
@@ -201,6 +204,27 @@ export function useUpdateSet() {
         .update({ reps, weight_lbs, rpe })
         .eq('id', id)
       if (error) throw error
+    },
+  })
+}
+
+export function useDeleteWorkout() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/workouts/${id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error ?? `Failed to delete workout (${res.status})`)
+      }
+    },
+    onSuccess: (_, id) => {
+      queryClient.setQueryData<WorkoutWithExercises[]>(['workouts'], (old) =>
+        (old ?? []).filter((w) => w.id !== id)
+      )
+      queryClient.invalidateQueries({ queryKey: ['workouts'] })
+      queryClient.invalidateQueries({ queryKey: ['workout', 'in-progress'] })
     },
   })
 }

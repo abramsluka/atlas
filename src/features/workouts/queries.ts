@@ -44,9 +44,10 @@ export function useWorkouts() {
   })
 }
 
-export function useWorkout(id: string) {
+export function useWorkout(id: string, opts?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ['workout', id],
+    enabled: opts?.enabled ?? true,
     queryFn: async (): Promise<WorkoutWithExercises | null> => {
       const supabase = createClient()
       const { data, error } = await supabase
@@ -62,6 +63,25 @@ export function useWorkout(id: string) {
         .maybeSingle()
       if (error) throw error
       return data as WorkoutWithExercises | null
+    },
+  })
+}
+
+export function useInProgressWorkout() {
+  return useQuery({
+    queryKey: ['workout', 'in-progress'],
+    staleTime: 0,
+    queryFn: async (): Promise<{ id: string; name: string | null } | null> => {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('workouts')
+        .select('id, name')
+        .is('completed_at', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (error) throw error
+      return data
     },
   })
 }
