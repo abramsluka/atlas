@@ -31,6 +31,10 @@ function todayDateLabel(): string {
   return DOWS[d.getDay()] + ', ' + MONS[d.getMonth()] + ' ' + d.getDate()
 }
 
+function logDatePST(utcStr: string): string {
+  return new Date(utcStr).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
+}
+
 function computeSplit(config: GymConfig): { name: string; index: number } {
   const rot = config.split_rotation
   if (!rot.length) return { name: '—', index: 0 }
@@ -507,13 +511,13 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     : null
 
   // Today's full workout summary
-  const todayAllLogs = allLogs.filter(l => l.logged_at.slice(0, 10) === today)
+  const todayAllLogs = allLogs.filter(l => logDatePST(l.logged_at) === today)
   const todayExIds = [...new Set(todayAllLogs.map(l => l.exercise_id))]
   const todayVolume = todayAllLogs.reduce((s, l) => s + l.weight * l.reps, 0)
 
   // Past workouts (for history)
   const pastDates = [...new Set(
-    allLogs.filter(l => l.logged_at.slice(0, 10) !== today).map(l => l.logged_at.slice(0, 10))
+    allLogs.filter(l => logDatePST(l.logged_at) !== today).map(l => logDatePST(l.logged_at))
   )].sort((a, b) => b.localeCompare(a)).slice(0, 10)
 
   return (
@@ -838,11 +842,11 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 )}
 
                 {/* Today's sets — deletable inline */}
-                {exLogs.filter(l => l.logged_at.slice(0, 10) === today).length > 0 && (
+                {exLogs.filter(l => logDatePST(l.logged_at) === today).length > 0 && (
                   <div className="mt-4">
                     <p className="text-xs text-white/30 uppercase tracking-widest mb-2">Today</p>
                     <div>
-                      {exLogs.filter(l => l.logged_at.slice(0, 10) === today).map((log, i) => (
+                      {exLogs.filter(l => logDatePST(l.logged_at) === today).map((log, i) => (
                         <div key={log.id} className="flex items-center gap-3 py-2.5 border-b border-white/6 last:border-0">
                           <span className="text-xs text-white/30 font-mono w-5 flex-shrink-0 tabular-nums">{i + 1}</span>
                           <span className="text-sm font-bold flex-1 tabular-nums">
@@ -965,7 +969,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
             {pastExpanded && (
               <div className="mt-2 space-y-2">
                 {pastDates.map(date => {
-                  const dateLogs = allLogs.filter(l => l.logged_at.slice(0, 10) === date)
+                  const dateLogs = allLogs.filter(l => logDatePST(l.logged_at) === date)
                   const dateExIds = [...new Set(dateLogs.map(l => l.exercise_id))]
                   const dateVol = dateLogs.reduce((s, l) => s + l.weight * l.reps, 0)
                   const [y, m, d] = date.split('-').map(Number)

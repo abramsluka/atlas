@@ -67,7 +67,9 @@ export async function POST(request: NextRequest) {
   ).length
 
   // Sets logged today (from gym PO logger)
-  const setsToday = gymLogs.filter(l => l.logged_at.slice(0, 10) === today).length
+  const setsToday = gymLogs.filter(l =>
+    new Date(l.logged_at).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' }) === today
+  ).length
 
   // Body weight trend
   const bwFirst = bodyWeights[0]

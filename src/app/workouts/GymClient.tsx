@@ -13,16 +13,25 @@ import type { GymConfig, GymExercise, GymLog, BodyWeight, Prescription } from '@
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
+function toPSTDate(): Date {
+  const now = new Date()
+  return new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }))
+}
+
 function todayKey(): string {
-  const d = new Date()
+  const d = toPSTDate()
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+}
+
+function logDatePST(utcStr: string): string {
+  return new Date(utcStr).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
 }
 
 const DOWS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
 const MONS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
 
 function todayDateLabel(): string {
-  const d = new Date()
+  const d = toPSTDate()
   return DOWS[d.getDay()] + ', ' + MONS[d.getMonth()] + ' ' + d.getDate()
 }
 
@@ -62,10 +71,10 @@ function getRx(logs: GymLog[], repMin: number, repMax: number, upgradeAtReps: nu
   const last = logs[logs.length - 1]
 
   // Count consecutive sessions at/above upgradeAt (by date, not individual sets)
-  const sessionDates = [...new Set(logs.map(l => l.logged_at.slice(0, 10)))].sort()
+  const sessionDates = [...new Set(logs.map(l => logDatePST(l.logged_at)))].sort()
   const sessionMaxReps: Record<string, number> = {}
   logs.forEach(l => {
-    const dk = l.logged_at.slice(0, 10)
+    const dk = logDatePST(l.logged_at)
     sessionMaxReps[dk] = Math.max(sessionMaxReps[dk] ?? 0, l.reps)
   })
 
@@ -105,7 +114,7 @@ function PoSparkline({ logs, repMax }: { logs: GymLog[]; repMax: number }) {
   const sessions = useMemo(() => {
     const byDate: Record<string, GymLog[]> = {}
     logs.forEach(l => {
-      const dk = l.logged_at.slice(0, 10)
+      const dk = logDatePST(l.logged_at)
       if (!byDate[dk]) byDate[dk] = []
       byDate[dk].push(l)
     })
@@ -332,13 +341,13 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   }, [exLogs, currentEx])
 
   const sessionDates = useMemo(() => {
-    const dates = new Set(exLogs.map(l => l.logged_at.slice(0, 10)))
+    const dates = new Set(exLogs.map(l => logDatePST(l.logged_at)))
     return [...dates].sort()
   }, [exLogs])
 
   // Today's sets for this exercise
   const todayExLogs = useMemo(() =>
-    exLogs.filter(l => l.logged_at.slice(0, 10) === today),
+    exLogs.filter(l => logDatePST(l.logged_at) === today),
     [exLogs, today]
   )
 
@@ -463,13 +472,13 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     : null
 
   // Today's full workout summary
-  const todayAllLogs = allLogs.filter(l => l.logged_at.slice(0, 10) === today)
+  const todayAllLogs = allLogs.filter(l => logDatePST(l.logged_at) === today)
   const todayExIds = [...new Set(todayAllLogs.map(l => l.exercise_id))]
   const todayVolume = todayAllLogs.reduce((s, l) => s + l.weight * l.reps, 0)
 
   // Past workouts (for history)
   const pastDates = [...new Set(
-    allLogs.filter(l => l.logged_at.slice(0, 10) !== today).map(l => l.logged_at.slice(0, 10))
+    allLogs.filter(l => logDatePST(l.logged_at) !== today).map(l => logDatePST(l.logged_at))
   )].sort((a, b) => b.localeCompare(a)).slice(0, 10)
 
   return (
@@ -770,7 +779,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     <p className="text-xs text-white/30 uppercase tracking-widest mb-2">History</p>
                     <div className="space-y-2">
                       {sessionDates.slice().reverse().slice(0, 8).map(dk => {
-                        const setsOnDay = exLogs.filter(l => l.logged_at.slice(0, 10) === dk)
+                        const setsOnDay = exLogs.filter(l => logDatePST(l.logged_at) === dk)
                         const maxW = Math.max(...setsOnDay.map(l => l.weight))
                         const maxR = Math.max(...setsOnDay.map(l => l.reps))
                         const [y, m, d] = dk.split('-').map(Number)
