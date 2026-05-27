@@ -1,13 +1,15 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/browser'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
-  const [sent, setSent] = useState(false)
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const router = useRouter()
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -15,12 +17,9 @@ export default function LoginPage() {
     setLoading(true)
 
     const supabase = createClient()
-    const { error } = await supabase.auth.signInWithOtp({
+    const { error } = await supabase.auth.signInWithPassword({
       email: email.trim().toLowerCase(),
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-        shouldCreateUser: false,
-      },
+      password,
     })
 
     setLoading(false)
@@ -28,26 +27,13 @@ export default function LoginPage() {
     if (error) {
       setError(error.message)
     } else {
-      setSent(true)
+      router.push('/')
     }
   }
 
   const notInvited =
     typeof window !== 'undefined' &&
     new URLSearchParams(window.location.search).get('error') === 'not-invited'
-
-  if (sent) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center px-6">
-        <div className="w-full max-w-sm text-center">
-          <h1 className="mb-2 text-2xl font-bold tracking-tight">Check your email</h1>
-          <p className="text-zinc-400">
-            We sent a magic link to <span className="text-white">{email}</span>.
-          </p>
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center px-6">
@@ -71,6 +57,15 @@ export default function LoginPage() {
             autoComplete="email"
             className="h-14 rounded-xl bg-zinc-900 px-4 text-base text-white placeholder:text-zinc-600 outline-none focus:ring-2 focus:ring-white/20"
           />
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            required
+            autoComplete="current-password"
+            className="h-14 rounded-xl bg-zinc-900 px-4 text-base text-white placeholder:text-zinc-600 outline-none focus:ring-2 focus:ring-white/20"
+          />
 
           {error && (
             <p className="text-sm text-red-400">{error}</p>
@@ -81,7 +76,7 @@ export default function LoginPage() {
             disabled={loading}
             className="h-14 rounded-xl bg-white text-base font-semibold text-black disabled:opacity-50 active:opacity-80"
           >
-            {loading ? 'Sending…' : 'Send magic link'}
+            {loading ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
       </div>

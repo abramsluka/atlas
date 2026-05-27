@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
 import Providers from './providers'
+import TabBar from './TabBar'
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -44,6 +45,7 @@ export default function RootLayout({
     >
       <body className="min-h-full bg-black text-white antialiased">
         <Providers>{children}</Providers>
+        <TabBar />
         <script
           dangerouslySetInnerHTML={{
             __html: `
