@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import Link from 'next/link'
 import { useQueryClient } from '@tanstack/react-query'
 import { useTodayCheckin } from '@/features/workouts/queries'
 import { useSaveMorningCheckin, useSaveEveningCheckin } from '@/features/workouts/mutations'
@@ -422,29 +421,12 @@ export default function HomeClient({ today, initialCheckin }: { today: string; i
       <GoalTicker checkin={checkin} isMorning={isMorning} />
       <DayRing />
 
-      <section className="mb-6">
+      <section>
         <SectionTitle label="Check-ins" />
         {isMorning
           ? <MorningCheckin today={today} checkin={checkin ?? null} />
           : <EveningCheckin today={today} checkin={checkin ?? null} />
         }
-      </section>
-
-      <section>
-        <SectionTitle label="Training" />
-        <Link
-          href="/workouts/new"
-          className="flex h-14 w-full items-center justify-center rounded-xl text-base font-semibold text-black active:opacity-80"
-          style={{ background: 'linear-gradient(180deg,#ffffff 0%,#e8e5dd 100%)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.55),0 4px 14px rgba(0,0,0,0.40)' }}
-        >
-          Log a workout
-        </Link>
-        <Link
-          href="/workouts"
-          className="mt-3 flex h-14 w-full items-center justify-center rounded-xl bg-white/[0.04] border border-white/[0.06] text-base font-medium text-white active:opacity-80"
-        >
-          Workout history
-        </Link>
       </section>
     </main>
   )
