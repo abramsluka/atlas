@@ -272,8 +272,9 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const [bwInput, setBwInput] = useState<string>('')
   const todayBw = bodyWeights.find(w => w.date_key === today)
 
-  // Today done + past workouts
+  // Today done + history collapse
   const [todayDone, setTodayDone] = useState(false)
+  const [todayExpanded, setTodayExpanded] = useState(true)
   const [pastExpanded, setPastExpanded] = useState(false)
 
   // Coach (devil / angel)
@@ -879,55 +880,67 @@ export default function GymClient({ today, initialConfig, initialExercises, init
 
         {/* ── Today's Workout Summary ──────────────────────────────── */}
         {todayAllLogs.length > 0 && (
-          <section className="space-y-0">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="h-px flex-1 bg-white/10" />
-              <span className="text-xs text-white/30 uppercase tracking-[0.20em] font-semibold">Today's Workout</span>
-            </div>
+          <section>
             <div className="rounded-2xl bg-white/5 border border-white/8 overflow-hidden">
-              {/* Header row */}
-              <div className="flex items-center justify-between px-5 py-4 border-b border-white/6">
-                <div>
+              {/* Collapsible header */}
+              <button
+                onClick={() => setTodayExpanded(e => !e)}
+                className="w-full flex items-center justify-between px-5 py-4 active:opacity-70"
+              >
+                <div className="text-left">
                   <p className="text-xs text-white/40 uppercase tracking-widest font-semibold mb-0.5">{todayDateLabel()}</p>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-3xl font-bold tabular-nums">{todayAllLogs.length}</span>
+                    <span className="text-2xl font-bold tabular-nums">{todayAllLogs.length}</span>
                     <span className="text-sm text-white/40">sets</span>
                     <span className="text-white/20">·</span>
-                    <span className="text-sm text-white/60">{Math.round(todayVolume).toLocaleString()} {config.units} lifted</span>
+                    <span className="text-sm text-white/60">{Math.round(todayVolume).toLocaleString()} {config.units}</span>
                   </div>
                 </div>
-                <button
-                  onClick={() => setTodayDone(d => !d)}
-                  className={`flex items-center gap-1.5 px-4 py-2.5 rounded-full text-sm font-semibold transition-all active:scale-95 ${
-                    todayDone
-                      ? 'bg-green-500/20 border border-green-500/40 text-green-400'
-                      : 'bg-white/8 border border-white/10 text-white/50'
-                  }`}
-                >
-                  {todayDone ? '✓ Done' : 'Mark done'}
-                </button>
-              </div>
-              {/* Exercise rows */}
-              <div className="divide-y divide-white/5">
-                {todayExIds.map(exId => {
-                  const ex = exercises.find(e => e.id === exId)
-                  const sets = todayAllLogs.filter(l => l.exercise_id === exId)
-                  const topW = Math.max(...sets.map(l => l.weight))
-                  const topR = Math.max(...sets.map(l => l.reps))
-                  const vol = sets.reduce((s, l) => s + l.weight * l.reps, 0)
-                  return (
-                    <div key={exId} className="flex items-center justify-between px-5 py-3">
-                      <span className="text-sm font-semibold">{ex?.name ?? 'Exercise'}</span>
-                      <span className="text-xs text-white/40 tabular-nums">
-                        {ex?.bodyweight
-                          ? `${sets.length} sets · top ${topR} reps`
-                          : `${sets.length} sets · top ${topW}${config.units} · ${Math.round(vol).toLocaleString()}${config.units} total`
-                        }
-                      </span>
-                    </div>
-                  )
-                })}
-              </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <button
+                    onClick={e => { e.stopPropagation(); setTodayDone(d => !d) }}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-semibold transition-all active:scale-95 ${
+                      todayDone
+                        ? 'bg-green-500/20 border border-green-500/40 text-green-400'
+                        : 'bg-white/8 border border-white/10 text-white/50'
+                    }`}
+                  >
+                    {todayDone ? '✓ Done' : 'Mark done'}
+                  </button>
+                  <span className="text-white/30 text-xs">{todayExpanded ? '▲' : '▼'}</span>
+                </div>
+              </button>
+
+              {/* Individual sets per exercise */}
+              {todayExpanded && (
+                <div className="border-t border-white/6">
+                  {todayExIds.map(exId => {
+                    const ex = exercises.find(e => e.id === exId)
+                    const sets = todayAllLogs
+                      .filter(l => l.exercise_id === exId)
+                      .sort((a, b) => a.logged_at.localeCompare(b.logged_at))
+                    return (
+                      <div key={exId} className="px-5 py-3 border-b border-white/5 last:border-b-0">
+                        <p className="text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">
+                          {ex?.name ?? 'Exercise'}
+                        </p>
+                        <div className="space-y-1">
+                          {sets.map((set, i) => (
+                            <div key={set.id} className="flex items-center gap-3 text-sm">
+                              <span className="w-4 text-white/20 tabular-nums text-xs">{i + 1}</span>
+                              <span className="text-white/80 tabular-nums">
+                                {ex?.bodyweight ? 'BW' : `${set.weight} ${config.units}`}
+                                {' × '}
+                                {set.reps}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </section>
         )}
@@ -946,7 +959,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
               <span className="text-white/30 text-xs">{pastExpanded ? '▲' : '▼'}</span>
             </button>
             {pastExpanded && (
-              <div className="mt-1 rounded-2xl bg-white/5 border border-white/8 overflow-hidden divide-y divide-white/5">
+              <div className="mt-2 space-y-2">
                 {pastDates.map(date => {
                   const dateLogs = allLogs.filter(l => l.logged_at.slice(0, 10) === date)
                   const dateExIds = [...new Set(dateLogs.map(l => l.exercise_id))]
@@ -955,30 +968,40 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   const dt = new Date(y, m - 1, d)
                   const label = DOWS[dt.getDay()] + ', ' + MONS[m - 1] + ' ' + d
                   return (
-                    <div key={date} className="px-5 py-3">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-xs text-white/40 font-mono">{label}</span>
-                        <span className="text-xs text-white/30">{dateLogs.length} sets · {Math.round(dateVol).toLocaleString()} {config.units}</span>
+                    <div key={date} className="rounded-2xl bg-white/5 border border-white/8 overflow-hidden">
+                      {/* Day header */}
+                      <div className="flex items-center justify-between px-5 py-3 border-b border-white/6">
+                        <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">{label}</span>
+                        <span className="text-xs text-white/30 tabular-nums">
+                          {dateLogs.length} sets · {Math.round(dateVol).toLocaleString()} {config.units}
+                        </span>
                       </div>
-                      <div className="space-y-0.5">
-                        {dateExIds.map(exId => {
-                          const ex = exercises.find(e => e.id === exId)
-                          const sets = dateLogs.filter(l => l.exercise_id === exId)
-                          const topW = Math.max(...sets.map(l => l.weight))
-                          const topR = Math.max(...sets.map(l => l.reps))
-                          return (
-                            <div key={exId} className="flex items-center justify-between">
-                              <span className="text-sm text-white/60">{ex?.name ?? 'Exercise'}</span>
-                              <span className="text-xs text-white/30 tabular-nums">
-                                {ex?.bodyweight
-                                  ? `${sets.length} sets · top ${topR}`
-                                  : `${sets.length} sets · top ${topW}${config.units}`
-                                }
-                              </span>
+                      {/* Individual sets per exercise */}
+                      {dateExIds.map(exId => {
+                        const ex = exercises.find(e => e.id === exId)
+                        const sets = dateLogs
+                          .filter(l => l.exercise_id === exId)
+                          .sort((a, b) => a.logged_at.localeCompare(b.logged_at))
+                        return (
+                          <div key={exId} className="px-5 py-3 border-b border-white/5 last:border-b-0">
+                            <p className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-2">
+                              {ex?.name ?? 'Exercise'}
+                            </p>
+                            <div className="space-y-1">
+                              {sets.map((set, i) => (
+                                <div key={set.id} className="flex items-center gap-3 text-sm">
+                                  <span className="w-4 text-white/20 tabular-nums text-xs">{i + 1}</span>
+                                  <span className="text-white/70 tabular-nums">
+                                    {ex?.bodyweight ? 'BW' : `${set.weight} ${config.units}`}
+                                    {' × '}
+                                    {set.reps}
+                                  </span>
+                                </div>
+                              ))}
                             </div>
-                          )
-                        })}
-                      </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   )
                 })}
