@@ -1,21 +1,20 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { format } from 'date-fns'
 import HomeClient from './HomeClient'
 
 export default async function HomePage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
+  const authClient = await createClient()
+  const { data: { user } } = await authClient.auth.getUser()
   if (!user) redirect('/login')
 
-  const today = format(new Date(), 'yyyy-MM-dd')
-
-  const { data: checkin } = await supabase
+  const db = createServiceClient()
+  const today = new Date().toISOString().split('T')[0]
+  const { data: checkin } = await db
     .from('daily_checkins')
     .select('*')
+    .eq('user_id', user.id)
     .eq('date', today)
     .maybeSingle()
 
-  return <HomeClient today={today} initialCheckin={checkin} />
+  return <HomeClient today={today} initialCheckin={checkin ?? null} />
 }
