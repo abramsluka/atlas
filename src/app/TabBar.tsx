@@ -65,6 +65,30 @@ const tabs = [
       </svg>
     ),
   },
+  {
+    label: 'Debloat',
+    href: '/debloat',
+    active: (p: string) => p.startsWith('/debloat'),
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+        <path d="M12 2a7 7 0 0 1 7 7c0 5-7 13-7 13S5 14 5 9a7 7 0 0 1 7-7z" />
+        <circle cx="12" cy="9" r="2.5" />
+      </svg>
+    ),
+  },
+  {
+    label: 'Bills',
+    href: '/subscriptions',
+    active: (p: string) => p.startsWith('/subscriptions'),
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+        <rect x="2" y="5" width="20" height="14" rx="2" />
+        <path d="M2 10h20" />
+        <path d="M6 15h4" />
+        <path d="M14 15h4" />
+      </svg>
+    ),
+  },
 ]
 
 export default function TabBar() {
