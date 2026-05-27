@@ -76,41 +76,30 @@ export async function POST(request: NextRequest) {
     ? bwLast.weight - bwFirst.weight
     : null
 
-  // Build context
+  // Build minimal context — just enough to know if they're on a roll or slacking
   const lines: string[] = []
 
   if (daysSinceLast === null) {
-    lines.push('No workouts logged yet.')
+    lines.push('Has never logged a workout.')
   } else if (daysSinceLast === 0) {
-    lines.push(`Trained today (${setsToday > 0 ? setsToday + ' sets logged' : 'no sets logged yet'}).`)
+    lines.push('Trained today.')
+  } else if (daysSinceLast === 1) {
+    lines.push('Last trained yesterday.')
   } else {
-    lines.push(`Last trained ${daysSinceLast} day${daysSinceLast === 1 ? '' : 's'} ago.`)
+    lines.push(`Has not trained in ${daysSinceLast} days.`)
   }
 
-  lines.push(`Workouts this week: ${workoutsThisWeek}. Last week: ${workoutsLastWeek}.`)
+  lines.push(`Workouts in the last 7 days: ${workoutsThisWeek}. The 7 days before that: ${workoutsLastWeek}.`)
 
-  if (setsToday > 0) lines.push(`Sets logged so far today: ${setsToday}.`)
-
-  if (checkin?.morning_planned_training !== null && checkin?.morning_planned_training !== undefined) {
-    lines.push(`Today's morning check-in: ${checkin.morning_planned_training ? 'planned to train' : 'planned rest day'}.`)
-  }
   if (checkin?.morning_intent) {
-    lines.push(`Training intent: "${checkin.morning_intent}".`)
-  }
-  if (checkin?.evening_actual_training !== null && checkin?.evening_actual_training !== undefined) {
-    lines.push(`Evening check-in: ${checkin.evening_actual_training ? 'actually trained' : 'did not train'}.`)
-  }
-
-  if (bwDelta !== null) {
-    const dir = bwDelta > 0 ? 'up' : bwDelta < 0 ? 'down' : 'unchanged'
-    lines.push(`Body weight over last ${bodyWeights.length} days: ${dir} ${Math.abs(bwDelta).toFixed(1)} lbs.`)
+    lines.push(`What they said they wanted today: "${checkin.morning_intent}".`)
   }
 
   const context = lines.join('\n')
 
-  const devilSystem = `You are the devil on this person's shoulder — the voice of their darkest self-doubt and their most brutal internal critic. You see every skip, every excuse, every way they're letting themselves down. Your job is to make them uncomfortable enough to get off their ass and train. Be harsh, specific, visceral. Say the things they're afraid to admit to themselves. Focus on the consequences of NOT doing the work — what they become, what they lose, how they look, how they feel. Keep it to 2–3 sentences. No softening, no silver lining, no "but you can do it." Pure accountability.`
+  const devilSystem = `You are the voice of brutal self-accountability in this person's head. Your job is one thing: make them feel the cost of skipping the gym so viscerally they can't ignore it. Talk about what happens to their body, their confidence, their self-image when they stop showing up. Be raw, be uncomfortable, be real — not mean for the sake of it, but the kind of hard truth a person needs to hear at 4pm when they're deciding whether to go. 2–3 sentences. No data recitation, no "you only did X workouts" — pure consequence and identity. Make them feel it.`
 
-  const angelSystem = `You are the angel on this person's shoulder — not a cheerleader, but a genuine believer who sees exactly what they're building. You see the real progress even when they can't. Your job is to make them feel the pull of who they're becoming, not just the grind they're doing. Be specific to their actual numbers and patterns. Make the momentum feel real and worth protecting. Keep it to 2–3 sentences. No hollow hype, no generic motivation — speak to what the data actually shows.`
+  const angelSystem = `You are the voice of genuine belief in this person's head. Your job is to make them feel the pull of who they're becoming and why it's worth protecting. Talk about momentum, about what consistency does to a person over time, about the version of themselves they're building one session at a time. Be real, not hollow — this isn't "you've got this champ," it's the voice that actually knows what they're capable of. 2–3 sentences. No data recitation — pure fire and forward motion.`
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
