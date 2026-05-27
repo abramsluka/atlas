@@ -832,32 +832,26 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   </div>
                 )}
 
-                {/* History rows — one row per set, newest first */}
-                {exLogs.length > 0 && (
+                {/* Today's sets — deletable inline */}
+                {exLogs.filter(l => l.logged_at.slice(0, 10) === today).length > 0 && (
                   <div className="mt-4">
-                    <p className="text-xs text-white/30 uppercase tracking-widest mb-2">History</p>
+                    <p className="text-xs text-white/30 uppercase tracking-widest mb-2">Today</p>
                     <div>
-                      {exLogs.slice().reverse().map(log => {
-                        const dk = log.logged_at.slice(0, 10)
-                        const [y, m, d] = dk.split('-').map(Number)
-                        const dt = new Date(y, m - 1, d)
-                        const label = (m) + '/' + d
-                        return (
-                          <div key={log.id} className="flex items-center gap-3 py-2.5 border-b border-white/6 last:border-0">
-                            <span className="text-xs text-white/30 font-mono w-10 flex-shrink-0">{label}</span>
-                            <span className="text-sm font-bold flex-1 tabular-nums">
-                              {currentEx.bodyweight
-                                ? `${log.reps} reps`
-                                : `${log.weight}${config.units} × ${log.reps}`
-                              }
-                            </span>
-                            <button
-                              onClick={() => deleteLog.mutate({ id: log.id, exerciseId: currentEx.id })}
-                              className="text-white/20 hover:text-red-400 active:opacity-60 text-base px-2 leading-none"
-                            >×</button>
-                          </div>
-                        )
-                      })}
+                      {exLogs.filter(l => l.logged_at.slice(0, 10) === today).map((log, i) => (
+                        <div key={log.id} className="flex items-center gap-3 py-2.5 border-b border-white/6 last:border-0">
+                          <span className="text-xs text-white/30 font-mono w-5 flex-shrink-0 tabular-nums">{i + 1}</span>
+                          <span className="text-sm font-bold flex-1 tabular-nums">
+                            {currentEx.bodyweight
+                              ? `${log.reps} reps`
+                              : `${log.weight}${config.units} × ${log.reps}`
+                            }
+                          </span>
+                          <button
+                            onClick={() => deleteLog.mutate({ id: log.id, exerciseId: currentEx.id })}
+                            className="text-white/20 hover:text-red-400 active:opacity-60 text-base px-2 leading-none"
+                          >×</button>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
