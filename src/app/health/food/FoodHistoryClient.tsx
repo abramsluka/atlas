@@ -161,8 +161,8 @@ export default function FoodHistoryClient({
                 </div>
               </div>
             ) : (
-              <button
-                className="flex w-full items-center gap-3 rounded-xl bg-zinc-900 px-4 py-3 text-left hover:bg-zinc-800 transition-colors"
+              <div
+                className="flex w-full items-center gap-3 rounded-xl bg-zinc-900 px-4 py-3 cursor-pointer hover:bg-zinc-800 transition-colors"
                 onClick={() => setEditingMeal(meal)}
               >
                 {meal.photo_url && (
@@ -178,7 +178,7 @@ export default function FoodHistoryClient({
                   <span className="text-sm font-bold text-white">{meal.calories?.toLocaleString()} cal</span>
                   <button onClick={e => { e.stopPropagation(); setConfirmDeleteId(meal.id) }} className="text-zinc-600 hover:text-red-400 transition-colors text-base px-1">×</button>
                 </div>
-              </button>
+              </div>
             )}
           </div>
         ))}

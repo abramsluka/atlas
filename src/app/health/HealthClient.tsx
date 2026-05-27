@@ -1926,8 +1926,8 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
                     </div>
                   </div>
                 ) : (
-                  <button
-                    className="flex w-full items-center gap-3 rounded-[10px] bg-white/[0.035] px-3 py-2.5 text-left hover:bg-white/[0.05] transition-colors"
+                  <div
+                    className="flex w-full items-center gap-3 rounded-[10px] bg-white/[0.035] px-3 py-2.5 cursor-pointer hover:bg-white/[0.05] transition-colors"
                     onClick={() => setEditingMeal(meal)}
                   >
                     {meal.photo_url && (
@@ -1949,7 +1949,7 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
                         ×
                       </button>
                     </div>
-                  </button>
+                  </div>
                 )}
               </div>
             ))}
