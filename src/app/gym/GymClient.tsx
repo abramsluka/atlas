@@ -106,9 +106,9 @@ function getRx(logs: GymLog[], ex: GymExercise, upgradeAtReps: number, units: st
   }
 }
 
-// SVG sparkline — each point is one logged set (last 10), full-bleed, no dots
+// SVG sparkline — each point is one logged set (last 15), full-bleed, no dots
 function PoSparkline({ logs, bodyweight }: { logs: GymLog[]; bodyweight: boolean }) {
-  const pts10 = logs.slice(-10)
+  const pts10 = logs.slice(-15)
 
   if (pts10.length < 2) return (
     <div className="flex items-center justify-center h-[105px] text-xs text-white/30">
@@ -836,34 +836,11 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 {/* Sparkline */}
                 {exLogs.length >= 2 && (
                   <div className="mt-4 rounded-xl bg-white/5 border border-white/8 overflow-hidden">
-                    <p className="text-xs text-white/30 uppercase tracking-widest px-3 pt-3 pb-1">Trend (last 10 sets)</p>
+                    <p className="text-xs text-white/30 uppercase tracking-widest px-3 pt-3 pb-1">Trend (last 15 sets)</p>
                     <PoSparkline logs={exLogs} bodyweight={currentEx.bodyweight} />
                   </div>
                 )}
 
-                {/* Today's sets — deletable inline */}
-                {exLogs.filter(l => logDatePST(l.logged_at) === today).length > 0 && (
-                  <div className="mt-4">
-                    <p className="text-xs text-white/30 uppercase tracking-widest mb-2">Today</p>
-                    <div>
-                      {exLogs.filter(l => logDatePST(l.logged_at) === today).map((log, i) => (
-                        <div key={log.id} className="flex items-center gap-3 py-2.5 border-b border-white/6 last:border-0">
-                          <span className="text-xs text-white/30 font-mono w-5 flex-shrink-0 tabular-nums">{i + 1}</span>
-                          <span className="text-sm font-bold flex-1 tabular-nums">
-                            {currentEx.bodyweight
-                              ? `${log.reps} reps`
-                              : `${log.weight}${config.units} × ${log.reps}`
-                            }
-                          </span>
-                          <button
-                            onClick={() => deleteLog.mutate({ id: log.id, exerciseId: currentEx.id })}
-                            className="text-white/20 hover:text-red-400 active:opacity-60 text-base px-2 leading-none"
-                          >×</button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </>
             )}
 
