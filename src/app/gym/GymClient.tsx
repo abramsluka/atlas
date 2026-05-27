@@ -13,8 +13,13 @@ import type { GymConfig, GymExercise, GymLog, BodyWeight, Prescription, Progress
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
+function toPSTDate(): Date {
+  const now = new Date()
+  return new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }))
+}
+
 function todayKey(): string {
-  const d = new Date()
+  const d = toPSTDate()
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
 }
 
@@ -22,7 +27,7 @@ const DOWS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
 const MONS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
 
 function todayDateLabel(): string {
-  const d = new Date()
+  const d = toPSTDate()
   return DOWS[d.getDay()] + ', ' + MONS[d.getMonth()] + ' ' + d.getDate()
 }
 
@@ -872,17 +877,20 @@ export default function GymClient({ today, initialConfig, initialExercises, init
           </div>
         </section>
 
-        {/* ── Today's Workout Summary ──────────────────────────────── */}
+        {/* ── Today's Workout ───────────────────────────────────── */}
         {todayAllLogs.length > 0 && (
           <section>
             <div className="rounded-2xl bg-white/5 border border-white/8 overflow-hidden">
-              {/* Collapsible header */}
-              <button
+              {/* Header — div not button to avoid nesting issue with Finish Workout button */}
+              <div
+                role="button"
                 onClick={() => setTodayExpanded(e => !e)}
-                className="w-full flex items-center justify-between px-5 py-4 active:opacity-70"
+                className="w-full flex items-center justify-between px-5 py-4 cursor-pointer active:opacity-70"
               >
-                <div className="text-left">
-                  <p className="text-xs text-white/40 uppercase tracking-widest font-semibold mb-0.5">{todayDateLabel()}</p>
+                <div>
+                  <p className="text-xs text-white/40 uppercase tracking-widest font-semibold mb-0.5">
+                    Today's Workout — {todayDateLabel()}
+                  </p>
                   <div className="flex items-baseline gap-2">
                     <span className="text-2xl font-bold tabular-nums">{todayAllLogs.length}</span>
                     <span className="text-sm text-white/40">sets</span>
@@ -890,20 +898,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     <span className="text-sm text-white/60">{Math.round(todayVolume).toLocaleString()} {config.units}</span>
                   </div>
                 </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <button
-                    onClick={e => { e.stopPropagation(); setTodayDone(d => !d) }}
-                    className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-semibold transition-all active:scale-95 ${
-                      todayDone
-                        ? 'bg-green-500/20 border border-green-500/40 text-green-400'
-                        : 'bg-white/8 border border-white/10 text-white/50'
-                    }`}
-                  >
-                    {todayDone ? '✓ Done' : 'Mark done'}
-                  </button>
-                  <span className="text-white/30 text-xs">{todayExpanded ? '▲' : '▼'}</span>
-                </div>
-              </button>
+                <span className="text-white/30 text-xs ml-4 shrink-0">{todayExpanded ? '▲' : '▼'}</span>
+              </div>
 
               {/* Individual sets per exercise */}
               {todayExpanded && (
@@ -935,6 +931,20 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   })}
                 </div>
               )}
+
+              {/* Finish Workout — always visible */}
+              <div className="px-5 py-4 border-t border-white/6">
+                <button
+                  onClick={() => setTodayDone(d => !d)}
+                  className={`w-full rounded-xl py-3.5 text-sm font-bold transition-all active:scale-[0.98] ${
+                    todayDone
+                      ? 'bg-green-500/20 border border-green-500/40 text-green-400'
+                      : 'bg-white text-black'
+                  }`}
+                >
+                  {todayDone ? '✓ Done for today' : 'Finish Workout'}
+                </button>
+              </div>
             </div>
           </section>
         )}
