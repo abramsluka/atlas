@@ -412,6 +412,12 @@ export default function HomeClient({ today, initialCheckin }: { today: string; i
           </button>
         </div>
       </section>
+
+      <div className="px-4 pb-6 flex justify-center">
+        <a href="/subscriptions" className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors">
+          Bills &amp; subscriptions →
+        </a>
+      </div>
     </main>
   )
 }

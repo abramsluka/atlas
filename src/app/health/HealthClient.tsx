@@ -46,6 +46,7 @@ import {
   type StackWindow,
 } from '@/features/health/supplementDb'
 import { SUBSTANCE_DB } from '@/features/health/substanceDb'
+import DebloatSection from './DebloatSection'
 
 interface Props {
   supplements: Supplement[]
@@ -2096,6 +2097,7 @@ export default function HealthClient({
         today={today}
       />
       <CaffeineSection initialCaffeine={todayCaffeine} today={today} />
+      <DebloatSection today={today} />
     </main>
   )
 }
