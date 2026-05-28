@@ -260,7 +260,16 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const [filterGym, setFilterGym] = useState<string>(config.gyms[0]?.id ?? 'g_default')
   const [filterDay, setFilterDay] = useState<string>(() => {
     const split = computeSplit(config)
-    const match = config.days.find(d => d.name.toLowerCase() === split.name.toLowerCase())
+    const rot = config.split_rotation
+    // On rest days, advance to the next non-rest day in the rotation
+    let effectiveName = split.name
+    if (isRest(effectiveName) && rot.length > 0) {
+      for (let i = 1; i < rot.length; i++) {
+        const candidate = rot[(split.index + i) % rot.length]
+        if (!isRest(candidate)) { effectiveName = candidate; break }
+      }
+    }
+    const match = config.days.find(d => d.name.toLowerCase() === effectiveName.toLowerCase())
     return match?.id ?? config.days[0]?.id ?? ''
   })
   const [currentExId, setCurrentExId] = useState<string | null>(null)
@@ -861,8 +870,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     }}
                   />
                   <div className="flex justify-between mt-1">
-                    <span className="text-xs text-white/20">4</span>
-                    <span className="text-xs text-white/20">18</span>
+                    <span className="text-xs text-white/20">3</span>
+                    <span className="text-xs text-white/20">20</span>
                   </div>
                 </div>
 
