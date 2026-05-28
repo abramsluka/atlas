@@ -1046,9 +1046,20 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                       {/* Day header */}
                       <div className="flex items-center justify-between px-5 py-3 border-b border-white/6">
                         <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">{label}</span>
-                        <span className="text-xs text-white/30 tabular-nums">
-                          {dateLogs.length} sets · {Math.round(dateVol).toLocaleString()} {config.units}
-                        </span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-white/30 tabular-nums">
+                            {dateLogs.length} sets · {Math.round(dateVol).toLocaleString()} {config.units}
+                          </span>
+                          <button
+                            onClick={() => dateLogs.forEach(l => deleteLog.mutate({ id: l.id, exerciseId: l.exercise_id }))}
+                            className="text-white/20 hover:text-red-400 active:text-red-400 transition-colors"
+                            aria-label="Delete workout"
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+                              <path d="M18 6L6 18M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
                       </div>
                       {/* Individual sets per exercise */}
                       {dateExIds.map(exId => {
