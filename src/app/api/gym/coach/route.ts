@@ -1,7 +1,10 @@
 import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
-import { differenceInDays, subDays, format } from 'date-fns'
+import { subDays } from 'date-fns'
+import { formatInTimeZone } from 'date-fns-tz'
+
+const TZ = 'America/Los_Angeles'
 
 export async function POST(request: NextRequest) {
   const authClient = await createClient()
@@ -12,96 +15,101 @@ export async function POST(request: NextRequest) {
   const mode: 'devil' | 'angel' = body.mode === 'angel' ? 'angel' : 'devil'
 
   const db = createServiceClient()
-  const today = format(new Date(), 'yyyy-MM-dd')
-  const sevenDaysAgo = format(subDays(new Date(), 7), 'yyyy-MM-dd')
-  const fourteenDaysAgo = format(subDays(new Date(), 14), 'yyyy-MM-dd')
+  const now = new Date()
+  const today = formatInTimeZone(now, TZ, 'yyyy-MM-dd')
+  const sevenDaysAgo = formatInTimeZone(subDays(now, 7), TZ, 'yyyy-MM-dd')
+  const fourteenDaysAgo = formatInTimeZone(subDays(now, 14), TZ, 'yyyy-MM-dd')
 
-  const [workoutsResult, checkinResult, bodyWeightResult, gymLogsResult] = await Promise.all([
+  const [gymLogsResult, checkinsResult] = await Promise.all([
     db
-      .from('workouts')
-      .select('id, name, completed_at, created_at')
+      .from('gym_logs')
+      .select('logged_at')
       .eq('user_id', user.id)
-      .not('completed_at', 'is', null)
-      .order('completed_at', { ascending: false })
-      .limit(20),
+      .gte('logged_at', new Date(Date.now() - 14 * 86400000).toISOString())
+      .order('logged_at', { ascending: false }),
     db
       .from('daily_checkins')
-      .select('*')
+      .select('date, morning_intent, morning_planned_training, evening_actual_training, evening_reflection')
       .eq('user_id', user.id)
-      .eq('date', today)
-      .maybeSingle(),
-    db
-      .from('body_weight_logs')
-      .select('weight, date_key')
-      .eq('user_id', user.id)
-      .gte('date_key', fourteenDaysAgo)
-      .order('date_key', { ascending: true }),
-    db
-      .from('po_logs')
-      .select('weight, reps, logged_at, exercise_id')
-      .eq('user_id', user.id)
-      .gte('logged_at', sevenDaysAgo)
-      .order('logged_at', { ascending: false }),
+      .gte('date', fourteenDaysAgo)
+      .order('date', { ascending: false }),
   ])
 
-  const workouts = workoutsResult.data ?? []
-  const checkin = checkinResult.data
-  const bodyWeights = bodyWeightResult.data ?? []
   const gymLogs = gymLogsResult.data ?? []
+  const checkins = checkinsResult.data ?? []
 
-  // Days since last completed workout
-  const lastWorkout = workouts[0]
-  const daysSinceLast = lastWorkout?.completed_at
-    ? differenceInDays(new Date(), new Date(lastWorkout.completed_at))
+  const todayCheckin = checkins.find(c => c.date === today)
+
+  // Collect all days with any training activity (gym sets OR evening check-in reporting training)
+  const gymDays = new Set(
+    gymLogs.map(l => new Date(l.logged_at).toLocaleDateString('en-CA', { timeZone: TZ }))
+  )
+  const checkinTrainingDays = new Set(
+    checkins
+      .filter(c => c.evening_actual_training && c.evening_actual_training.trim())
+      .map(c => c.date)
+  )
+  const allTrainingDays = new Set([...gymDays, ...checkinTrainingDays])
+
+  // Days since last any training
+  const sortedDays = [...allTrainingDays].sort((a, b) => b.localeCompare(a))
+  const lastActiveDay = sortedDays[0]
+  const daysSinceLast = lastActiveDay
+    ? Math.round((new Date(today).getTime() - new Date(lastActiveDay).getTime()) / 86400000)
     : null
 
-  // Workouts this week vs last week
-  const thisWeekCutoff = subDays(new Date(), 7)
-  const lastWeekCutoff = subDays(new Date(), 14)
-  const workoutsThisWeek = workouts.filter(
-    w => w.completed_at && new Date(w.completed_at) > thisWeekCutoff
-  ).length
-  const workoutsLastWeek = workouts.filter(
-    w => w.completed_at && new Date(w.completed_at) > lastWeekCutoff
-      && new Date(w.completed_at) <= thisWeekCutoff
-  ).length
+  // Active days this week vs last week
+  const activeThisWeek = [...allTrainingDays].filter(d => d >= sevenDaysAgo && d <= today).length
+  const activeLastWeek = [...allTrainingDays].filter(d => d >= fourteenDaysAgo && d < sevenDaysAgo).length
 
-  // Sets logged today (from gym PO logger)
-  const setsToday = gymLogs.filter(l =>
-    new Date(l.logged_at).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' }) === today
-  ).length
-
-  // Body weight trend
-  const bwFirst = bodyWeights[0]
-  const bwLast = bodyWeights[bodyWeights.length - 1]
-  const bwDelta = bwFirst && bwLast && bodyWeights.length >= 2
-    ? bwLast.weight - bwFirst.weight
-    : null
-
-  // Build minimal context — just enough to know if they're on a roll or slacking
+  // Build context
   const lines: string[] = []
 
+  // Recent activity log (last 7 days) — what they actually did each day
+  const recentActivity: string[] = []
+  for (let i = 0; i < 7; i++) {
+    const d = formatInTimeZone(subDays(now, i), TZ, 'yyyy-MM-dd')
+    const label = i === 0 ? 'Today' : i === 1 ? 'Yesterday' : formatInTimeZone(subDays(now, i), TZ, 'EEE MMM d')
+    const checkin = checkins.find(c => c.date === d)
+    const hadGym = gymDays.has(d)
+    const evening = checkin?.evening_actual_training?.trim()
+
+    if (hadGym && evening) {
+      recentActivity.push(`${label}: lifted + ${evening}`)
+    } else if (hadGym) {
+      recentActivity.push(`${label}: lifted weights`)
+    } else if (evening) {
+      recentActivity.push(`${label}: ${evening}`)
+    } else if (i < 5) {
+      recentActivity.push(`${label}: nothing logged`)
+    }
+  }
+
+  if (recentActivity.length) {
+    lines.push('Recent activity:\n' + recentActivity.map(l => `  ${l}`).join('\n'))
+  }
+
+  lines.push(`Active days this week: ${activeThisWeek}. Last week: ${activeLastWeek}.`)
+
   if (daysSinceLast === null) {
-    lines.push('Has never logged a workout.')
+    lines.push('Has never logged any training.')
   } else if (daysSinceLast === 0) {
-    lines.push('Trained today.')
+    lines.push('Already trained today.')
   } else if (daysSinceLast === 1) {
     lines.push('Last trained yesterday.')
   } else {
     lines.push(`Has not trained in ${daysSinceLast} days.`)
   }
 
-  lines.push(`Workouts in the last 7 days: ${workoutsThisWeek}. The 7 days before that: ${workoutsLastWeek}.`)
-
-  if (checkin?.morning_intent) {
-    lines.push(`What they said they wanted today: "${checkin.morning_intent}".`)
+  if (todayCheckin?.morning_intent) {
+    lines.push(`What they said they wanted to do today: "${todayCheckin.morning_intent}".`)
   }
 
   const context = lines.join('\n')
 
-  const devilSystem = `You are the voice of brutal self-accountability in this person's head. Your job is one thing: make them feel the cost of skipping the gym so viscerally they can't ignore it. Talk about what happens to their body, their confidence, their self-image when they stop showing up. Be raw, be uncomfortable, be real — not mean for the sake of it, but the kind of hard truth a person needs to hear at 4pm when they're deciding whether to go. 2–3 sentences. No data recitation, no "you only did X workouts" — pure consequence and identity. Make them feel it.`
+  const devilSystem = `You are the voice of brutal self-accountability in this person's head. Training means anything — lifting, climbing, running, whatever. Your job is one thing: make them feel the cost of doing nothing so viscerally they can't ignore it. Talk about what happens to their body, their confidence, their self-image when they stop showing up. Be raw, be uncomfortable, be real — not mean for the sake of it, but the kind of hard truth a person needs to hear when they're deciding whether to move. If they've been active recently, push them to keep the streak alive. 2–3 sentences. No data recitation — pure consequence and identity. Make them feel it.`
 
-  const angelSystem = `You are the voice of genuine belief in this person's head. Your job is to make them feel the pull of who they're becoming and why it's worth protecting. Talk about momentum, about what consistency does to a person over time, about the version of themselves they're building one session at a time. Be real, not hollow — this isn't "you've got this champ," it's the voice that actually knows what they're capable of. 2–3 sentences. No data recitation — pure fire and forward motion.`
+  const angelSystem = `You are the voice of genuine belief in this person's head. Training means anything — lifting, climbing, running, whatever gets them moving. Your job is to make them feel the pull of who they're becoming and why it's worth protecting. Talk about momentum, about what consistency does to a person over time, about the version of themselves they're building one session at a time. If they've done something recently, use that — real momentum beats empty hype. Be real, not hollow. 2–3 sentences. No data recitation — pure fire and forward motion.`
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
