@@ -90,19 +90,19 @@ function RenewalTicker({ subs }: { subs: SubscriptionWithMeta[] }) {
   if (withDates.length === 0) return null
 
   const active = withDates[activeIdx % withDates.length]
-  const isUrgentAny = withDates.some((s) => s.isUrgent)
+  const isActiveUrgent = active.isUrgent
 
   return (
     <div
       className={`mb-4 flex items-center gap-3 rounded-xl px-4 py-3 ${
-        isUrgentAny
+        isActiveUrgent
           ? 'animate-pulse border border-red-400/40 bg-red-400/8'
           : 'border border-emerald-500/20 bg-emerald-500/5'
       }`}
     >
       <span
         className={`shrink-0 rounded px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-widest ${
-          isUrgentAny ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'
+          isActiveUrgent ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'
         }`}
       >
         Renews
@@ -111,7 +111,7 @@ function RenewalTicker({ subs }: { subs: SubscriptionWithMeta[] }) {
         <span className="truncate font-bold uppercase text-white text-sm tracking-wide">
           {active.name}
         </span>
-        <span className={`mx-2 text-sm ${isUrgentAny ? 'text-red-400' : 'text-emerald-400'}`}>
+        <span className={`mx-2 text-sm ${isActiveUrgent ? 'text-red-400' : 'text-emerald-400'}`}>
           {formatAmount(active.amount, active.currency)}
         </span>
         <span className="text-xs text-zinc-500">{formatRenewalLabel(active.next_renewal)}</span>
@@ -123,7 +123,7 @@ function RenewalTicker({ subs }: { subs: SubscriptionWithMeta[] }) {
             onClick={() => setActiveIdx(i)}
             className={`h-1.5 rounded-full transition-all ${
               i === activeIdx % withDates.length
-                ? isUrgentAny
+                ? isActiveUrgent
                   ? 'w-3 bg-red-400'
                   : 'w-3 bg-emerald-400'
                 : 'w-1.5 bg-zinc-700'
@@ -306,7 +306,7 @@ function SubscriptionForm({
         <button
           type="button"
           onClick={() => set('auto_renews', !form.auto_renews)}
-          className={`relative h-6 w-11 rounded-full transition-colors ${
+          className={`relative h-6 w-11 overflow-hidden rounded-full transition-colors ${
             form.auto_renews ? 'bg-emerald-500' : 'bg-zinc-600'
           }`}
         >
