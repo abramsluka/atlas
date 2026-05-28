@@ -48,6 +48,7 @@ export interface HealthProfile {
   daily_water_target_oz: number | null
   age: number | null
   sex: 'm' | 'f' | 'o' | null
+  height_cm: number | null
   activity_hrs_per_week: number
   caffeine_mg_per_day: number
   water_unit: 'bottle' | 'glass' | 'oz' | 'ml'

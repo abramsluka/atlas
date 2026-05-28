@@ -935,6 +935,7 @@ interface WaterProfile {
   weight_lbs: number | null
   age: number | null
   sex: 'm' | 'f' | 'o' | null
+  height_cm: number | null
   activity_hrs_per_week: number
   caffeine_mg_per_day: number
   water_unit: 'bottle' | 'glass' | 'oz' | 'ml'
@@ -947,7 +948,7 @@ interface WaterProfile {
 
 function defaultWaterProfile(): WaterProfile {
   return {
-    weight_lbs: null, age: null, sex: null,
+    weight_lbs: null, age: null, sex: null, height_cm: null,
     activity_hrs_per_week: 0, caffeine_mg_per_day: 200,
     water_unit: 'bottle', bottle_ml: 500, glass_ml: 250,
     weight_unit: 'lb', substances: [], daily_water_target_oz: null,
@@ -961,6 +962,7 @@ function mergeProfile(p: HealthProfile | null | undefined): WaterProfile {
     weight_lbs: p.weight_lbs ?? d.weight_lbs,
     age: p.age ?? d.age,
     sex: p.sex ?? d.sex,
+    height_cm: p.height_cm ?? d.height_cm,
     activity_hrs_per_week: p.activity_hrs_per_week ?? d.activity_hrs_per_week,
     caffeine_mg_per_day: p.caffeine_mg_per_day ?? d.caffeine_mg_per_day,
     water_unit: p.water_unit ?? d.water_unit,
@@ -1383,6 +1385,32 @@ function WaterSection({
                     options={[{ label: 'M', value: 'm' }, { label: 'F', value: 'f' }, { label: 'Other', value: 'o' }]}
                     onChange={v => updateLocal({ sex: v as 'm' | 'f' | 'o' })}
                   />
+                </WSettingField>
+              </div>
+              <div className="grid grid-cols-2 gap-2.5">
+                <WSettingField label="Height (ft)" hint="Improves calorie accuracy">
+                  <input type="number" min="3" max="8"
+                    value={localProfile.height_cm != null ? Math.floor(localProfile.height_cm / 30.48) : ''}
+                    onChange={e => {
+                      const ft = parseInt(e.target.value) || 0
+                      const existingIn = localProfile.height_cm != null
+                        ? Math.round((localProfile.height_cm % 30.48) / 2.54)
+                        : 0
+                      updateLocal({ height_cm: Math.round((ft * 12 + existingIn) * 2.54) })
+                    }}
+                    className={INPUT_CLS} />
+                </WSettingField>
+                <WSettingField label="Height (in)">
+                  <input type="number" min="0" max="11"
+                    value={localProfile.height_cm != null ? Math.round((localProfile.height_cm % 30.48) / 2.54) : ''}
+                    onChange={e => {
+                      const inches = parseInt(e.target.value) || 0
+                      const existingFt = localProfile.height_cm != null
+                        ? Math.floor(localProfile.height_cm / 30.48)
+                        : 0
+                      updateLocal({ height_cm: Math.round((existingFt * 12 + inches) * 2.54) })
+                    }}
+                    className={INPUT_CLS} />
                 </WSettingField>
               </div>
               <WSettingField label="Activity (training hours per week)">

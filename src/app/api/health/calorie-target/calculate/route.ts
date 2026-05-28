@@ -2,22 +2,33 @@ import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 
-// ── TDEE multiplier (kcal per lb body weight) based on weekly activity hours ──
-// Source: body-weight rule-of-thumb, used when height is unavailable for
-// Mifflin-St Jeor. Conservative estimates to avoid over-estimating deficit.
-function tdeeMultiplier(activityHrsPerWeek: number): number {
-  if (activityHrsPerWeek < 2)  return 14.0  // sedentary
-  if (activityHrsPerWeek < 5)  return 15.0  // lightly active
-  if (activityHrsPerWeek < 10) return 16.0  // moderately active
-  return 17.5                               // very active
+// ── Activity multiplier for Mifflin-St Jeor TDEE ────────────────────────────
+function activityMultiplier(hrsPerWeek: number): number {
+  if (hrsPerWeek < 2)  return 1.2    // sedentary
+  if (hrsPerWeek < 5)  return 1.375  // lightly active
+  if (hrsPerWeek < 10) return 1.55   // moderately active
+  return 1.725                       // very active
+}
+
+// ── Fallback: body-weight multiplier when height/age/sex unavailable ─────────
+function tdeeByWeight(weightLbs: number, hrsPerWeek: number): number {
+  const multipliers = [14.0, 15.0, 16.0, 17.5]
+  const idx = hrsPerWeek < 2 ? 0 : hrsPerWeek < 5 ? 1 : hrsPerWeek < 10 ? 2 : 3
+  return Math.round(weightLbs * multipliers[idx])
 }
 
 // ── Daily calorie deficit per cut pace ────────────────────────────────────────
-// Based on ~3,500 kcal per lb of fat
 const DEFICIT_KCAL: Record<string, number> = {
   slow:       250,  // 0.5 lb/week
   moderate:   500,  // 1.0 lb/week
   aggressive: 750,  // 1.5 lb/week
+}
+
+// ── Fat % of calories per cut pace (more fat = fewer carbs on cut) ───────────
+const FAT_PCT: Record<string, number> = {
+  slow:       0.25,
+  moderate:   0.28,
+  aggressive: 0.35,
 }
 
 export async function POST() {
@@ -48,23 +59,32 @@ export async function POST() {
 
   // ── Deterministic calculation ─────────────────────────────────────────────
 
-  // Fix: field name is activity_hrs_per_week not activity_hours_per_week
   const activityHrs: number = profile.activity_hrs_per_week ?? 3
-  const tdee = Math.round(currentWeight * tdeeMultiplier(activityHrs))
+  const weightKg = currentWeight / 2.20462
+
+  // Mifflin-St Jeor BMR if we have height + age + sex, otherwise body-weight estimate
+  let tdee: number
+  if (profile.height_cm && profile.age && profile.sex && profile.sex !== 'o') {
+    const sexOffset = profile.sex === 'm' ? 5 : -161
+    const bmr = 10 * weightKg + 6.25 * profile.height_cm - 5 * profile.age + sexOffset
+    tdee = Math.round(bmr * activityMultiplier(activityHrs))
+  } else {
+    tdee = tdeeByWeight(currentWeight, activityHrs)
+  }
 
   const deficit = DEFICIT_KCAL[profile.cut_pace as string] ?? 500
-  const dailyCalories = Math.max(1200, tdee - deficit) // floor at 1200 kcal — safety minimum
+  const dailyCalories = Math.max(1200, tdee - deficit)
 
-  // Protein: 1g per lb body weight (muscle preservation during cut)
-  // Research: higher end of recommended range for active individuals cutting
+  // Protein: 1g/lb body weight (muscle preservation — upper end for active cutters)
   const protein_g = Math.round(currentWeight)
+  const protein_kcal = protein_g * 4
 
-  // Fat: 25% of total calories (hormonal/satiety floor)
-  const fat_kcal = dailyCalories * 0.25
+  // Fat: higher % on aggressive cuts → fewer carbs, better satiety/satiation
+  const fatPct = FAT_PCT[profile.cut_pace as string] ?? 0.28
+  const fat_kcal = dailyCalories * fatPct
   const fat_g = Math.round(fat_kcal / 9)
 
-  // Carbs: fill remainder (fuels training performance)
-  const protein_kcal = protein_g * 4
+  // Carbs: fill remainder
   const carbs_kcal = dailyCalories - protein_kcal - fat_kcal
   const carbs_g = Math.max(0, Math.round(carbs_kcal / 4))
 
