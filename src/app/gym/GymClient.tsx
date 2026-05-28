@@ -1391,19 +1391,14 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                         if (next) fetchCoachStep(exModal.name, exModal.bodyweight)
                         else setCoachStepRec(null)
                       }}
-                      className={`mt-2 flex items-center justify-between w-full rounded-xl px-3 py-2.5 border transition-colors ${stepAuto ? 'bg-white/10 border-white/20' : 'bg-white/5 border-white/10'}`}
+                      className={`mt-2 flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium border transition-colors ${stepAuto ? 'bg-white/10 border-white/25 text-white' : 'bg-transparent border-white/12 text-white/35 hover:text-white/50'}`}
                     >
-                      <div className="text-left">
-                        <p className="text-xs font-medium text-white">Let coach decide</p>
-                        <p className="text-[10px] text-white/40 mt-0.5">
-                          {stepAuto
-                            ? coachStepRec ? `${coachStepRec.step} ${config.units}` : 'Asking…'
-                            : 'AI picks based on exercise type'}
-                        </p>
+                      <div className={`w-3.5 h-3.5 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${stepAuto ? 'bg-white border-white' : 'border-white/30'}`}>
+                        {stepAuto && <svg viewBox="0 0 10 8" fill="none" className="w-2 h-2"><path d="M1 4l3 3 5-6" stroke="black" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                       </div>
-                      <div className={`w-8 h-5 rounded-full transition-colors flex items-center px-0.5 flex-shrink-0 ${stepAuto ? 'bg-white' : 'bg-white/20'}`}>
-                        <div className={`w-4 h-4 rounded-full transition-transform ${stepAuto ? 'bg-black translate-x-3' : 'bg-white/60'}`} />
-                      </div>
+                      Let coach decide
+                      {stepAuto && coachStepRec && <span className="text-white/50">· {coachStepRec.step} {config.units}</span>}
+                      {stepAuto && !coachStepRec && <span className="text-white/30">· asking…</span>}
                     </button>
                     {stepAuto && coachStepRec && (
                       <p className="text-[10px] text-white/30 mt-1.5 leading-relaxed">{coachStepRec.reason}</p>
@@ -1605,21 +1600,14 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     if (next) fetchCoachReps()
                     else setCoachRepRec(null)
                   }}
-                  className={`mt-3 flex items-center justify-between w-full rounded-xl px-4 py-3 border transition-colors ${settingsUpgradeAtAuto ? 'bg-white/10 border-white/20' : 'bg-white/5 border-white/10'}`}
+                  className={`mt-3 flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium border transition-colors ${settingsUpgradeAtAuto ? 'bg-white/10 border-white/25 text-white' : 'bg-transparent border-white/12 text-white/35 hover:text-white/50'}`}
                 >
-                  <div className="text-left">
-                    <p className="text-sm font-medium text-white">Let coach decide</p>
-                    <p className="text-xs text-white/40 mt-0.5">
-                      {settingsUpgradeAtAuto
-                        ? coachRepRec
-                          ? `Coach says: ${coachRepRec.reps} reps`
-                          : 'Asking coach…'
-                        : 'AI sets this based on your training data'}
-                    </p>
+                  <div className={`w-3.5 h-3.5 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${settingsUpgradeAtAuto ? 'bg-white border-white' : 'border-white/30'}`}>
+                    {settingsUpgradeAtAuto && <svg viewBox="0 0 10 8" fill="none" className="w-2 h-2"><path d="M1 4l3 3 5-6" stroke="black" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                   </div>
-                  <div className={`w-10 h-6 rounded-full transition-colors flex items-center px-1 flex-shrink-0 ${settingsUpgradeAtAuto ? 'bg-white' : 'bg-white/20'}`}>
-                    <div className={`w-4 h-4 rounded-full transition-transform ${settingsUpgradeAtAuto ? 'bg-black translate-x-4' : 'bg-white/60'}`} />
-                  </div>
+                  Let coach decide
+                  {settingsUpgradeAtAuto && coachRepRec && <span className="text-white/50">· {coachRepRec.reps} reps</span>}
+                  {settingsUpgradeAtAuto && !coachRepRec && <span className="text-white/30">· asking…</span>}
                 </button>
 
                 {settingsUpgradeAtAuto && coachRepRec && (
