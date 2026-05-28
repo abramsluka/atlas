@@ -849,14 +849,14 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   </div>
                   <input
                     type="range"
-                    min={4}
-                    max={18}
+                    min={3}
+                    max={20}
                     step={1}
                     value={selectedReps}
                     onChange={e => setSelectedReps(Number(e.target.value))}
                     className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
                     style={{
-                      background: `linear-gradient(to right, #fff ${((selectedReps - 4) / (18 - 4)) * 100}%, rgba(255,255,255,0.15) 0%)`,
+                      background: `linear-gradient(to right, #fff ${((selectedReps - 3) / (20 - 3)) * 100}%, rgba(255,255,255,0.15) 0%)`,
                       WebkitAppearance: 'none',
                     }}
                   />
