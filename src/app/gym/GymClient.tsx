@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useGymConfig, useGymExercises, useAllGymLogs, useBodyWeights, useProgressPhotos } from '@/features/gym/queries'
+import { useHealthProfile } from '@/features/health/queries'
 import {
   useSaveGymConfig,
   useCreateExercise, useUpdateExercise, useDeleteExercise,
@@ -245,6 +246,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const { data: allLogs = [] } = useAllGymLogs()
   const { data: bodyWeights = [] } = useBodyWeights()
   const { data: photos = [] } = useProgressPhotos()
+  const { data: healthProfile } = useHealthProfile()
 
   const saveConfig = useSaveGymConfig()
   const createEx = useCreateExercise()
@@ -593,6 +595,16 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     ? bodyWeights[bodyWeights.length - 1].weight - bodyWeights[0].weight
     : null
 
+  // Green if moving toward goal: losing = negative delta good, gaining = positive delta good
+  const targetWeight = healthProfile?.target_weight_lbs ?? null
+  const currentWeight = bodyWeights.length ? bodyWeights[bodyWeights.length - 1].weight : null
+  const goalIsLoss = targetWeight != null && currentWeight != null ? targetWeight < currentWeight : true
+  function bwDeltaColor(delta: number): string {
+    if (delta === 0) return 'text-white/40'
+    const goodDirection = goalIsLoss ? delta < 0 : delta > 0
+    return goodDirection ? 'text-green-400' : 'text-red-400'
+  }
+
   // Today's full workout summary
   const todayAllLogs = allLogs.filter(l => logDatePST(l.logged_at) === today)
   const todayExIds = [...new Set(todayAllLogs.map(l => l.exercise_id))]
@@ -643,7 +655,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   </span>
                   <span className="text-sm text-white/40">{config.units}</span>
                   {bwDelta != null && bodyWeights.length >= 2 && (
-                    <span className={`text-sm font-medium ${bwDelta < 0 ? 'text-green-400' : bwDelta > 0 ? 'text-red-400' : 'text-white/40'}`}>
+                    <span className={`text-sm font-medium ${bwDeltaColor(bwDelta)}`}>
                       {bwDelta > 0 ? '+' : ''}{bwDelta.toFixed(1)}
                     </span>
                   )}
