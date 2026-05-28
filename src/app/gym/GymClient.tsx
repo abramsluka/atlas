@@ -40,10 +40,10 @@ function computeSplit(config: GymConfig): { name: string; index: number } {
   if (!rot.length) return { name: '—', index: 0 }
   if (!config.split_anchor) return { name: rot[0], index: 0 }
   try {
-    const a = new Date(config.split_anchor.date)
+    const a = new Date(config.split_anchor.date + 'T12:00:00')
     const t = new Date()
-    a.setHours(0, 0, 0, 0)
-    t.setHours(0, 0, 0, 0)
+    a.setHours(12, 0, 0, 0)
+    t.setHours(12, 0, 0, 0)
     const diffDays = Math.round((t.getTime() - a.getTime()) / 86400000)
     const idx = ((config.split_anchor.index + diffDays) % rot.length + rot.length) % rot.length
     return { name: rot[idx], index: idx }
@@ -332,6 +332,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const [settingsUpgradeAt, setSettingsUpgradeAt] = useState(config.upgrade_at_reps)
   const [settingsUpgradeAtAuto, setSettingsUpgradeAtAuto] = useState(config.upgrade_at_reps_auto ?? false)
   const [coachRepRec, setCoachRepRec] = useState<{ reps: number; reason: string } | null>(null)
+  const [stepAuto, setStepAuto] = useState(false)
+  const [coachStepRec, setCoachStepRec] = useState<{ step: number; reason: string } | null>(null)
   const importRef = useRef<HTMLInputElement>(null)
 
   // ── derived ──────────────────────────────────────────────────────────────
@@ -401,6 +403,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   }
 
   function openAddEx() {
+    setStepAuto(false)
+    setCoachStepRec(null)
     setExModal({
       ...EMPTY_EX_MODAL,
       open: true, mode: 'add',
@@ -412,6 +416,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
 
   function openEditEx() {
     if (!currentEx) return
+    setStepAuto(false)
+    setCoachStepRec(null)
     setExModal({
       open: true, mode: 'edit',
       id: currentEx.id,
@@ -487,6 +493,22 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     setSettingsUpgradeAtAuto(config.upgrade_at_reps_auto ?? false)
     setCoachRepRec(null)
     setShowSettings(true)
+  }
+
+  async function fetchCoachStep(exerciseName: string, isBodyweight: boolean) {
+    setCoachStepRec(null)
+    try {
+      const res = await fetch('/api/gym/coach-step', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ exerciseName, isBodyweight, units: config.units }),
+      })
+      const json = await res.json()
+      setCoachStepRec(json)
+      setExModal(m => ({ ...m, step: json.step }))
+    } catch {
+      setCoachStepRec({ step: 2.5, reason: 'Could not reach coach — using default.' })
+    }
   }
 
   async function fetchCoachReps() {
@@ -1336,8 +1358,33 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   <div>
                     <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Step ({config.units})</label>
                     <input type="number" step="1.25" value={exModal.step}
+                      disabled={stepAuto}
                       onChange={e => setExModal(m => ({ ...m, step: parseFloat(e.target.value) || 2.5 }))}
-                      className="w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white focus:outline-none" />
+                      className={`w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white focus:outline-none ${stepAuto ? 'opacity-40 cursor-not-allowed' : ''}`} />
+                    <button
+                      onClick={() => {
+                        const next = !stepAuto
+                        setStepAuto(next)
+                        if (next) fetchCoachStep(exModal.name, exModal.bodyweight)
+                        else setCoachStepRec(null)
+                      }}
+                      className={`mt-2 flex items-center justify-between w-full rounded-xl px-3 py-2.5 border transition-colors ${stepAuto ? 'bg-white/10 border-white/20' : 'bg-white/5 border-white/10'}`}
+                    >
+                      <div className="text-left">
+                        <p className="text-xs font-medium text-white">Let coach decide</p>
+                        <p className="text-[10px] text-white/40 mt-0.5">
+                          {stepAuto
+                            ? coachStepRec ? `${coachStepRec.step} ${config.units}` : 'Asking…'
+                            : 'AI picks based on exercise type'}
+                        </p>
+                      </div>
+                      <div className={`w-8 h-5 rounded-full transition-colors flex items-center px-0.5 flex-shrink-0 ${stepAuto ? 'bg-white' : 'bg-white/20'}`}>
+                        <div className={`w-4 h-4 rounded-full transition-transform ${stepAuto ? 'bg-black translate-x-3' : 'bg-white/60'}`} />
+                      </div>
+                    </button>
+                    {stepAuto && coachStepRec && (
+                      <p className="text-[10px] text-white/30 mt-1.5 leading-relaxed">{coachStepRec.reason}</p>
+                    )}
                   </div>
                 </div>
               )}
