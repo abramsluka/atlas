@@ -337,6 +337,32 @@ export default function HomeClient({ today, initialCheckin }: { today: string; i
 
   const { data: checkin } = useTodayCheckin(today)
 
+  const [coachText, setCoachText] = useState('')
+  const [coachStreaming, setCoachStreaming] = useState(false)
+
+  async function streamBriefing() {
+    if (coachStreaming) return
+    setCoachStreaming(true)
+    setCoachText('')
+
+    try {
+      const res = await fetch('/api/home/coach', { method: 'POST' })
+      if (!res.ok || !res.body) {
+        setCoachText('Something went wrong. Try again.')
+        return
+      }
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        setCoachText(prev => prev + decoder.decode(value))
+      }
+    } finally {
+      setCoachStreaming(false)
+    }
+  }
+
   return (
     <main className="min-h-screen px-4 pb-24 pt-14">
       <GoalTicker checkin={checkin} />
@@ -345,6 +371,45 @@ export default function HomeClient({ today, initialCheckin }: { today: string; i
       <section>
         <SectionTitle label="Check-in" />
         <DailyCheckinCard today={today} checkin={checkin ?? null} />
+
+        <div className="mt-4 rounded-2xl bg-white/[0.04] backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.45)] p-5">
+          {!coachText && !coachStreaming && (
+            <p className="text-sm text-zinc-500 mb-4 leading-relaxed">
+              Get a read on where you stand across everything — gym, habits, health, journal.
+            </p>
+          )}
+
+          {coachText && (
+            <p className="text-sm text-zinc-300 leading-relaxed mb-4 whitespace-pre-wrap">
+              {coachText}
+              {coachStreaming && (
+                <span className="inline-block w-[2px] h-[14px] bg-zinc-400 ml-0.5 align-middle animate-pulse" />
+              )}
+            </p>
+          )}
+
+          {!coachText && coachStreaming && (
+            <p className="text-sm text-zinc-500 mb-4 leading-relaxed">
+              Reading your data
+              <span className="inline-block w-[2px] h-[14px] bg-zinc-400 ml-0.5 align-middle animate-pulse" />
+            </p>
+          )}
+
+          <button
+            onClick={streamBriefing}
+            disabled={coachStreaming}
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold disabled:opacity-50 active:opacity-80"
+            style={{
+              background: coachStreaming
+                ? 'rgba(255,255,255,0.08)'
+                : 'linear-gradient(180deg,#ffffff 0%,#e8e5dd 100%)',
+              boxShadow: coachStreaming ? 'none' : 'inset 0 1px 0 rgba(255,255,255,0.55),0 4px 14px rgba(0,0,0,0.40)',
+              color: coachStreaming ? '#71717a' : '#000',
+            }}
+          >
+            {coachStreaming ? 'Reading your data…' : coachText ? 'Refresh briefing' : 'Get my briefing'}
+          </button>
+        </div>
       </section>
     </main>
   )

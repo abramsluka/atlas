@@ -1,0 +1,251 @@
+import { NextRequest } from 'next/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
+import Anthropic from '@anthropic-ai/sdk'
+
+export async function POST(_request: NextRequest) {
+  const authClient = await createClient()
+  const { data: { user } } = await authClient.auth.getUser()
+  if (!user) return new Response('Unauthorized', { status: 401 })
+
+  const db = createServiceClient()
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
+  const now = new Date()
+
+  const [
+    checkinRes,
+    recentWorkoutsRes,
+    habitsRes,
+    habitLogsRes,
+    goalsRes,
+    waterTodayRes,
+    supplementLogsRes,
+    journalRes,
+    debloatTodayRes,
+    debloatHistoryRes,
+    bodyweightRes,
+  ] = await Promise.all([
+    db.from('daily_checkins')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('date', today)
+      .maybeSingle(),
+
+    db.from('po_logs')
+      .select('logged_at, exercise_id, sets_data')
+      .eq('user_id', user.id)
+      .order('logged_at', { ascending: false })
+      .limit(50),
+
+    db.from('goals')
+      .select('id, title, type')
+      .eq('user_id', user.id)
+      .eq('type', 'habit')
+      .is('completed_at', null),
+
+    db.from('habit_logs')
+      .select('goal_id, date, completed')
+      .eq('user_id', user.id)
+      .gte('date', new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10))
+      .order('date', { ascending: false }),
+
+    db.from('goals')
+      .select('id, title, type, target_value, current_value, unit, due_date')
+      .eq('user_id', user.id)
+      .neq('type', 'habit')
+      .is('completed_at', null),
+
+    db.from('water_logs')
+      .select('amount_ml')
+      .eq('user_id', user.id)
+      .eq('date', today),
+
+    db.from('supplement_logs')
+      .select('supplement_id')
+      .eq('user_id', user.id)
+      .eq('date', today),
+
+    db.from('journal_entries')
+      .select('created_at, content')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(3),
+
+    db.from('debloat_logs')
+      .select('bloat_level, checklist')
+      .eq('user_id', user.id)
+      .eq('date', today)
+      .maybeSingle(),
+
+    db.from('debloat_logs')
+      .select('date, bloat_level')
+      .eq('user_id', user.id)
+      .gte('date', new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10))
+      .order('date', { ascending: false }),
+
+    db.from('body_weight_logs')
+      .select('weight_lbs, logged_at')
+      .eq('user_id', user.id)
+      .order('logged_at', { ascending: false })
+      .limit(14),
+  ])
+
+  const checkin = checkinRes.data
+
+  const lastWorkout = recentWorkoutsRes.data?.[0]
+  const daysSinceWorkout = lastWorkout
+    ? Math.floor((now.getTime() - new Date(lastWorkout.logged_at).getTime()) / 86400000)
+    : null
+
+  const sevenDaysAgo = new Date(Date.now() - 7 * 86400000)
+  const workoutDaysThisWeek = new Set(
+    (recentWorkoutsRes.data ?? [])
+      .filter(w => new Date(w.logged_at) >= sevenDaysAgo)
+      .map(w => new Date(w.logged_at).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' }))
+  ).size
+
+  const habits = habitsRes.data ?? []
+  const habitLogs = habitLogsRes.data ?? []
+  const habitSummary = habits.map(h => {
+    const logs = habitLogs.filter(l => l.goal_id === h.id && l.completed)
+    const sortedDates = [...new Set(logs.map(l => l.date))].sort().reverse()
+    let streak = 0
+    const d = new Date(today)
+    for (const date of sortedDates) {
+      const check = d.toISOString().slice(0, 10)
+      if (date === check) {
+        streak++
+        d.setDate(d.getDate() - 1)
+      } else break
+    }
+    const doneToday = habitLogs.some(l => l.goal_id === h.id && l.date === today && l.completed)
+    return { title: h.title, streak, doneToday }
+  })
+  const habitsCompletedToday = habitSummary.filter(h => h.doneToday).length
+  const totalHabits = habitSummary.length
+
+  const goals = goalsRes.data ?? []
+
+  const totalWaterMl = (waterTodayRes.data ?? []).reduce((sum, w) => sum + (w.amount_ml ?? 0), 0)
+  const waterOz = Math.round(totalWaterMl / 29.574)
+
+  const supplementsTaken = supplementLogsRes.data?.length ?? 0
+
+  const lastJournalEntry = journalRes.data?.[0]
+  const daysSinceJournal = lastJournalEntry
+    ? Math.floor((now.getTime() - new Date(lastJournalEntry.created_at).getTime()) / 86400000)
+    : null
+
+  const debloatToday = debloatTodayRes.data
+  const debloatHistory = debloatHistoryRes.data ?? []
+  const avgBloatWeek = debloatHistory.length
+    ? (debloatHistory.reduce((s, d) => s + (d.bloat_level ?? 0), 0) / debloatHistory.filter(d => d.bloat_level).length).toFixed(1)
+    : null
+
+  const latestWeight = bodyweightRes.data?.[0]
+  const weightTrend = bodyweightRes.data && bodyweightRes.data.length >= 5
+    ? ((bodyweightRes.data[0].weight_lbs - bodyweightRes.data[4].weight_lbs) > 0 ? 'up' : 'down')
+    : null
+
+  const hour = now.getHours()
+  const timeOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening'
+
+  const contextLines: string[] = [
+    `Time of day: ${timeOfDay}`,
+    `Today: ${today}`,
+    '',
+    '--- GYM ---',
+    daysSinceWorkout === null
+      ? 'No workout history recorded yet.'
+      : daysSinceWorkout === 0
+        ? 'Worked out today.'
+        : `Last workout: ${daysSinceWorkout} day${daysSinceWorkout === 1 ? '' : 's'} ago.`,
+    `Workout days this week: ${workoutDaysThisWeek}`,
+    latestWeight ? `Latest body weight: ${latestWeight.weight_lbs} lbs${weightTrend ? ` (trending ${weightTrend} over last 5 entries)` : ''}` : 'No body weight logged.',
+    '',
+    '--- DAILY CHECK-IN ---',
+    checkin?.morning_intent ? `Morning intent: "${checkin.morning_intent}"` : 'No morning intent set.',
+    checkin?.evening_actual_training !== null && checkin?.evening_actual_training !== undefined
+      ? `Trained today: ${checkin.evening_actual_training ? 'yes' : 'no'}${checkin.evening_reflection ? `. Reflection: "${checkin.evening_reflection}"` : ''}`
+      : 'Evening check-in not done yet.',
+    '',
+    '--- HABITS ---',
+    totalHabits === 0
+      ? 'No active habits.'
+      : `${habitsCompletedToday}/${totalHabits} habits done today.`,
+    ...habitSummary.map(h =>
+      `  • ${h.title}: ${h.doneToday ? '✓ done today' : '✗ not done'}, current streak ${h.streak} day${h.streak === 1 ? '' : 's'}`
+    ),
+    '',
+    '--- GOALS ---',
+    goals.length === 0
+      ? 'No active goals.'
+      : goals.map(g => {
+          if (g.type === 'numeric' && g.target_value != null) {
+            const pct = g.current_value != null ? Math.round((g.current_value / g.target_value) * 100) : 0
+            return `  • ${g.title}: ${g.current_value ?? 0} / ${g.target_value} ${g.unit ?? ''} (${pct}%)${g.due_date ? `, due ${g.due_date}` : ''}`
+          }
+          return `  • ${g.title} (${g.type})`
+        }).join('\n'),
+    '',
+    '--- HEALTH ---',
+    `Water today: ${waterOz > 0 ? `${waterOz} oz` : 'none logged'}`,
+    `Supplements taken today: ${supplementsTaken}`,
+    '',
+    '--- JOURNAL ---',
+    daysSinceJournal === null
+      ? 'No journal entries yet.'
+      : daysSinceJournal === 0
+        ? 'Journaled today.'
+        : `Last journal entry: ${daysSinceJournal} day${daysSinceJournal === 1 ? '' : 's'} ago.`,
+    '',
+    '--- DEBLOAT ---',
+    debloatToday?.bloat_level
+      ? `Today's bloat level: ${debloatToday.bloat_level}/5`
+      : 'No bloat level logged today.',
+    avgBloatWeek ? `7-day average bloat: ${avgBloatWeek}/5` : '',
+  ].filter(l => l !== undefined)
+
+  const context = contextLines.join('\n')
+
+  const systemPrompt = `You are Luka's personal AI coach and the only one who sees the full picture. You have access to his gym data, habits, goals, health tracking, journal, and how his body is feeling. You speak like a brilliant, direct friend who actually knows him — not a wellness app, not a hype bot.
+
+Your job: give him a real daily briefing in 4–6 sentences. Be specific to his actual data. Call out what's going well, what needs attention, and one concrete thing to focus on. If something has been slipping (habits not done, no gym in 4+ days, poor sleep, skipped journaling), name it plainly. If something is going really well (long streak, consistent training, trending weight), acknowledge it genuinely.
+
+Tone: direct, warm, grounded. Like someone who has been watching your data every day and isn't going to bullshit you. No hollow phrases like "great job keeping up with your habits" — be specific. No bullet points, no headers — just a flowing paragraph or two that feels like a voice memo from someone who knows your life.`
+
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
+  const stream = anthropic.messages.stream({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 350,
+    system: systemPrompt,
+    messages: [
+      {
+        role: 'user',
+        content: `Here is my data for today:\n\n${context}\n\nGive me my daily briefing.`,
+      },
+    ],
+  })
+
+  const readable = new ReadableStream({
+    async start(controller) {
+      try {
+        for await (const event of stream) {
+          if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+            controller.enqueue(new TextEncoder().encode(event.delta.text))
+          }
+        }
+      } finally {
+        controller.close()
+      }
+    },
+  })
+
+  return new Response(readable, {
+    headers: {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-cache',
+      'X-Accel-Buffering': 'no',
+    },
+  })
+}
