@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useFoodLogs, useFoodHistory } from '@/features/food/queries'
 import { useUpdateFoodLog, useDeleteFoodLog } from '@/features/food/mutations'
 import type { FoodLog } from '@/features/food/types'
@@ -94,6 +94,14 @@ export default function FoodHistoryClient({
 }) {
   const [selectedDate, setSelectedDate] = useState(today)
   const [editingMeal, setEditingMeal] = useState<FoodLog | null>(null)
+  const dateInputRef = useRef<HTMLInputElement>(null)
+
+  function shiftDate(days: number) {
+    const d = new Date(selectedDate + 'T12:00:00')
+    d.setDate(d.getDate() + days)
+    const next = d.toISOString().slice(0, 10)
+    if (next <= today) setSelectedDate(next)
+  }
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
   const { data: meals } = useFoodLogs(selectedDate)
@@ -123,13 +131,44 @@ export default function FoodHistoryClient({
       )}
 
       {/* Date picker */}
-      <input
-        type="date"
-        value={selectedDate}
-        max={today}
-        onChange={e => setSelectedDate(e.target.value)}
-        className="mb-4 w-full rounded-xl border border-white/[0.12] bg-zinc-900 px-3 py-2.5 text-sm text-white outline-none focus:border-white/40"
-      />
+      <div className="mb-4 flex items-center gap-2">
+        <button
+          onClick={() => shiftDate(-1)}
+          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-white/[0.12] bg-zinc-900 text-white/60 active:opacity-60"
+        >
+          ←
+        </button>
+
+        <button
+          onClick={() => dateInputRef.current?.showPicker()}
+          className="relative flex flex-1 items-center justify-between rounded-xl border border-white/[0.12] bg-zinc-900 px-3 py-2.5 text-left active:opacity-80"
+        >
+          <span className="text-sm text-white">
+            {new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+          </span>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-white flex-shrink-0">
+            <rect x="1" y="3" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.5"/>
+            <path d="M5 1v3M11 1v3M1 7h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
+          <input
+            ref={dateInputRef}
+            type="date"
+            value={selectedDate}
+            max={today}
+            onChange={e => e.target.value && setSelectedDate(e.target.value)}
+            className="absolute inset-0 opacity-0 cursor-pointer"
+            tabIndex={-1}
+          />
+        </button>
+
+        <button
+          onClick={() => shiftDate(1)}
+          disabled={selectedDate >= today}
+          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-white/[0.12] bg-zinc-900 text-white/60 active:opacity-60 disabled:opacity-25"
+        >
+          →
+        </button>
+      </div>
 
       {/* Day totals */}
       <div className="mb-4 rounded-xl bg-zinc-900 p-4">
