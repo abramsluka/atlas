@@ -373,6 +373,7 @@ export default function HomeClient({ today, initialCheckin }: { today: string; i
         <DailyCheckinCard today={today} checkin={checkin ?? null} />
 
         <div className="mt-4 rounded-2xl bg-white/[0.04] backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.45)] p-5">
+          <p className="text-lg font-semibold text-white mb-2">Your briefing</p>
           {!coachText && !coachStreaming && (
             <p className="text-sm text-zinc-500 mb-4 leading-relaxed">
               Get a read on where you stand across everything — gym, habits, health, journal.

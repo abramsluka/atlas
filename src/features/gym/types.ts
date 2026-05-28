@@ -22,6 +22,7 @@ export interface GymConfig {
   split_anchor: SplitAnchor | null
   units: 'lbs' | 'kg'
   upgrade_at_reps: number
+  upgrade_at_reps_auto?: boolean
 }
 
 export interface GymExercise {

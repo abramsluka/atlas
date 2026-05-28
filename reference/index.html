@@ -1,0 +1,1310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050506">
+<title>My Dashboard</title>
+<script src="topbar.js" defer></script>
+<style>
+:root {
+  --text-primary: #FAFAFA;
+  --text-secondary: #B8B6B0;
+  --text-tertiary: #76746E;
+  --success: #6BE3A4;
+  --warning: #F2C063;
+  --danger: #FF6B6B;
+  --font: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0;
+  background: #050506;
+  color: var(--text-secondary);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+  padding: max(28px, env(safe-area-inset-top)) 20px 60px;
+}
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background:
+    radial-gradient(circle at 82% 14%, rgba(224, 118, 88, 0.16), transparent 45%),
+    radial-gradient(circle at 18% 90%, rgba(180, 180, 200, 0.06), transparent 50%);
+  filter: blur(40px);
+  pointer-events: none;
+  z-index: -2;
+  animation: drift 36s ease-in-out infinite alternate;
+}
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: radial-gradient(rgba(255,255,255,0.014) 1px, transparent 1px);
+  background-size: 3px 3px;
+  pointer-events: none;
+  z-index: -1;
+}
+@keyframes drift {
+  0%   { transform: translate3d(0,0,0); }
+  100% { transform: translate3d(-22px, 14px, 0); }
+}
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+/* ===== Component 1: page title ===== */
+.dash-title {
+  margin: 0 0 14px;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  background: linear-gradient(180deg, #FFFFFF 0%, #C7C4BC 120%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+@media (max-width: 480px) { .dash-title { font-size: 22px; } }
+
+/* ===== Component 2: Goal Ticker ===== */
+.ticker-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+  margin-bottom: 18px;
+}
+.goal-ticker {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 12px;
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(0,0,0,0.42) 0%, rgba(0,0,0,0.30) 100%),
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.025) 0, rgba(255,255,255,0.025) 1px, transparent 1px, transparent 3px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.goal-ticker::after {
+  content: '';
+  position: absolute; top: 0; bottom: 0;
+  width: 30%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent);
+  pointer-events: none;
+  animation: ticker-sweep 8s linear infinite;
+}
+@keyframes ticker-sweep {
+  0%   { left: -40%; }
+  100% { left: 110%; }
+}
+.goal-ticker-led { display: inline-flex; align-items: center; }
+.goal-ticker-led-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #6BE3A4;
+  box-shadow: 0 0 8px rgba(107,227,164,0.7);
+  animation: led-pulse 1.6s ease-in-out infinite;
+}
+@keyframes led-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.45; transform: scale(0.85); }
+}
+.goal-ticker-label {
+  font-family: var(--font-mono);
+  font-size: 9.5px; font-weight: 800;
+  letter-spacing: 0.18em;
+  color: var(--text-tertiary);
+}
+.goal-ticker-stage {
+  position: relative; overflow: hidden;
+  flex: 1; height: 22px;
+}
+.goal-ticker-row {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 12.5px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.goal-ticker-row.is-leaving  { animation: ticker-leave 0.45s cubic-bezier(0.55, 0, 0.55, 1) forwards; }
+.goal-ticker-row.is-entering { animation: ticker-enter 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+@keyframes ticker-leave { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-100%); } }
+@keyframes ticker-enter { from { opacity: 0; transform: translateY(100%); } to { opacity: 1; transform: translateY(0); } }
+.goal-ticker-status {
+  display: inline-flex; justify-content: center;
+  width: 18px;
+  color: var(--text-tertiary);
+}
+.goal-ticker-status[data-status="done"]    { color: var(--success); }
+.goal-ticker-status[data-status="pending"] { color: var(--text-tertiary); }
+.goal-ticker-text {
+  flex: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.goal-ticker-meta {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.04);
+}
+@media (max-width: 480px) {
+  .goal-ticker { padding: 9px 12px; }
+  .goal-ticker-label { font-size: 9px; letter-spacing: 0.14em; }
+  .goal-ticker-row { font-size: 12px; }
+  .goal-ticker-meta { font-size: 10px; padding: 2px 7px; }
+}
+
+/* ===== Component 3: Day Ring ===== */
+.day-ring-wrap {
+  display: flex; flex-wrap: wrap;
+  align-items: center; justify-content: center;
+  gap: 26px;
+  padding: 22px;
+  margin-bottom: 22px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(24px) saturate(1.2);
+  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.45);
+}
+.day-ring {
+  position: relative;
+  width: 168px; height: 168px;
+  flex-shrink: 0;
+}
+.day-ring svg { width: 100%; height: 100%; display: block; }
+.day-ring-track { fill: none; stroke: rgba(255,255,255,0.06); stroke-width: 8; }
+.day-ring-fill {
+  fill: none;
+  stroke-width: 8;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 60px 60px;
+  transition: stroke 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+              stroke-dashoffset 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.day-ring-overlay {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.day-ring-percent {
+  font-size: 40px; font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+  color: var(--text-primary);
+  line-height: 1;
+}
+.day-ring-phase {
+  margin-top: 5px;
+  font-family: var(--font-mono);
+  font-size: 9.5px; font-weight: 800;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.day-ring-clock {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+.day-ring-text {
+  display: flex; flex-direction: column;
+  gap: 6px;
+  max-width: 280px;
+}
+.day-ring-status { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.day-ring-remaining { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+.day-ring-hours { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); }
+@media (max-width: 480px) {
+  .day-ring { width: 144px; height: 144px; }
+  .day-ring-percent { font-size: 32px; }
+  .day-ring-status { font-size: 13px; }
+}
+
+/* ===== Component 4: section + To Do List ===== */
+.section { margin-top: 8px; }
+.section-title {
+  font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--text-tertiary);
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 12px;
+}
+.section-title::before {
+  content: ''; width: 18px; height: 1px;
+  background: var(--text-tertiary); opacity: 0.6;
+}
+.section-title::after {
+  content: ''; flex: 1; height: 1px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.08), transparent);
+}
+
+.gm-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 14px;
+  backdrop-filter: blur(24px) saturate(1.2);
+  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.45);
+  transition: background 0.4s;
+  overflow: hidden;
+}
+.gm-card.gm-all-done::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(circle at 50% 0%, rgba(107,227,164,0.10), transparent 60%);
+  pointer-events: none;
+}
+.gm-card.gm-all-done .gm-progress-num,
+.gm-card.gm-all-done .gm-progress-label { color: var(--success); }
+
+.gm-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  flex-wrap: wrap; gap: 12px;
+  margin-bottom: 14px;
+  position: relative;
+}
+.gm-header-left { display: flex; flex-direction: column; }
+.gm-eyebrow {
+  font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+}
+.gm-progress-row { display: flex; align-items: baseline; gap: 6px; }
+.gm-progress-num {
+  font-size: 42px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.045em;
+  color: var(--text-primary);
+  line-height: 1;
+}
+.gm-progress-total {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  color: var(--text-tertiary);
+}
+.gm-progress-label {
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.10em; text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-left: 4px;
+}
+.gm-tomorrow-sub { font-size: 12px; color: var(--text-tertiary); margin-top: 4px; }
+.gm-tomorrow-count {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.gm-card-tomorrow .gm-progress-row { display: none; }
+
+.gm-streak {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  color: var(--text-tertiary);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.10em; text-transform: uppercase;
+  transition: background 0.25s, color 0.25s, border-color 0.25s;
+}
+.gm-streak-icon { font-size: 13px; }
+.gm-streak-num {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.gm-streak.gm-streak-active {
+  background: rgba(242,192,99,0.10);
+  color: #F2C063;
+  border-color: rgba(242,192,99,0.32);
+}
+.gm-streak.gm-streak-active .gm-streak-icon {
+  filter: drop-shadow(0 0 6px rgba(242,192,99,0.6));
+}
+
+.gm-bar {
+  display: flex; gap: 4px;
+  height: 6px;
+  margin-bottom: 16px;
+}
+.gm-bar:empty { display: none; }
+.gm-bar-seg {
+  flex: 1;
+  background: rgba(255,255,255,0.06);
+  border-radius: 3px;
+  transition: background 0.3s, box-shadow 0.3s;
+}
+.gm-bar-seg-done {
+  background: #6BE3A4;
+  box-shadow: 0 0 6px rgba(107,227,164,0.40);
+}
+
+.goal-list { list-style: none; margin: 0; padding: 0; }
+.empty-state {
+  text-align: center;
+  font-size: 12px; font-style: italic;
+  color: var(--text-tertiary);
+  padding: 14px 0;
+}
+
+.gm-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px;
+  margin-bottom: 6px;
+  background: rgba(255,255,255,0.035);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 12px;
+  transition: background 0.2s, opacity 0.3s;
+  position: relative;
+}
+.gm-row:hover { background: rgba(255,255,255,0.06); }
+.gm-row.gm-row-done {
+  opacity: 0.45;
+  background: rgba(107,227,164,0.04);
+}
+.gm-row.gm-row-done .gm-text {
+  text-decoration: line-through;
+  text-decoration-color: rgba(255,255,255,0.4);
+}
+.gm-row.gm-row-queued {
+  background: rgba(242,192,99,0.10);
+  box-shadow: inset 3px 0 0 0 #F2C063;
+}
+.gm-row.gm-row-queued .gm-text { color: #FFE2A8; }
+.gm-row.is-drag-over { border-top: 2px solid #6BE3A4; }
+.gm-row.is-queue-flashing { animation: gm-queue-flash 0.48s ease-out; }
+@keyframes gm-queue-flash {
+  0%   { background: rgba(255,255,255,0.035); transform: scale(1); }
+  40%  { background: rgba(242,192,99,0.32); transform: scale(1.015); }
+  100% { background: rgba(255,255,255,0.035); transform: scale(1); }
+}
+
+.gm-handle {
+  width: 14px; flex-shrink: 0;
+  color: var(--text-tertiary);
+  font-weight: 700; font-size: 14px;
+  letter-spacing: -2px;
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 0.2s;
+  user-select: none;
+}
+.gm-row:hover .gm-handle { opacity: 1; }
+.gm-handle:active { cursor: grabbing; }
+
+.gm-check {
+  appearance: none; -webkit-appearance: none;
+  width: 22px; height: 22px; flex-shrink: 0;
+  margin: 0;
+  border: 1.5px solid rgba(255,255,255,0.18);
+  background: rgba(0,0,0,0.28);
+  border-radius: 7px;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.25s;
+}
+.gm-check:checked {
+  background: #6BE3A4;
+  border-color: #6BE3A4;
+  box-shadow: 0 0 12px rgba(107,227,164,0.40);
+}
+.gm-check:checked::after {
+  content: '';
+  position: absolute; left: 6px; top: 2px;
+  width: 6px; height: 11px;
+  border: solid #0A0A0B;
+  border-width: 0 2.5px 2.5px 0;
+  transform: rotate(45deg);
+  animation: gm-check-pop 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes gm-check-pop {
+  from { transform: rotate(45deg) scale(0); }
+  to   { transform: rotate(45deg) scale(1); }
+}
+.gm-check:disabled { cursor: not-allowed; opacity: 0.55; }
+
+.gm-text {
+  flex: 1;
+  font-size: 14px;
+  color: var(--text-primary);
+  cursor: text;
+  outline: none;
+  border-radius: 4px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+}
+.gm-text[contenteditable="true"] {
+  outline: 1px solid rgba(255,255,255,0.18);
+  background: rgba(0,0,0,0.28);
+}
+
+.gm-queue-btn {
+  border: 0; background: transparent;
+  color: var(--text-tertiary);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  opacity: 0.55;
+  transition: opacity 0.2s, color 0.2s, transform 0.1s;
+}
+.gm-queue-btn:hover { opacity: 1; }
+.gm-queue-btn.gm-queue-active {
+  color: #F2C063;
+  opacity: 1;
+  filter: drop-shadow(0 0 4px rgba(242,192,99,0.65));
+}
+.gm-queue-btn:disabled { cursor: not-allowed; opacity: 0.3; }
+
+.goal-delete {
+  border: 0; background: transparent;
+  color: var(--text-tertiary);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 4px;
+  opacity: 0.5;
+  transition: opacity 0.2s, color 0.2s;
+}
+.gm-row:hover .goal-delete { opacity: 1; }
+.goal-delete:hover { color: var(--danger); }
+
+.gm-show-toggle {
+  width: 100%;
+  margin: 6px 0 0;
+  padding: 9px;
+  border: 1px dashed rgba(255,255,255,0.12);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-family: inherit;
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+.gm-show-toggle:hover { color: var(--text-primary); border-color: rgba(255,255,255,0.22); }
+
+.gm-push-btn {
+  width: 100%;
+  margin-top: 14px;
+  padding: 11px;
+  border: 1px dashed rgba(255,255,255,0.16);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-family: inherit;
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.10em; text-transform: uppercase;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+.gm-push-btn:hover {
+  color: var(--text-primary);
+  border-color: rgba(255,255,255,0.30);
+  border-style: solid;
+  background: rgba(255,255,255,0.04);
+}
+
+.goal-input-wrap.gm-input-wrap {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+.gm-input {
+  flex: 1; min-width: 0;
+  padding: 11px 14px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  background: rgba(0,0,0,0.28);
+  color: var(--text-primary);
+  font-family: inherit; font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s, background 0.2s;
+}
+.gm-input::placeholder { color: var(--text-tertiary); }
+.gm-input:focus { border-color: rgba(255,255,255,0.28); background: rgba(0,0,0,0.36); }
+
+.gm-add {
+  padding: 11px 20px;
+  border: 0; border-radius: 12px;
+  background: linear-gradient(180deg, #FFFFFF 0%, #E8E5DD 100%);
+  color: #0A0A0B;
+  font-family: inherit; font-size: 13px; font-weight: 700;
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.9),
+    0 2px 8px rgba(0,0,0,0.35),
+    0 8px 22px rgba(0,0,0,0.25);
+  transition: transform 0.1s, filter 0.15s;
+}
+.gm-add:hover { filter: brightness(1.06); transform: translateY(-1px); }
+.gm-add:active { transform: translateY(0); }
+
+.gm-polish {
+  padding: 11px 18px;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.04);
+  color: var(--text-primary);
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.gm-polish:hover {
+  background: rgba(255,255,255,0.07);
+  border-color: rgba(255,255,255,0.18);
+}
+
+.gm-status {
+  flex-basis: 100%;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  min-height: 14px;
+  margin-top: 4px;
+}
+.gm-status.gm-status-error { color: var(--danger); }
+
+@media (max-width: 480px) {
+  body { padding: max(20px, env(safe-area-inset-top)) 14px 50px; }
+  .gm-card { padding: 16px; }
+  .gm-progress-num { font-size: 36px; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1 class="dash-title">My Dashboard</h1>
+
+  <div class="ticker-row">
+    <div class="goal-ticker" id="goalTicker" aria-live="polite" aria-atomic="true">
+      <div class="goal-ticker-led"><span class="goal-ticker-led-dot"></span></div>
+      <div class="goal-ticker-label">GOALS</div>
+      <div class="goal-ticker-stage" id="goalTickerStage">
+        <div class="goal-ticker-row">
+          <span class="goal-ticker-status" data-status="">—</span>
+          <span class="goal-ticker-text">Loading…</span>
+        </div>
+      </div>
+      <div class="goal-ticker-meta" id="goalTickerMeta">0/0</div>
+    </div>
+  </div>
+
+  <div class="day-ring-wrap">
+    <div class="day-ring">
+      <svg viewBox="0 0 120 120">
+        <defs>
+          <filter id="dayRingGlow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="2.4" result="b" />
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+        <circle class="day-ring-track" cx="60" cy="60" r="52" />
+        <circle class="day-ring-fill"  cx="60" cy="60" r="52" id="dayRingFill" filter="url(#dayRingGlow)" />
+      </svg>
+      <div class="day-ring-overlay">
+        <div class="day-ring-percent" id="dayRingPercent">—</div>
+        <div class="day-ring-phase"   id="dayRingPhase">—</div>
+        <div class="day-ring-clock"   id="dayRingClock">—</div>
+      </div>
+    </div>
+    <div class="day-ring-text">
+      <div class="day-ring-status"    id="dayRingStatus">Loading…</div>
+      <div class="day-ring-remaining" id="dayRingRemaining">—</div>
+      <div class="day-ring-hours">8:00 AM – 12:00 AM</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">To Do List</div>
+
+    <!-- TODAY -->
+    <div class="gm-card" id="gmCardToday">
+      <div class="gm-header">
+        <div class="gm-header-left">
+          <div class="gm-eyebrow" id="todayLabel">Today —</div>
+          <div class="gm-progress-row">
+            <span class="gm-progress-num"   id="gmProgressNum">0</span>
+            <span class="gm-progress-total" id="gmProgressTotal">/ 0</span>
+            <span class="gm-progress-label" id="gmProgressLabel">no goals yet</span>
+          </div>
+        </div>
+        <div class="gm-streak" id="gmStreak">
+          <span class="gm-streak-icon">⚡</span>
+          <span class="gm-streak-num" id="gmStreakNum">0</span>
+          <span>day streak</span>
+        </div>
+      </div>
+      <div class="gm-bar" id="gmBar"></div>
+      <ul id="goalList" class="goal-list gm-list"></ul>
+      <div id="emptyState" class="empty-state">No goals for today yet — add one below.</div>
+      <button type="button" id="gmPushBtn" class="gm-push-btn" style="display:none;">Push remaining to tomorrow</button>
+      <div class="goal-input-wrap gm-input-wrap">
+        <input id="goalInput" class="gm-input" type="text" placeholder="Add a goal for today…" autocomplete="off">
+        <button type="button" id="goalAddBtn"    class="gm-add">+ Add</button>
+        <button type="button" id="goalPolishBtn" class="gm-polish">✨ Polish</button>
+        <div class="gm-status" id="polishStatus"></div>
+      </div>
+    </div>
+
+    <!-- PLAN TOMORROW -->
+    <div class="gm-card gm-card-tomorrow" id="gmCardTomorrow">
+      <div class="gm-header">
+        <div class="gm-header-left">
+          <div class="gm-eyebrow" id="tomorrowLabel">Plan tomorrow —</div>
+          <div class="gm-tomorrow-sub">Write tonight, locked until 6 AM.</div>
+        </div>
+        <div class="gm-tomorrow-count" id="gmTomorrowCount">0 planned</div>
+      </div>
+      <ul id="tomorrowList" class="goal-list gm-list"></ul>
+      <div id="tomorrowEmpty" class="empty-state">Nothing planned for tomorrow yet</div>
+      <div class="goal-input-wrap gm-input-wrap">
+        <input id="tomorrowInput" class="gm-input" type="text" placeholder="Add a goal for tomorrow…" autocomplete="off">
+        <button type="button" id="tomorrowAddBtn"    class="gm-add">+ Add</button>
+        <button type="button" id="tomorrowPolishBtn" class="gm-polish">✨ Polish</button>
+        <div class="gm-status" id="tomorrowStatus"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // Paste your Anthropic key here to enable ✨ Polish. Empty = falls back to plain add.
+  const ANTHROPIC_API_KEY = '';
+
+  const WAKE_HOUR  = 8;
+  const SLEEP_HOUR = 24;
+
+  // ---------- storage helpers ----------
+  function storeGet(key) {
+    try { return JSON.parse(localStorage.getItem(key)); } catch (e) { return null; }
+  }
+  function storeSet(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+    if (typeof key === 'string' && key.indexOf('goals:') === 0) {
+      window.dispatchEvent(new CustomEvent('goals-changed'));
+    }
+  }
+  function storeDelete(key) { try { localStorage.removeItem(key); } catch (e) {} }
+  function storeListKeys(prefix) {
+    const out = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.indexOf(prefix) === 0) out.push(k);
+    }
+    return out;
+  }
+
+  // ---------- date helpers ----------
+  function pad2(n) { return String(n).padStart(2, '0'); }
+  function dateToKey(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+  function getActiveDateString() {
+    const now = new Date();
+    if (now.getHours() < 6) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 1);
+      return dateToKey(d);
+    }
+    return dateToKey(now);
+  }
+  function getTomorrowDateString() {
+    const now = new Date();
+    const d = new Date(now);
+    if (now.getHours() >= 6) d.setDate(d.getDate() + 1);
+    return dateToKey(d);
+  }
+  function formatDate(yyyy_mm_dd) {
+    const parts = yyyy_mm_dd.split('-').map(Number);
+    const d = new Date(parts[0], parts[1] - 1, parts[2]);
+    const wk = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
+    const mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()];
+    return wk + ', ' + mo + ' ' + d.getDate();
+  }
+
+  function todayKey()    { return 'goals:' + getActiveDateString(); }
+  function tomorrowKey() { return 'goals:' + getTomorrowDateString(); }
+
+  function getGoals(key) {
+    const g = storeGet(key);
+    return Array.isArray(g) ? g : [];
+  }
+  function setGoals(key, list) { storeSet(key, list); }
+
+  // ---------- rollover: pull undone older goals into today ----------
+  function rollover() {
+    const todayDateStr = getActiveDateString();
+    const todayK = 'goals:' + todayDateStr;
+    let today = getGoals(todayK);
+    const texts = new Set(today.map(g => g.text));
+
+    storeListKeys('goals:').forEach(k => {
+      const dateStr = k.slice('goals:'.length);
+      if (dateStr >= todayDateStr) return;
+      const old = getGoals(k);
+      old.forEach(g => {
+        if (!g.done && g.text && !texts.has(g.text)) {
+          today.push({ text: g.text, done: false });
+          texts.add(g.text);
+        }
+      });
+      storeDelete(k);
+    });
+    setGoals(todayK, today);
+  }
+
+  // ---------- streak ----------
+  function loadStreak() {
+    const s = storeGet('goal_streak_v1');
+    if (s && typeof s.count === 'number') return s;
+    return { count: 0, lastProcessedDate: '' };
+  }
+  function saveStreak(s) { storeSet('goal_streak_v1', s); }
+
+  function processStreak() {
+    const s = loadStreak();
+    const todayDateStr = getActiveDateString();
+    const keys = storeListKeys('goals:')
+      .map(k => k.slice('goals:'.length))
+      .filter(d => d < todayDateStr)
+      .sort();
+    keys.forEach(dateStr => {
+      if (s.lastProcessedDate && dateStr <= s.lastProcessedDate) return;
+      const list = getGoals('goals:' + dateStr);
+      if (list.length === 0) { /* don't break the streak on empty days */ }
+      else if (list.every(g => g.done)) s.count += 1;
+      else s.count = 0;
+      s.lastProcessedDate = dateStr;
+    });
+    saveStreak(s);
+  }
+
+  // ---------- Goal Ticker ----------
+  const tickerStage = document.getElementById('goalTickerStage');
+  const tickerMeta  = document.getElementById('goalTickerMeta');
+  let cycleIdx = 0;
+  let tickerTimer = null;
+
+  function buildTickerItems() {
+    const goals = getGoals(todayKey());
+    const total = goals.length;
+    const done  = goals.filter(g => g.done).length;
+    if (total === 0) return { items: [{ status: 'empty',   text: 'No goals set for today — add one to get rolling.' }], done, total };
+    if (done === total) return { items: [{ status: 'done', text: '✓ All goals done — solid day.' }], done, total };
+    const items = goals.filter(g => !g.done).map(g => ({ status: 'pending', text: g.text }));
+    return { items, done, total };
+  }
+
+  function statusGlyph(status) {
+    if (status === 'done') return '✓';
+    if (status === 'pending') return '○';
+    return '·';
+  }
+
+  let firstTick = true;
+  function tick() {
+    const { items, done, total } = buildTickerItems();
+    if (cycleIdx >= items.length) cycleIdx = 0;
+    const item = items[cycleIdx];
+    cycleIdx = (cycleIdx + 1) % items.length;
+
+    const oldRow = tickerStage.querySelector('.goal-ticker-row');
+    const newRow = document.createElement('div');
+    newRow.className = 'goal-ticker-row';
+    const status = document.createElement('span');
+    status.className = 'goal-ticker-status';
+    status.setAttribute('data-status', item.status);
+    status.textContent = statusGlyph(item.status);
+    const text = document.createElement('span');
+    text.className = 'goal-ticker-text';
+    text.textContent = item.text;
+    newRow.appendChild(status);
+    newRow.appendChild(text);
+
+    if (oldRow && !firstTick) {
+      oldRow.classList.add('is-leaving');
+      setTimeout(() => oldRow.remove(), 460);
+      newRow.classList.add('is-entering');
+    } else if (oldRow) {
+      oldRow.remove();
+    }
+    tickerStage.appendChild(newRow);
+    firstTick = false;
+
+    tickerMeta.textContent = done + '/' + total;
+  }
+
+  function startTicker() {
+    tick();
+    if (tickerTimer) clearInterval(tickerTimer);
+    tickerTimer = setInterval(tick, 5000);
+  }
+
+  window.addEventListener('goals-changed', () => {
+    cycleIdx = 0;
+    tick();
+  });
+
+  // ---------- Day Ring ----------
+  const PALETTE = [
+    [0,    [255, 216, 158]],
+    [12.5, [255, 205, 121]],
+    [25,   [255, 227, 143]],
+    [37.5, [255, 183, 106]],
+    [50,   [255, 149,  89]],
+    [62.5, [243, 111,  79]],
+    [75,   [226,  93, 122]],
+    [87.5, [123,  91, 176]],
+    [100,  [ 47,  58, 102]]
+  ];
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function paletteAt(p) {
+    if (p <= PALETTE[0][0]) return PALETTE[0][1];
+    if (p >= PALETTE[PALETTE.length - 1][0]) return PALETTE[PALETTE.length - 1][1];
+    for (let i = 0; i < PALETTE.length - 1; i++) {
+      const [p0, c0] = PALETTE[i];
+      const [p1, c1] = PALETTE[i + 1];
+      if (p >= p0 && p <= p1) {
+        const t = (p - p0) / (p1 - p0);
+        return [lerp(c0[0], c1[0], t), lerp(c0[1], c1[1], t), lerp(c0[2], c1[2], t)];
+      }
+    }
+    return [255,255,255];
+  }
+  function rgb(c) { return 'rgb(' + Math.round(c[0]) + ',' + Math.round(c[1]) + ',' + Math.round(c[2]) + ')'; }
+
+  function formatClock(d) {
+    let h = d.getHours();
+    const m = d.getMinutes();
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12;
+    if (h === 0) h = 12;
+    return h + ':' + pad2(m) + ' ' + ampm;
+  }
+  function formatRemaining(totalMin) {
+    const h = Math.floor(totalMin / 60);
+    const m = Math.floor(totalMin % 60);
+    return h + 'h ' + m + 'm';
+  }
+
+  const C = 2 * Math.PI * 52;
+  const fillEl = document.getElementById('dayRingFill');
+  fillEl.setAttribute('stroke-dasharray', C);
+  fillEl.setAttribute('stroke-dashoffset', C);
+
+  function updateDayRing() {
+    const now = new Date();
+    const hours = now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;
+    const percentEl   = document.getElementById('dayRingPercent');
+    const phaseEl     = document.getElementById('dayRingPhase');
+    const clockEl     = document.getElementById('dayRingClock');
+    const statusEl    = document.getElementById('dayRingStatus');
+    const remainingEl = document.getElementById('dayRingRemaining');
+
+    clockEl.textContent = formatClock(now);
+
+    if (hours < WAKE_HOUR) {
+      fillEl.setAttribute('stroke-dashoffset', C);
+      fillEl.style.stroke = '#4D4B47';
+      percentEl.textContent = '—';
+      phaseEl.textContent   = 'SLEEPING';
+      statusEl.textContent  = '😴 Still sleeping';
+      const minsUntil = (WAKE_HOUR - hours) * 60;
+      remainingEl.textContent = formatRemaining(minsUntil) + ' until wake-up';
+      return;
+    }
+
+    if (hours >= SLEEP_HOUR) {
+      fillEl.setAttribute('stroke-dashoffset', 0);
+      fillEl.style.stroke = '#E25D7A';
+      percentEl.textContent = '100%';
+      phaseEl.textContent   = 'PAST BEDTIME';
+      statusEl.textContent  = '⚠️ Past bedtime';
+      remainingEl.textContent = 'Sleep!';
+      return;
+    }
+
+    const span = SLEEP_HOUR - WAKE_HOUR;
+    const percent = (hours - WAKE_HOUR) / span * 100;
+    fillEl.setAttribute('stroke-dashoffset', C * (1 - percent / 100));
+    fillEl.style.stroke = rgb(paletteAt(percent));
+    percentEl.textContent = Math.floor(percent) + '%';
+
+    let phase, status;
+    if (percent < 25)      { phase = 'MORNING';   status = '☀️ Morning — fresh start'; }
+    else if (percent < 50) { phase = 'MIDDAY';    status = '⚡ Midday — keep moving'; }
+    else if (percent < 75) { phase = 'AFTERNOON'; status = '🔥 Afternoon — push it'; }
+    else if (percent < 90) { phase = 'EVENING';   status = '⏳ Evening — wrap up'; }
+    else                   { phase = 'BEDTIME';   status = '🌙 Bedtime soon'; }
+    phaseEl.textContent  = phase;
+    statusEl.textContent = status;
+
+    const minsLeft = (SLEEP_HOUR - hours) * 60;
+    remainingEl.textContent = formatRemaining(minsLeft) + ' awake time left';
+  }
+
+  // ---------- Row building ----------
+  function makeInlineEdit(textEl, goals, idx, key, reload) {
+    textEl.addEventListener('click', () => {
+      if (textEl.getAttribute('contenteditable') === 'true') return;
+      const original = textEl.textContent;
+      textEl.setAttribute('contenteditable', 'true');
+      textEl.focus();
+      const range = document.createRange();
+      range.selectNodeContents(textEl);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel.removeAllRanges(); sel.addRange(range);
+
+      function commit() {
+        const next = textEl.textContent.trim();
+        textEl.removeAttribute('contenteditable');
+        if (next && next !== original) {
+          const list = getGoals(key);
+          if (list[idx]) { list[idx].text = next; setGoals(key, list); }
+          reload();
+        } else {
+          textEl.textContent = original;
+        }
+      }
+      function cancel() {
+        textEl.removeAttribute('contenteditable');
+        textEl.textContent = original;
+      }
+      textEl.addEventListener('blur', commit, { once: true });
+      textEl.addEventListener('keydown', function onKey(e) {
+        if (e.key === 'Enter') { e.preventDefault(); textEl.removeEventListener('keydown', onKey); textEl.blur(); }
+        else if (e.key === 'Escape') { e.preventDefault(); textEl.removeEventListener('keydown', onKey); cancel(); }
+      });
+    });
+  }
+
+  function wireDragReorder(row, listEl, key, reload) {
+    row.setAttribute('draggable', 'true');
+    row.addEventListener('dragstart', (e) => {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', row.dataset.idx);
+    });
+    row.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      row.classList.add('is-drag-over');
+    });
+    row.addEventListener('dragleave', () => row.classList.remove('is-drag-over'));
+    row.addEventListener('drop', (e) => {
+      e.preventDefault();
+      row.classList.remove('is-drag-over');
+      const from = parseInt(e.dataTransfer.getData('text/plain'), 10);
+      const to   = parseInt(row.dataset.idx, 10);
+      if (isNaN(from) || isNaN(to) || from === to) return;
+      const list = getGoals(key);
+      const [moved] = list.splice(from, 1);
+      list.splice(to, 0, moved);
+      setGoals(key, list);
+      reload();
+    });
+  }
+
+  function buildGoalRow(goal, idx, key, readOnly, reload) {
+    const li = document.createElement('li');
+    li.className = 'gm-row';
+    li.dataset.idx = String(idx);
+    if (goal.done) li.classList.add('gm-row-done');
+    if (goal.queued) li.classList.add('gm-row-queued');
+
+    const handle = document.createElement('span');
+    handle.className = 'gm-handle';
+    handle.textContent = '⋮⋮';
+    li.appendChild(handle);
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'gm-check';
+    cb.checked = !!goal.done;
+    if (readOnly) { cb.disabled = true; cb.title = 'Activates at 6 AM tomorrow'; }
+    cb.addEventListener('change', () => {
+      const list = getGoals(key);
+      if (!list[idx]) return;
+      list[idx].done = cb.checked;
+      if (cb.checked) list[idx].doneAt = Date.now();
+      else delete list[idx].doneAt;
+      setGoals(key, list);
+      reload();
+    });
+    li.appendChild(cb);
+
+    const text = document.createElement('span');
+    text.className = 'gm-text';
+    text.textContent = goal.text;
+    li.appendChild(text);
+    makeInlineEdit(text, null, idx, key, reload);
+
+    const queueBtn = document.createElement('button');
+    queueBtn.type = 'button';
+    queueBtn.className = 'gm-queue-btn' + (goal.queued ? ' gm-queue-active' : '');
+    queueBtn.textContent = '⚡';
+    queueBtn.title = 'Queue for productivity window';
+    if (readOnly) queueBtn.disabled = true;
+    queueBtn.addEventListener('click', () => {
+      const list = getGoals(key);
+      if (!list[idx]) return;
+      list[idx].queued = !list[idx].queued;
+      setGoals(key, list);
+      li.classList.add('is-queue-flashing');
+      setTimeout(reload, 480);
+    });
+    li.appendChild(queueBtn);
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'goal-delete';
+    del.setAttribute('aria-label', 'Delete goal');
+    del.textContent = '×';
+    del.addEventListener('click', () => {
+      const list = getGoals(key);
+      list.splice(idx, 1);
+      setGoals(key, list);
+      reload();
+    });
+    li.appendChild(del);
+
+    wireDragReorder(li, null, key, reload);
+    return li;
+  }
+
+  // ---------- Renderers ----------
+  function renderTodayHeader() {
+    const goals = getGoals(todayKey());
+    const total = goals.length;
+    const done  = goals.filter(g => g.done).length;
+    document.getElementById('gmProgressNum').textContent   = done;
+    document.getElementById('gmProgressTotal').textContent = '/ ' + total;
+    const label = document.getElementById('gmProgressLabel');
+    if (total === 0)        label.textContent = 'no goals yet';
+    else if (done === total) label.textContent = 'all done — solid day';
+    else                     label.textContent = 'complete';
+
+    document.getElementById('todayLabel').textContent =
+      'Today — ' + formatDate(getActiveDateString());
+
+    const bar = document.getElementById('gmBar');
+    bar.innerHTML = '';
+    goals.forEach(g => {
+      const seg = document.createElement('div');
+      seg.className = 'gm-bar-seg' + (g.done ? ' gm-bar-seg-done' : '');
+      bar.appendChild(seg);
+    });
+
+    const card = document.getElementById('gmCardToday');
+    card.classList.toggle('gm-all-done', total > 0 && done === total);
+
+    const pushBtn = document.getElementById('gmPushBtn');
+    pushBtn.style.display = (total > 0 && done < total) ? 'block' : 'none';
+  }
+
+  function renderStreak() {
+    const s = loadStreak();
+    document.getElementById('gmStreakNum').textContent = s.count;
+    document.getElementById('gmStreak').classList.toggle('gm-streak-active', s.count > 0);
+  }
+
+  function renderTomorrowCount() {
+    const list = getGoals(tomorrowKey());
+    document.getElementById('gmTomorrowCount').textContent = list.length + ' planned';
+    document.getElementById('tomorrowLabel').textContent =
+      'Plan tomorrow — ' + formatDate(getTomorrowDateString());
+  }
+
+  function renderListInto(goals, listEl, emptyEl, key, readOnly) {
+    listEl.innerHTML = '';
+    emptyEl.style.display = goals.length === 0 ? 'block' : 'none';
+    const reload = () => (key === todayKey() ? loadToday() : loadTomorrow());
+
+    const visible = goals.length > 5 ? goals.slice(0, 5) : goals;
+    visible.forEach((g, i) => listEl.appendChild(buildGoalRow(g, i, key, readOnly, reload)));
+
+    if (goals.length > 5) {
+      let expanded = false;
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'gm-show-toggle';
+      const updateLabel = () => {
+        toggle.textContent = expanded ? 'Show less ▴' : ('Show ' + (goals.length - 5) + ' more ▾');
+      };
+      updateLabel();
+      toggle.addEventListener('click', () => {
+        expanded = !expanded;
+        if (expanded) {
+          goals.slice(5).forEach((g, i) => {
+            const row = buildGoalRow(g, i + 5, key, readOnly, reload);
+            listEl.insertBefore(row, toggle);
+          });
+        } else {
+          Array.from(listEl.querySelectorAll('.gm-row')).slice(5).forEach(r => r.remove());
+        }
+        updateLabel();
+      });
+      listEl.appendChild(toggle);
+    }
+
+    if (key === todayKey()) renderTodayHeader();
+    else                    renderTomorrowCount();
+  }
+
+  function loadToday() {
+    const goals = getGoals(todayKey());
+    renderListInto(goals, document.getElementById('goalList'), document.getElementById('emptyState'), todayKey(), false);
+  }
+  function loadTomorrow() {
+    const goals = getGoals(tomorrowKey());
+    renderListInto(goals, document.getElementById('tomorrowList'), document.getElementById('tomorrowEmpty'), tomorrowKey(), true);
+  }
+
+  // ---------- Push remaining ----------
+  document.getElementById('gmPushBtn').addEventListener('click', () => {
+    const today    = getGoals(todayKey());
+    const remaining = today.filter(g => !g.done);
+    if (remaining.length === 0) return;
+    if (!confirm('Move ' + remaining.length + ' unchecked goal' + (remaining.length === 1 ? '' : 's') + ' to tomorrow?')) return;
+    const tomorrow = getGoals(tomorrowKey());
+    const seen = new Set(tomorrow.map(g => g.text));
+    remaining.forEach(g => {
+      if (!seen.has(g.text)) { tomorrow.push({ text: g.text, done: false }); seen.add(g.text); }
+    });
+    setGoals(tomorrowKey(), tomorrow);
+    setGoals(todayKey(), today.filter(g => g.done));
+    loadToday(); loadTomorrow();
+  });
+
+  // ---------- Add + Polish handlers ----------
+  function showStatus(el, message, isError) {
+    el.textContent = message;
+    el.classList.toggle('gm-status-error', !!isError);
+    clearTimeout(el._t);
+    el._t = setTimeout(() => { el.textContent = ''; el.classList.remove('gm-status-error'); }, 3500);
+  }
+
+  async function polishOne(text) {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 1000,
+        messages: [{
+          role: 'user',
+          content:
+            'Rewrite this single goal so it is concrete, action-oriented, and under 60 characters. ' +
+            'Return ONLY a JSON array with exactly one string, no preamble, no code fences.\n\nGoal: ' + text
+        }]
+      })
+    });
+    const data = await res.json();
+    const content = (data && data.content && data.content[0] && data.content[0].text) || '';
+    const arr = JSON.parse(content);
+    if (!Array.isArray(arr) || arr.length < 1 || typeof arr[0] !== 'string') throw new Error('bad response');
+    return arr[0].trim();
+  }
+
+  function makeAddHandlers(input, addBtn, polishBtn, key, statusEl, reload) {
+    function plainAdd(text) {
+      const list = getGoals(key);
+      list.push({ text, done: false });
+      setGoals(key, list);
+      input.value = '';
+      reload();
+    }
+    addBtn.addEventListener('click', () => {
+      const text = input.value.trim();
+      if (!text) return;
+      plainAdd(text);
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); addBtn.click(); }
+    });
+    polishBtn.addEventListener('click', async () => {
+      const text = input.value.trim();
+      if (!text) return;
+      if (!ANTHROPIC_API_KEY) {
+        plainAdd(text);
+        showStatus(statusEl, 'Polish needs an Anthropic API key — added as-typed.', false);
+        return;
+      }
+      polishBtn.disabled = true;
+      try {
+        const polished = await polishOne(text);
+        plainAdd(polished);
+      } catch (e) {
+        plainAdd(text);
+        showStatus(statusEl, 'Polish failed — added as-typed.', true);
+      } finally {
+        polishBtn.disabled = false;
+      }
+    });
+  }
+
+  makeAddHandlers(
+    document.getElementById('goalInput'),
+    document.getElementById('goalAddBtn'),
+    document.getElementById('goalPolishBtn'),
+    todayKey(),
+    document.getElementById('polishStatus'),
+    loadToday
+  );
+  makeAddHandlers(
+    document.getElementById('tomorrowInput'),
+    document.getElementById('tomorrowAddBtn'),
+    document.getElementById('tomorrowPolishBtn'),
+    tomorrowKey(),
+    document.getElementById('tomorrowStatus'),
+    loadTomorrow
+  );
+
+  // ---------- Boot ----------
+  rollover();
+  processStreak();
+  loadToday();
+  loadTomorrow();
+  renderStreak();
+  updateDayRing();
+  setInterval(updateDayRing, 60 * 1000);
+  startTicker();
+
+  // Re-render when storage changes from another tab (or our bridged parent).
+  window.addEventListener('storage', () => {
+    loadToday(); loadTomorrow(); renderStreak();
+  });
+})();
+</script>
+</body>
+</html>

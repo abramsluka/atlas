@@ -1,0 +1,1104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0b">
+<title>Water Coach</title>
+<script src="topbar.js" defer></script>
+
+<!-- =============================================================
+     EDIT THIS BLOCK TO MAKE THE APP YOURS.
+     Most settings are also editable in-app via the gear icon.
+     ============================================================= -->
+<script>
+const CONFIG = {
+  appTitle: "Water Coach",
+
+  // Default unit. Options: "bottle" | "glass" | "oz" | "ml"
+  unit: "bottle",
+
+  // Volume per "bottle" / "glass" in ml. 500 = standard water bottle,
+  // 250 = a typical drinking glass.
+  bottleMl: 500,
+  glassMl: 250,
+
+  // Default user profile (gets overwritten by what you save in Settings).
+  profile: {
+    weightKg: 75,
+    age: 25,
+    sex: "m",            // "m" | "f" | "o"
+    activityHrsPerWeek: 5
+  },
+
+  // Default daily caffeine in mg (200 mg ≈ two cups of coffee).
+  caffeineMgPerDay: 200,
+
+  // Pre-loaded substances. The Settings → Stimulants & meds search uses
+  // this list; users can add custom entries with `extraWaterMl` each.
+  // Numbers are conservative additions to daily water needs based on
+  // peer-reviewed effects (diuresis, dry-mouth, reduced thirst signal,
+  // narrow-therapeutic-window safety bumps).
+  defaultSubstances: []
+};
+</script>
+
+<style>
+:root {
+  --bg: #0a0a0b;
+  --bg-card: #111113;
+  --text-1: #ffffff;
+  --text-2: rgba(255,255,255,0.6);
+  --text-3: rgba(255,255,255,0.4);
+  --text-4: rgba(255,255,255,0.25);
+  --border: rgba(255,255,255,0.06);
+  --border-strong: rgba(255,255,255,0.14);
+  --good: #6ee7b7;
+  --warn: #fbbf24;
+  --bad: #ff8a8a;
+  --info: #7DD3FC;
+  --font: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, SF Mono, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0;
+  background: radial-gradient(ellipse 80% 60% at 50% 0%, #14141a 0%, #0a0a0b 60%);
+  color: var(--text-1);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+.shell { max-width: 720px; margin: 0 auto; padding: 24px 16px 80px; }
+
+/* ----- Top day pill + header ----- */
+.day-pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 12px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 700; letter-spacing: 0.10em;
+  text-transform: uppercase; margin-bottom: 10px;
+  -webkit-tap-highlight-color: transparent;
+}
+.day-pill .day-sep { color: var(--text-4); }
+
+.header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 18px;
+}
+.title { font-size: 22px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
+.icon-btn {
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 10px; color: var(--text-2); cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.18s, color 0.18s;
+}
+.icon-btn:hover { background: rgba(255,255,255,0.08); color: var(--text-1); }
+
+/* ----- Eyebrow divider ----- */
+.divider {
+  display: flex; align-items: center; gap: 16px; margin-bottom: 14px;
+}
+.divider::before, .divider::after {
+  content: ''; flex: 1; height: 1px; background: rgba(255,255,255,0.10);
+}
+.divider span {
+  font-size: 11px; letter-spacing: 0.22em; font-weight: 600;
+  color: rgba(255,255,255,0.85);
+}
+
+/* ----- Card ----- */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 22px 20px 18px;
+  margin-bottom: 14px;
+}
+
+/* ----- Water hero ----- */
+.water-label {
+  font-size: 10px; letter-spacing: 0.20em; font-weight: 700;
+  color: var(--text-3); margin-bottom: 8px; text-transform: uppercase;
+}
+.water-row {
+  display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px;
+}
+.water-num {
+  font-size: 56px; font-weight: 700; letter-spacing: -0.03em;
+  line-height: 1; font-variant-numeric: tabular-nums;
+}
+.water-target {
+  font-size: 18px; color: var(--text-3); font-weight: 500;
+}
+
+/* Progress bar */
+.water-bar-wrap { position: relative; margin: 14px 0 22px; }
+.water-bar-track {
+  position: relative; height: 28px; border-radius: 14px;
+  background: rgba(255,255,255,0.04);
+  overflow: hidden;
+}
+.water-bar-fill {
+  position: absolute; top: 0; bottom: 0; left: 0;
+  border-radius: 14px;
+  background: linear-gradient(90deg, var(--info), var(--good));
+  transition: width 0.4s ease;
+  box-shadow: 0 0 18px rgba(110,231,183,0.18);
+}
+.water-bar-fill.over {
+  background: linear-gradient(90deg, var(--good), var(--warn));
+}
+.water-bar-zone {
+  position: absolute; top: 0; bottom: 0;
+  width: 1px; background: rgba(255,255,255,0.18);
+}
+.water-bar-labels {
+  display: flex; justify-content: space-between;
+  margin-top: 6px;
+  font-size: 10px; color: var(--text-3);
+  font-family: var(--font-mono);
+}
+.water-bar-labels .water-zone-name {
+  color: var(--good); font-weight: 700; letter-spacing: 0.10em;
+  text-transform: lowercase;
+}
+
+/* Action row */
+.water-actions {
+  display: grid; grid-template-columns: 56px 1fr; gap: 10px; align-items: stretch;
+}
+.water-minus-btn {
+  background: rgba(255,255,255,0.06);
+  border: none; border-radius: 16px;
+  color: var(--text-1);
+  font-size: 22px; font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.water-minus-btn:hover { background: rgba(255,255,255,0.10); }
+.water-minus-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.water-plus-btn {
+  background: linear-gradient(180deg, #ffffff 0%, #e8e5dd 100%);
+  color: #0a0a0b; border: none; border-radius: 16px;
+  font-family: inherit; font-size: 16px; font-weight: 700;
+  cursor: pointer; padding: 16px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.55), 0 4px 14px rgba(0,0,0,0.40);
+}
+.water-plus-btn:hover { transform: translateY(-1px); }
+.water-plus-btn:active { transform: scale(0.98); }
+
+.water-helper {
+  text-align: center; font-size: 12px;
+  color: var(--text-3); margin-top: 12px;
+  font-style: italic;
+}
+.water-helper.good { color: var(--good); font-style: normal; }
+
+/* ----- Why this target? collapsible ----- */
+.why-toggle {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  background: transparent; border: 1px solid var(--border);
+  color: var(--text-2); border-radius: 10px;
+  padding: 11px 14px; cursor: pointer; margin-top: 14px;
+  font-family: inherit; font-size: 12px; font-weight: 600;
+  letter-spacing: 0.04em;
+  -webkit-tap-highlight-color: transparent;
+}
+.why-toggle:hover { background: rgba(255,255,255,0.04); color: var(--text-1); }
+.why-arrow { transition: transform 0.2s; font-size: 14px; }
+.why-toggle[aria-expanded="true"] .why-arrow { transform: rotate(180deg); }
+.why-body {
+  margin-top: 8px;
+  padding: 14px 16px;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: none;
+}
+.why-body.show { display: block; }
+.why-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 13px; padding: 4px 0;
+  font-variant-numeric: tabular-nums;
+}
+.why-row .why-label { color: var(--text-2); }
+.why-row .why-val   { color: var(--text-1); font-weight: 600; font-family: var(--font-mono); }
+.why-row.total {
+  border-top: 1px solid var(--border);
+  margin-top: 8px; padding-top: 10px;
+}
+.why-row.total .why-label { color: var(--good); font-weight: 700; }
+.why-row.total .why-val   { color: var(--good); }
+
+/* ----- History ----- */
+.hist-row {
+  display: grid; grid-template-columns: 70px 1fr auto; gap: 10px;
+  padding: 10px 0; align-items: center;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.hist-row:last-child { border-bottom: none; }
+.hist-date { font-size: 11px; color: var(--text-3); font-family: var(--font-mono); }
+.hist-bar-wrap {
+  height: 8px; background: rgba(255,255,255,0.04); border-radius: 4px; overflow: hidden;
+}
+.hist-bar-fill {
+  height: 100%; background: linear-gradient(90deg, var(--info), var(--good));
+  border-radius: 4px;
+}
+.hist-bar-fill.miss { background: rgba(255,138,138,0.4); }
+.hist-count {
+  font-family: var(--font-mono); font-size: 12px;
+  color: var(--text-2); font-variant-numeric: tabular-nums;
+}
+
+/* ----- Mini chart for last 14 days ----- */
+.spark-wrap { padding: 6px 0; }
+.spark-svg { width: 100%; height: 70px; display: block; }
+.spark-bar { fill: var(--good); }
+.spark-bar.miss { fill: rgba(255,138,138,0.5); }
+.spark-target {
+  stroke: rgba(255,255,255,0.20);
+  stroke-width: 1; stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+
+/* ----- Modal ----- */
+.modal-bg {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.65); backdrop-filter: blur(6px);
+  z-index: 100; align-items: center; justify-content: center; padding: 20px;
+}
+.modal-bg.show { display: flex; }
+.modal {
+  width: 100%; max-width: 480px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  padding: 22px; max-height: 88vh; overflow-y: auto;
+}
+.modal h3 {
+  margin: 0 0 14px; font-size: 17px; font-weight: 700;
+}
+.set-section { margin-bottom: 22px; }
+.set-section h4 {
+  margin: 0 0 8px; font-size: 11px; font-weight: 800; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--text-3);
+}
+
+/* ----- Form fields ----- */
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.field label {
+  font-size: 11px; color: var(--text-3); font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+.field input[type="number"], .field input[type="text"], .field select {
+  background: rgba(0,0,0,0.28);
+  border: 1px solid var(--border);
+  color: var(--text-1);
+  font-family: inherit; font-size: 14px;
+  padding: 10px 12px; border-radius: 10px; outline: none;
+  -moz-appearance: textfield;
+}
+.field input[type="number"]::-webkit-outer-spin-button,
+.field input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.field input:focus, .field select:focus {
+  border-color: rgba(110,231,183,0.40);
+  box-shadow: 0 0 0 2px rgba(110,231,183,0.10);
+}
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.seg {
+  display: flex; gap: 4px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 10px; padding: 3px;
+}
+.seg button {
+  flex: 1; padding: 9px; border: none; background: transparent;
+  color: var(--text-3); border-radius: 7px;
+  font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.seg button.active {
+  background: linear-gradient(180deg, #ffffff 0%, #e8e5dd 100%);
+  color: #0a0a0b;
+}
+
+/* ----- Stimulant search ----- */
+.search-wrap { position: relative; }
+.search-input {
+  width: 100%; background: rgba(0,0,0,0.28);
+  border: 1px solid var(--border);
+  color: var(--text-1); font-family: inherit; font-size: 14px;
+  padding: 11px 14px; border-radius: 10px; outline: none;
+}
+.search-input:focus { border-color: rgba(110,231,183,0.40); }
+.search-results {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px; padding: 4px;
+  max-height: 240px; overflow-y: auto;
+  z-index: 5;
+  display: none;
+}
+.search-results.show { display: block; }
+.search-result {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 9px 12px; border-radius: 7px;
+  cursor: pointer; font-size: 13px;
+  -webkit-tap-highlight-color: transparent;
+}
+.search-result:hover { background: rgba(255,255,255,0.05); }
+.search-result-name { color: var(--text-1); font-weight: 600; }
+.search-result-meta {
+  font-size: 10.5px; color: var(--text-3);
+  font-family: var(--font-mono);
+}
+.search-result-add { color: var(--good); }
+
+.subs-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.sub-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  flex-wrap: wrap;
+}
+.sub-row-info { flex: 1; min-width: 140px; }
+.sub-row-name { font-size: 13px; font-weight: 600; color: var(--text-1); }
+.sub-row-meta {
+  font-size: 11px; color: var(--text-3);
+  font-variant-numeric: tabular-nums; font-family: var(--font-mono);
+  margin-top: 2px;
+}
+.sub-row-dose {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(0,0,0,0.30);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+.sub-row-dose .sub-dose-input {
+  width: 56px; background: transparent; border: none; outline: none;
+  color: var(--text-1); font-family: inherit; font-size: 13px;
+  font-weight: 600; text-align: center;
+  font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+}
+.sub-row-dose .sub-dose-input::-webkit-outer-spin-button,
+.sub-row-dose .sub-dose-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.sub-row-dose .sub-dose-unit {
+  font-size: 11px; color: var(--text-3);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.sub-row-del {
+  background: transparent; border: none; color: var(--text-4);
+  font-size: 16px; cursor: pointer; padding: 4px 8px;
+  -webkit-tap-highlight-color: transparent;
+}
+.sub-row-del:hover { color: var(--bad); }
+
+/* ----- Buttons ----- */
+.btn-primary {
+  width: 100%; padding: 13px;
+  border: none;
+  background: linear-gradient(180deg, #ffffff 0%, #e8e5dd 100%);
+  color: #0a0a0b; border-radius: 12px;
+  font-family: inherit; font-size: 14px; font-weight: 700;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.55), 0 4px 14px rgba(0,0,0,0.40);
+  -webkit-tap-highlight-color: transparent;
+}
+.btn-secondary {
+  padding: 11px 16px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.04);
+  color: var(--text-1); border-radius: 10px;
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn-secondary:hover { background: rgba(255,255,255,0.10); }
+.modal-actions {
+  display: flex; gap: 8px; margin-top: 16px;
+}
+.modal-actions .btn-primary { flex: 1; }
+
+@media (max-width: 480px) {
+  .shell { padding: 16px 12px 60px; }
+  .water-num { font-size: 48px; }
+}
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <button class="day-pill" id="dayPill" type="button">
+    <span id="dayPillLabel">—</span>
+  </button>
+
+  <div class="header">
+    <h1 class="title" id="appTitle">Water Coach</h1>
+    <button class="icon-btn" id="settingsBtn" title="Settings" aria-label="Settings">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+
+  <div class="divider"><span>WATER</span></div>
+
+  <div class="card">
+    <div class="water-label" id="waterUnitLabel">BOTTLES DRANK TODAY</div>
+    <div class="water-row">
+      <span class="water-num" id="waterNum">0</span>
+      <span class="water-target" id="waterTarget">/ 9</span>
+    </div>
+
+    <div class="water-bar-wrap">
+      <div class="water-bar-track">
+        <div class="water-bar-fill" id="waterBarFill" style="width:0%"></div>
+        <div class="water-bar-zone" id="waterBarZoneStart" style="left:55%"></div>
+        <div class="water-bar-zone" id="waterBarZoneEnd"   style="left:80%"></div>
+      </div>
+      <div class="water-bar-labels">
+        <span id="waterBarMin">0</span>
+        <span class="water-zone-name">healthy zone</span>
+        <span id="waterBarMax">12+</span>
+      </div>
+    </div>
+
+    <div class="water-actions">
+      <button class="water-minus-btn" id="waterMinusBtn" type="button" aria-label="Undo last">−</button>
+      <button class="water-plus-btn" id="waterPlusBtn" type="button">
+        <span id="waterPlusLabel">Drank a bottle</span>
+        <span>↑</span>
+      </button>
+    </div>
+    <div class="water-helper" id="waterHelper">Start the day — first one in.</div>
+
+    <button class="why-toggle" id="whyToggle" type="button" aria-expanded="false">
+      <span>Why this target?</span>
+      <span class="why-arrow">▾</span>
+    </button>
+    <div class="why-body" id="whyBody"></div>
+  </div>
+
+  <div class="card">
+    <div class="water-label">LAST 14 DAYS</div>
+    <div class="spark-wrap">
+      <svg class="spark-svg" id="sparkSvg" viewBox="0 0 280 70" preserveAspectRatio="none"></svg>
+    </div>
+    <div id="histList" style="margin-top:14px"></div>
+  </div>
+</div>
+
+<!-- Settings modal -->
+<div class="modal-bg" id="setModalBg">
+  <div class="modal">
+    <h3>Settings</h3>
+
+    <div class="set-section">
+      <h4>Profile</h4>
+      <div class="field-row">
+        <div class="field">
+          <label>Weight</label>
+          <input type="number" id="setWeight" step="0.5" min="20" max="300">
+        </div>
+        <div class="field">
+          <label>Weight unit</label>
+          <div class="seg" id="setWeightUnit">
+            <button data-u="kg">kg</button>
+            <button data-u="lb">lb</button>
+          </div>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Age</label>
+          <input type="number" id="setAge" min="13" max="100">
+        </div>
+        <div class="field">
+          <label>Sex</label>
+          <div class="seg" id="setSex">
+            <button data-s="m">Male</button>
+            <button data-s="f">Female</button>
+            <button data-s="o">Other</button>
+          </div>
+        </div>
+      </div>
+      <div class="field">
+        <label>Activity (training hours per week)</label>
+        <input type="number" id="setActivity" min="0" max="40" step="0.5">
+      </div>
+    </div>
+
+    <div class="set-section">
+      <h4>Display</h4>
+      <div class="field">
+        <label>Show water as</label>
+        <div class="seg" id="setUnit">
+          <button data-u="bottle">Bottles</button>
+          <button data-u="glass">Glasses</button>
+          <button data-u="oz">oz</button>
+          <button data-u="ml">ml</button>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Bottle size (ml)</label>
+          <input type="number" id="setBottleMl" min="100" max="2000" step="50">
+        </div>
+        <div class="field">
+          <label>Glass size (ml)</label>
+          <input type="number" id="setGlassMl" min="100" max="500" step="10">
+        </div>
+      </div>
+    </div>
+
+    <div class="set-section">
+      <h4>Caffeine</h4>
+      <div class="field">
+        <label>Average caffeine per day (mg)</label>
+        <input type="number" id="setCaffeine" min="0" max="1000" step="10">
+        <div style="font-size:11px;color:var(--text-3);margin-top:4px;line-height:1.4">
+          ~1 cup of coffee = 95mg · espresso shot = 75mg · energy drink = 160mg.
+          Above 200mg/day starts to add a small water requirement.
+        </div>
+      </div>
+    </div>
+
+    <div class="set-section">
+      <h4>Stimulants & meds</h4>
+      <div class="field">
+        <label>Search to add</label>
+        <div class="search-wrap">
+          <input type="text" class="search-input" id="subSearch" placeholder="Type a name (Adderall, Concerta, Lithium…)" autocomplete="off">
+          <div class="search-results" id="subResults"></div>
+        </div>
+        <div style="font-size:11px;color:var(--text-3);margin-top:4px;line-height:1.4">
+          Each substance bumps your daily water target. Includes ADHD stims,
+          diuretics, decongestants, nicotine, alcohol, and a few others.
+        </div>
+      </div>
+      <div class="subs-list" id="subsList"></div>
+    </div>
+
+    <div class="set-section">
+      <h4>Data</h4>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn-secondary" id="setExport">Export JSON</button>
+        <button class="btn-secondary" id="setImport">Import JSON</button>
+        <button class="btn-secondary" id="setReset" style="color:var(--bad);border-color:rgba(255,138,138,0.3)">Reset all</button>
+      </div>
+      <input type="file" id="setImportFile" accept=".json" style="display:none">
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-primary" id="setClose">Done</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const $ = (id) => document.getElementById(id);
+
+  // ============================================================
+  // SUBSTANCE DATABASE — daily water bumps scale with YOUR dose.
+  //
+  // Each entry has:
+  //   unit         — what you measure the dose in (mg, pouches/day, drinks/day…)
+  //   defaultDose  — typical adult therapeutic dose (just a starting value)
+  //   mlPerUnit    — extra ml of water needed per 1 unit of dose
+  //
+  // Final water bump for a substance you've added = dose × mlPerUnit.
+  // So 36mg Concerta → 36 × 13.9 ≈ 500ml. 18mg Concerta → ≈ 250ml.
+  //
+  // Numbers based on conservative reads of:
+  //   - ADHD stim diuresis + reduced thirst signal (Adler/Wilens reviews)
+  //   - Lithium narrow therapeutic window (Cooper 2014, NICE guidelines)
+  //   - Thiazide / loop diuretic SE profiles
+  //   - Alcohol diuresis (Hobson 2010 — ~10ml urine per gram ethanol)
+  // ============================================================
+  const SUBSTANCE_DB = [
+    { id: 'adderall',    name: 'Adderall (mixed amphetamine salts)', cat: 'ADHD stim',    unit: 'mg',           defaultDose: 20,   mlPerUnit: 25,    note: 'Stim · reduces thirst signal · dries you out' },
+    { id: 'concerta',    name: 'Concerta (methylphenidate ER)',      cat: 'ADHD stim',    unit: 'mg',           defaultDose: 36,   mlPerUnit: 13.9,  note: 'Stim · reduces thirst signal' },
+    { id: 'vyvanse',     name: 'Vyvanse (lisdexamfetamine)',         cat: 'ADHD stim',    unit: 'mg',           defaultDose: 50,   mlPerUnit: 10,    note: 'Stim prodrug · long acting' },
+    { id: 'ritalin',     name: 'Ritalin IR (methylphenidate)',       cat: 'ADHD stim',    unit: 'mg',           defaultDose: 20,   mlPerUnit: 20,    note: 'Short-acting stim' },
+    { id: 'focalin',     name: 'Focalin / Focalin XR',               cat: 'ADHD stim',    unit: 'mg',           defaultDose: 20,   mlPerUnit: 20,    note: 'Methylphenidate isomer' },
+    { id: 'modafinil',   name: 'Modafinil',                          cat: 'Wakefulness',  unit: 'mg',           defaultDose: 200,  mlPerUnit: 1.75,  note: 'Mild dehydrating effect' },
+    { id: 'lithium',     name: 'Lithium',                            cat: 'Mood',         unit: 'mg',           defaultDose: 600,  mlPerUnit: 1.67,  note: 'Critical — narrow therapeutic window, dehydration → toxicity' },
+    { id: 'hctz',        name: 'Hydrochlorothiazide (HCTZ)',         cat: 'Diuretic',     unit: 'mg',           defaultDose: 25,   mlPerUnit: 40,    note: 'Direct diuretic — drink to compensate' },
+    { id: 'lasix',       name: 'Furosemide (Lasix)',                 cat: 'Diuretic',     unit: 'mg',           defaultDose: 40,   mlPerUnit: 30,    note: 'Loop diuretic · talk to your doctor about target' },
+    { id: 'spironol',    name: 'Spironolactone',                     cat: 'Diuretic',     unit: 'mg',           defaultDose: 50,   mlPerUnit: 12,    note: 'K-sparing diuretic' },
+    { id: 'sudafed',     name: 'Pseudoephedrine (Sudafed)',          cat: 'Decongestant', unit: 'mg',           defaultDose: 60,   mlPerUnit: 4.17,  note: 'Sympathomimetic · dries mucous membranes' },
+    { id: 'phenyl',      name: 'Phenylephrine',                      cat: 'Decongestant', unit: 'mg',           defaultDose: 10,   mlPerUnit: 20,    note: 'Vasoconstrictor — mild' },
+    { id: 'nicotine',    name: 'Nicotine pouch (Velo / Zyn)',        cat: 'Stim',         unit: 'pouches/day',  defaultDose: 4,    mlPerUnit: 62.5,  note: 'Vasoconstriction + dry mouth' },
+    { id: 'nicpatch',    name: 'Nicotine patch',                     cat: 'Stim',         unit: 'mg',           defaultDose: 14,   mlPerUnit: 18,    note: '24-h transdermal · sustained release' },
+    { id: 'alcohol',     name: 'Alcohol',                            cat: 'Depressant',   unit: 'drinks/day',   defaultDose: 1,    mlPerUnit: 400,   note: '~10ml urine per gram ethanol — adds up fast' },
+    { id: 'cannabis',    name: 'Cannabis / THC',                     cat: 'Other',        unit: 'sessions/day', defaultDose: 1,    mlPerUnit: 250,   note: 'Cottonmouth — saliva gland inhibition' },
+    { id: 'creatine',    name: 'Creatine monohydrate',               cat: 'Supplement',   unit: 'g/day',        defaultDose: 5,    mlPerUnit: 80,    note: 'Pulls water into muscle cells — drink more' },
+    { id: 'preworkout',  name: 'Pre-workout (caffeine + others)',    cat: 'Stim',         unit: 'servings/day', defaultDose: 1,    mlPerUnit: 300,   note: 'High-stim formula on top of caffeine' },
+    { id: 'metformin',   name: 'Metformin',                          cat: 'Glucose',      unit: 'mg',           defaultDose: 1000, mlPerUnit: 0.3,   note: 'Mild GI fluid loss' },
+    { id: 'sertraline',  name: 'SSRI (sertraline / escitalopram / fluoxetine)', cat: 'SSRI', unit: 'mg',         defaultDose: 50,   mlPerUnit: 4,     note: 'Mild dry mouth in some users' },
+    { id: 'wellbutrin',  name: 'Bupropion (Wellbutrin)',             cat: 'NDRI',         unit: 'mg',           defaultDose: 300,  mlPerUnit: 1.17,  note: 'Stim-like profile' }
+  ];
+
+  // Compute the actual ml/day a saved substance contributes given the user's dose.
+  function subExtraMl(s) {
+    const dose = (s.dose != null ? s.dose : s.defaultDose) || 0;
+    return Math.max(0, dose * (s.mlPerUnit || 0));
+  }
+  function subDoseLabel(s) {
+    const dose = (s.dose != null ? s.dose : s.defaultDose);
+    return dose + ' ' + (s.unit || '');
+  }
+
+  // ============================================================
+  // STATE
+  // ============================================================
+  const LS_KEY = 'po_water_v1';
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) return normalize(JSON.parse(raw));
+    } catch (e) {}
+    return normalize({});
+  }
+  function normalize(s) {
+    s = s || {};
+    s.unit = s.unit || CONFIG.unit || 'bottle';
+    s.bottleMl = s.bottleMl || CONFIG.bottleMl || 500;
+    s.glassMl  = s.glassMl  || CONFIG.glassMl  || 250;
+    s.weightUnit = s.weightUnit || 'kg';
+    s.profile = Object.assign({}, CONFIG.profile, s.profile || {});
+    s.caffeineMgPerDay = (s.caffeineMgPerDay != null) ? s.caffeineMgPerDay : (CONFIG.caffeineMgPerDay || 200);
+    s.substances = Array.isArray(s.substances) ? s.substances : (CONFIG.defaultSubstances || []);
+    s.logs = (s.logs && typeof s.logs === 'object') ? s.logs : {};  // {YYYY-MM-DD: number_of_servings}
+    return s;
+  }
+  function saveState() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {}
+  }
+  let state = loadState();
+  $('appTitle').textContent = CONFIG.appTitle || 'Water Coach';
+
+  // Helpers
+  function dateKey(d) {
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+  function todayKey() { return dateKey(new Date()); }
+  function todayCount() { return state.logs[todayKey()] || 0; }
+  function setTodayCount(n) {
+    const k = todayKey();
+    if (n <= 0) delete state.logs[k];
+    else state.logs[k] = n;
+    saveState();
+  }
+
+  // ============================================================
+  // CALCULATOR — daily water target in ml
+  //
+  //   base_ml    = weight_kg × 35 ml      (NAM/IOM standard)
+  //   exercise   = activity_hrs/wk ÷ 7 × 500 ml/day   (≈500 ml/hr training)
+  //   caffeine   = max(0, caffeineMg − 200) × 1.5 ml  (mild diuresis)
+  //   substances = sum of extraMl for each added med/stim
+  //   adjustments: +200 ml male, +100 ml age 50+
+  // ============================================================
+  function computeTargetMl() {
+    const p = state.profile;
+    const wKg = state.weightUnit === 'lb' ? p.weightKg / 2.20462 : p.weightKg;
+    const base = wKg * 35;
+    const exercise = (p.activityHrsPerWeek || 0) / 7 * 500;
+    const caffeine = Math.max(0, (state.caffeineMgPerDay || 0) - 200) * 1.5;
+    const subs = (state.substances || []).reduce((s, x) => s + subExtraMl(x), 0);
+    let adjust = 0;
+    if (p.sex === 'm') adjust += 200;
+    if ((p.age || 0) >= 50) adjust += 100;
+    return {
+      base, exercise, caffeine, subs, adjust,
+      total: base + exercise + caffeine + subs + adjust
+    };
+  }
+
+  function unitVolMl() {
+    if (state.unit === 'bottle') return state.bottleMl || 500;
+    if (state.unit === 'glass')  return state.glassMl  || 250;
+    if (state.unit === 'oz')     return 30;     // 1 fl oz ≈ 29.57 ml
+    return 1;                                   // ml
+  }
+  function unitLabelPlural() {
+    if (state.unit === 'bottle') return 'bottles';
+    if (state.unit === 'glass')  return 'glasses';
+    if (state.unit === 'oz')     return 'oz';
+    return 'ml';
+  }
+  function unitLabelSingular() {
+    if (state.unit === 'bottle') return 'bottle';
+    if (state.unit === 'glass')  return 'glass';
+    if (state.unit === 'oz')     return 'oz';
+    return 'ml';
+  }
+  function fmtMl(ml) {
+    if (ml >= 1000) return (ml / 1000).toFixed(1) + ' L';
+    return Math.round(ml) + ' ml';
+  }
+
+  // ============================================================
+  // RENDER
+  // ============================================================
+  function renderDayPill() {
+    const d = new Date();
+    const dows = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+    const mons = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    $('dayPillLabel').textContent = dows[d.getDay()] + ', ' + mons[d.getMonth()] + ' ' + d.getDate();
+  }
+
+  function renderWater() {
+    const calc = computeTargetMl();
+    const targetUnits = Math.ceil(calc.total / unitVolMl());
+    const count = todayCount();
+    const unitName = unitLabelPlural();
+
+    $('waterUnitLabel').textContent = unitName.toUpperCase() + ' DRANK TODAY';
+    $('waterNum').textContent = count;
+    $('waterTarget').textContent = '/ ' + targetUnits;
+    $('waterPlusLabel').textContent = 'Drank a ' + unitLabelSingular();
+
+    // Progress bar with three zones: low (0-65%), healthy (65-100%), over (100-150%)
+    const pctRaw = (count / targetUnits) * 100;
+    const fillPct = Math.min(150, pctRaw) / 1.5;   // bar represents 0-150%
+    const fill = $('waterBarFill');
+    fill.style.width = fillPct + '%';
+    fill.classList.toggle('over', pctRaw > 100);
+    $('waterBarMin').textContent = '0';
+    $('waterBarMax').textContent = (Math.ceil(targetUnits * 1.5)) + '+';
+    // Healthy zone bands at 65% and 100%
+    $('waterBarZoneStart').style.left = (65 / 1.5) + '%';
+    $('waterBarZoneEnd').style.left   = (100 / 1.5) + '%';
+
+    // Helper text
+    const helper = $('waterHelper');
+    if (count === 0) { helper.textContent = 'Start the day — first one in.'; helper.classList.remove('good'); }
+    else if (pctRaw < 50) { helper.textContent = 'Behind pace — drink one in the next hour.'; helper.classList.remove('good'); }
+    else if (pctRaw < 100) { helper.textContent = (targetUnits - count) + ' to go. Pacing well.'; helper.classList.remove('good'); }
+    else if (pctRaw < 130) { helper.textContent = '✓ Target hit — top up if you train this evening.'; helper.classList.add('good'); }
+    else { helper.textContent = 'Strong — way past target.'; helper.classList.add('good'); }
+
+    // Disable minus when at zero
+    $('waterMinusBtn').disabled = count <= 0;
+
+    renderWhy(calc, targetUnits);
+    renderHistory();
+    renderSparkline(targetUnits);
+  }
+
+  function renderWhy(calc, targetUnits) {
+    const wrap = $('whyBody');
+    const u = state.weightUnit;
+    const wDisp = u === 'lb' ? (state.profile.weightKg).toFixed(0) : state.profile.weightKg.toFixed(0);
+    let html = '';
+    html += '<div class="why-row"><span class="why-label">Base (' + wDisp + ' ' + u + ' × 35 ml)</span><span class="why-val">' + fmtMl(calc.base) + '</span></div>';
+    if (calc.exercise > 0)
+      html += '<div class="why-row"><span class="why-label">+ Exercise (' + state.profile.activityHrsPerWeek + ' h/wk)</span><span class="why-val">+ ' + fmtMl(calc.exercise) + '</span></div>';
+    if (calc.caffeine > 0)
+      html += '<div class="why-row"><span class="why-label">+ Caffeine (' + state.caffeineMgPerDay + ' mg/day)</span><span class="why-val">+ ' + fmtMl(calc.caffeine) + '</span></div>';
+    (state.substances || []).forEach(s => {
+      html += '<div class="why-row"><span class="why-label">+ ' + escape(s.name) + ' (' + escape(subDoseLabel(s)) + ')</span><span class="why-val">+ ' + fmtMl(subExtraMl(s)) + '</span></div>';
+    });
+    if (calc.adjust > 0)
+      html += '<div class="why-row"><span class="why-label">+ Sex / age adjustment</span><span class="why-val">+ ' + fmtMl(calc.adjust) + '</span></div>';
+    html += '<div class="why-row total"><span class="why-label">Daily target</span><span class="why-val">' + fmtMl(calc.total) + ' ≈ ' + targetUnits + ' ' + unitLabelPlural() + '</span></div>';
+    wrap.innerHTML = html;
+  }
+
+  function renderHistory() {
+    const list = $('histList');
+    const target = Math.ceil(computeTargetMl().total / unitVolMl());
+    // Last 7 days
+    const days = [];
+    for (let i = 6; i >= 1; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const k = dateKey(d);
+      const n = state.logs[k] || 0;
+      days.push({ date: d, key: k, count: n });
+    }
+    list.innerHTML = days.map(({date, count}) => {
+      const dows = ['Sun','Mon','Tue','Wed','THU','Fri','Sat'];
+      const lbl = dows[date.getDay()] + ' ' + (date.getMonth()+1) + '/' + date.getDate();
+      const pct = Math.min(100, (count / target) * 100);
+      const cls = (count >= target) ? '' : 'miss';
+      return '<div class="hist-row">'
+        + '<span class="hist-date">' + lbl + '</span>'
+        + '<div class="hist-bar-wrap"><div class="hist-bar-fill ' + cls + '" style="width:' + pct + '%"></div></div>'
+        + '<span class="hist-count">' + count + '/' + target + '</span>'
+        + '</div>';
+    }).join('') || '<div style="text-align:center;font-size:12px;color:var(--text-3);padding:12px 0">No logs yet.</div>';
+  }
+
+  function renderSparkline(target) {
+    const svg = $('sparkSvg');
+    const W = 280, H = 70, pad = 4;
+    const days = 14;
+    const data = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const k = dateKey(d);
+      data.push(state.logs[k] || 0);
+    }
+    const maxVal = Math.max(target, Math.max.apply(null, data)) || 1;
+    const colW = (W - pad * 2) / data.length;
+    const barW = colW * 0.7;
+    let html = '';
+    // Target line
+    const targetY = H - pad - (target / maxVal) * (H - pad * 2);
+    html += '<line class="spark-target" x1="0" x2="' + W + '" y1="' + targetY.toFixed(1) + '" y2="' + targetY.toFixed(1) + '"/>';
+    data.forEach((v, i) => {
+      const x = pad + i * colW + (colW - barW) / 2;
+      const h = (v / maxVal) * (H - pad * 2);
+      const y = H - pad - h;
+      const cls = (v >= target) ? 'spark-bar' : 'spark-bar miss';
+      html += '<rect class="' + cls + '" x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + Math.max(0, h).toFixed(1) + '" rx="2"/>';
+    });
+    svg.innerHTML = html;
+  }
+
+  function renderAll() { renderDayPill(); renderWater(); }
+
+  // ============================================================
+  // EVENT WIRING
+  // ============================================================
+  $('waterPlusBtn').addEventListener('click', () => {
+    setTodayCount(todayCount() + 1);
+    renderWater();
+    const btn = $('waterPlusBtn');
+    btn.style.transform = 'scale(0.97)';
+    setTimeout(() => { btn.style.transform = ''; }, 120);
+  });
+  $('waterMinusBtn').addEventListener('click', () => {
+    setTodayCount(Math.max(0, todayCount() - 1));
+    renderWater();
+  });
+
+  $('whyToggle').addEventListener('click', () => {
+    const body = $('whyBody');
+    const open = body.classList.contains('show');
+    body.classList.toggle('show');
+    $('whyToggle').setAttribute('aria-expanded', open ? 'false' : 'true');
+  });
+
+  // ============================================================
+  // SETTINGS
+  // ============================================================
+  function renderSettings() {
+    $('setWeight').value = state.profile.weightKg;
+    $('setAge').value = state.profile.age;
+    $('setActivity').value = state.profile.activityHrsPerWeek;
+    $('setCaffeine').value = state.caffeineMgPerDay;
+    $('setBottleMl').value = state.bottleMl;
+    $('setGlassMl').value = state.glassMl;
+
+    setSegActive('setUnit', state.unit);
+    setSegActive('setWeightUnit', state.weightUnit);
+    setSegActive('setSex', state.profile.sex);
+
+    renderSubsList();
+  }
+  function setSegActive(segId, value) {
+    $(segId).querySelectorAll('button').forEach(b => {
+      const v = b.dataset.u || b.dataset.s;
+      b.classList.toggle('active', v === value);
+    });
+  }
+  function bindSeg(segId, attr, onPick) {
+    $(segId).querySelectorAll('button').forEach(b => {
+      b.addEventListener('click', () => {
+        const v = b.dataset[attr];
+        $(segId).querySelectorAll('button').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        onPick(v);
+      });
+    });
+  }
+  bindSeg('setUnit', 'u', (v) => { state.unit = v; saveState(); renderWater(); });
+  bindSeg('setWeightUnit', 'u', (v) => { state.weightUnit = v; saveState(); renderWater(); });
+  bindSeg('setSex', 's', (v) => { state.profile.sex = v; saveState(); renderWater(); });
+
+  ['setWeight','setAge','setActivity','setCaffeine','setBottleMl','setGlassMl'].forEach(id => {
+    $(id).addEventListener('input', () => {
+      const v = parseFloat($(id).value);
+      if (id === 'setWeight') state.profile.weightKg = v || 0;
+      else if (id === 'setAge') state.profile.age = v || 0;
+      else if (id === 'setActivity') state.profile.activityHrsPerWeek = v || 0;
+      else if (id === 'setCaffeine') state.caffeineMgPerDay = v || 0;
+      else if (id === 'setBottleMl') state.bottleMl = v || 500;
+      else if (id === 'setGlassMl') state.glassMl = v || 250;
+      saveState(); renderWater();
+    });
+  });
+
+  function renderSubsList() {
+    const list = $('subsList');
+    if (!state.substances || !state.substances.length) {
+      list.innerHTML = '<div style="font-size:12px;color:var(--text-3);text-align:center;padding:14px 0;font-style:italic;">No substances added.</div>';
+      return;
+    }
+    list.innerHTML = state.substances.map((s, i) =>
+      '<div class="sub-row" data-i="' + i + '">'
+      + '<div class="sub-row-info">'
+      +   '<div class="sub-row-name">' + escape(s.name) + '</div>'
+      +   '<div class="sub-row-meta">+ ' + fmtMl(subExtraMl(s)) + ' / day · ' + escape(s.cat || '') + '</div>'
+      + '</div>'
+      + '<div class="sub-row-dose">'
+      +   '<input type="number" class="sub-dose-input" data-i="' + i + '" min="0" step="0.5" value="' + (s.dose != null ? s.dose : s.defaultDose) + '">'
+      +   '<span class="sub-dose-unit">' + escape(s.unit || '') + '</span>'
+      + '</div>'
+      + '<button class="sub-row-del" data-i="' + i + '" aria-label="Remove">×</button>'
+      + '</div>'
+    ).join('');
+    list.querySelectorAll('.sub-dose-input').forEach(inp => {
+      inp.addEventListener('input', () => {
+        const i = parseInt(inp.dataset.i, 10);
+        state.substances[i].dose = parseFloat(inp.value) || 0;
+        saveState();
+        // Re-render the meta line for this row + the why card
+        const row = inp.closest('.sub-row');
+        const meta = row.querySelector('.sub-row-meta');
+        meta.textContent = '+ ' + fmtMl(subExtraMl(state.substances[i])) + ' / day · ' + (state.substances[i].cat || '');
+        renderWater();
+      });
+    });
+    list.querySelectorAll('.sub-row-del').forEach(b => {
+      b.addEventListener('click', () => {
+        state.substances.splice(parseInt(b.dataset.i, 10), 1);
+        saveState(); renderSubsList(); renderWater();
+      });
+    });
+  }
+
+  // Substance search
+  $('subSearch').addEventListener('input', (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    const results = $('subResults');
+    if (!q) { results.classList.remove('show'); results.innerHTML = ''; return; }
+    const matches = SUBSTANCE_DB.filter(s =>
+      s.name.toLowerCase().includes(q) || s.cat.toLowerCase().includes(q)
+    ).slice(0, 8);
+    if (!matches.length) {
+      results.innerHTML = '<div class="search-result"><span class="search-result-name">No matches</span><span class="search-result-meta">Try a different name or category</span></div>';
+      results.classList.add('show');
+      return;
+    }
+    results.innerHTML = matches.map(s => {
+      const defaultExtra = (s.defaultDose || 0) * (s.mlPerUnit || 0);
+      return '<div class="search-result" data-id="' + s.id + '">'
+        + '<span class="search-result-name">' + escape(s.name) + ' <span class="search-result-add">+</span></span>'
+        + '<span class="search-result-meta">' + escape(s.cat) + ' · ' + s.defaultDose + ' ' + escape(s.unit) + ' default → adds ~' + fmtMl(defaultExtra) + '/day · ' + escape(s.note) + '</span>'
+        + '</div>';
+    }).join('');
+    results.classList.add('show');
+    results.querySelectorAll('.search-result').forEach(el => {
+      el.addEventListener('click', () => {
+        const id = el.dataset.id;
+        const sub = SUBSTANCE_DB.find(x => x.id === id);
+        if (!sub) return;
+        if ((state.substances || []).find(x => x.id === id)) { alert('Already added — edit the dose below.'); return; }
+        state.substances.push({
+          id: sub.id, name: sub.name, cat: sub.cat,
+          unit: sub.unit, mlPerUnit: sub.mlPerUnit,
+          defaultDose: sub.defaultDose,
+          dose: sub.defaultDose
+        });
+        saveState();
+        $('subSearch').value = '';
+        results.classList.remove('show');
+        renderSubsList(); renderWater();
+      });
+    });
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.search-wrap')) $('subResults').classList.remove('show');
+  });
+
+  $('settingsBtn').addEventListener('click', () => {
+    renderSettings();
+    $('setModalBg').classList.add('show');
+  });
+  $('setClose').addEventListener('click', () => $('setModalBg').classList.remove('show'));
+
+  // Export / import / reset
+  $('setExport').addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'water-coach-data-' + new Date().toISOString().slice(0,10) + '.json';
+    a.click(); URL.revokeObjectURL(url);
+  });
+  $('setImport').addEventListener('click', () => $('setImportFile').click());
+  $('setImportFile').addEventListener('change', e => {
+    const f = e.target.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = () => {
+      try {
+        const parsed = JSON.parse(r.result);
+        if (!confirm('Replace ALL current data with the imported file?')) return;
+        state = normalize(parsed);
+        saveState(); renderSettings(); renderAll();
+      } catch (err) { alert('Import failed: ' + err.message); }
+    };
+    r.readAsText(f);
+  });
+  $('setReset').addEventListener('click', () => {
+    if (!confirm('Wipe ALL water logs and settings? This cannot be undone.')) return;
+    localStorage.removeItem(LS_KEY);
+    state = loadState();
+    $('setModalBg').classList.remove('show');
+    renderAll();
+  });
+
+  function escape(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // BOOT
+  renderAll();
+})();
+</script>
+<style>
+/* === iPhone bottom-safe-area fix ===
+   The Done button in the settings modal + the bottom of the page were
+   getting blocked by the iPhone home indicator. These rules add
+   safe-area padding so nothing sits under it. */
+.shell {
+  padding-bottom: calc(80px + env(safe-area-inset-bottom));
+}
+.modal-bg {
+  padding-bottom: max(20px, env(safe-area-inset-bottom));
+  padding-top: max(20px, env(safe-area-inset-top));
+}
+.modal {
+  max-height: calc(88vh - env(safe-area-inset-bottom));
+}
+.water-plus-btn,
+.water-minus-btn {
+  margin-bottom: max(0px, env(safe-area-inset-bottom));
+}
+</style>
+
+</body>
+</html>

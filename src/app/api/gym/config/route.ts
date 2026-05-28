@@ -12,6 +12,7 @@ const DEFAULT_CONFIG = {
   split_anchor: null,
   units: 'lbs',
   upgrade_at_reps: 12,
+  upgrade_at_reps_auto: false,
 }
 
 export async function GET() {

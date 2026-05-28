@@ -330,6 +330,9 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const [settingsDays, setSettingsDays] = useState(config.days)
   const [settingsUnits, setSettingsUnits] = useState(config.units)
   const [settingsUpgradeAt, setSettingsUpgradeAt] = useState(config.upgrade_at_reps)
+  const [settingsUpgradeAtAuto, setSettingsUpgradeAtAuto] = useState(config.upgrade_at_reps_auto ?? false)
+  const [coachRepRec, setCoachRepRec] = useState<{ reps: number; reason: string } | null>(null)
+  const importRef = useRef<HTMLInputElement>(null)
 
   // ── derived ──────────────────────────────────────────────────────────────
 
@@ -464,12 +467,14 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   }
 
   function saveSettings() {
+    const finalReps = settingsUpgradeAtAuto && coachRepRec ? coachRepRec.reps : settingsUpgradeAt
     saveConfig.mutate({
       ...config,
       gyms: settingsGyms,
       days: settingsDays,
       units: settingsUnits,
-      upgrade_at_reps: settingsUpgradeAt,
+      upgrade_at_reps: finalReps,
+      upgrade_at_reps_auto: settingsUpgradeAtAuto,
     })
     setShowSettings(false)
   }
@@ -479,7 +484,57 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     setSettingsDays(config.days.map(d => ({ ...d })))
     setSettingsUnits(config.units)
     setSettingsUpgradeAt(config.upgrade_at_reps)
+    setSettingsUpgradeAtAuto(config.upgrade_at_reps_auto ?? false)
+    setCoachRepRec(null)
     setShowSettings(true)
+  }
+
+  async function fetchCoachReps() {
+    setCoachRepRec(null)
+    try {
+      const res = await fetch('/api/gym/coach-reps', { method: 'POST' })
+      const json = await res.json()
+      setCoachRepRec(json)
+    } catch {
+      setCoachRepRec({ reps: 12, reason: 'Could not reach coach — using default.' })
+    }
+  }
+
+  async function handleExport() {
+    const res = await fetch('/api/gym/export')
+    const json = await res.json()
+    const blob = new Blob([JSON.stringify(json, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `atlas-gym-export-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const text = await file.text()
+    const json = JSON.parse(text)
+    await fetch('/api/gym/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(json),
+    })
+    qc.invalidateQueries({ queryKey: ['gym-config'] })
+    qc.invalidateQueries({ queryKey: ['gym-exercises'] })
+    qc.invalidateQueries({ queryKey: ['po-logs'] })
+    setShowSettings(false)
+  }
+
+  async function handleReset() {
+    if (!window.confirm('Delete all gym data? This cannot be undone.')) return
+    await fetch('/api/gym/reset', { method: 'DELETE' })
+    qc.invalidateQueries({ queryKey: ['gym-config'] })
+    qc.invalidateQueries({ queryKey: ['gym-exercises'] })
+    qc.invalidateQueries({ queryKey: ['po-logs'] })
+    setShowSettings(false)
   }
 
   function handlePhotoFile(file: File) {
@@ -648,38 +703,44 @@ export default function GymClient({ today, initialConfig, initialExercises, init
           <div className="px-5 pt-5 pb-4">
             <p className="text-xs text-white/40 uppercase tracking-widest mb-4">Progressive Overload Coach</p>
 
-            {/* Gym filter chips */}
-            <div className="flex gap-2 mb-3 overflow-x-auto pb-1 scrollbar-none">
-              {config.gyms.map(g => (
-                <button
-                  key={g.id}
-                  onClick={() => setFilterGym(g.id)}
-                  className={`flex-shrink-0 rounded-full px-3 py-1 text-xs font-medium border transition-colors ${
-                    filterGym === g.id
-                      ? 'bg-white text-black border-transparent'
-                      : 'bg-transparent text-white/50 border-white/15'
-                  }`}
-                >
-                  {g.name}
-                </button>
-              ))}
+            {/* Gym filter */}
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30 w-10 flex-shrink-0">GYM</span>
+              <div className="flex-1 flex rounded-xl bg-white/5 border border-white/8 p-1 gap-1">
+                {config.gyms.map(g => (
+                  <button
+                    key={g.id}
+                    onClick={() => setFilterGym(g.id)}
+                    className={`flex-1 rounded-lg py-2.5 text-sm font-semibold transition-colors ${
+                      filterGym === g.id
+                        ? 'bg-white text-black shadow-sm'
+                        : 'text-white/40'
+                    }`}
+                  >
+                    {g.name}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* Day filter chips */}
-            <div className="flex gap-2 mb-4 overflow-x-auto pb-1 scrollbar-none">
-              {config.days.map(d => (
-                <button
-                  key={d.id}
-                  onClick={() => setFilterDay(d.id)}
-                  className={`flex-shrink-0 rounded-full px-3 py-1 text-xs font-medium border transition-colors ${
-                    filterDay === d.id
-                      ? 'bg-green-400 text-black border-transparent'
-                      : 'bg-transparent text-white/50 border-white/15'
-                  }`}
-                >
-                  {d.name}
-                </button>
-              ))}
+            {/* Day filter */}
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30 w-10 flex-shrink-0">DAY</span>
+              <div className="flex-1 flex rounded-xl bg-white/5 border border-white/8 p-1 gap-1">
+                {config.days.map(d => (
+                  <button
+                    key={d.id}
+                    onClick={() => setFilterDay(d.id)}
+                    className={`flex-1 rounded-lg py-2.5 text-sm font-semibold transition-colors ${
+                      filterDay === d.id
+                        ? 'bg-white text-black shadow-sm'
+                        : 'text-white/40'
+                    }`}
+                  >
+                    {d.name}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Exercise select */}
@@ -1437,11 +1498,40 @@ export default function GymClient({ today, initialConfig, initialExercises, init
               <div>
                 <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Upgrade at reps</label>
                 <input
-                  type="number" min="1" max="20" value={settingsUpgradeAt}
+                  type="number" min="1" max="30" value={settingsUpgradeAt}
+                  disabled={settingsUpgradeAtAuto}
                   onChange={e => setSettingsUpgradeAt(parseInt(e.target.value) || 12)}
-                  className="w-full rounded-xl bg-white/8 border border-white/10 px-4 py-3 text-sm text-white focus:outline-none"
+                  className={`w-full rounded-xl bg-white/8 border border-white/10 px-4 py-3 text-sm text-white focus:outline-none ${settingsUpgradeAtAuto ? 'opacity-40 cursor-not-allowed' : ''}`}
                 />
                 <p className="text-xs text-white/30 mt-1">Hit this rep count 2 sessions in a row → increase weight</p>
+
+                <button
+                  onClick={() => {
+                    const next = !settingsUpgradeAtAuto
+                    setSettingsUpgradeAtAuto(next)
+                    if (next) fetchCoachReps()
+                    else setCoachRepRec(null)
+                  }}
+                  className={`mt-3 flex items-center justify-between w-full rounded-xl px-4 py-3 border transition-colors ${settingsUpgradeAtAuto ? 'bg-white/10 border-white/20' : 'bg-white/5 border-white/10'}`}
+                >
+                  <div className="text-left">
+                    <p className="text-sm font-medium text-white">Let coach decide</p>
+                    <p className="text-xs text-white/40 mt-0.5">
+                      {settingsUpgradeAtAuto
+                        ? coachRepRec
+                          ? `Coach says: ${coachRepRec.reps} reps`
+                          : 'Asking coach…'
+                        : 'AI sets this based on your training data'}
+                    </p>
+                  </div>
+                  <div className={`w-10 h-6 rounded-full transition-colors flex items-center px-1 flex-shrink-0 ${settingsUpgradeAtAuto ? 'bg-white' : 'bg-white/20'}`}>
+                    <div className={`w-4 h-4 rounded-full transition-transform ${settingsUpgradeAtAuto ? 'bg-black translate-x-4' : 'bg-white/60'}`} />
+                  </div>
+                </button>
+
+                {settingsUpgradeAtAuto && coachRepRec && (
+                  <p className="text-xs text-white/30 mt-2 leading-relaxed">{coachRepRec.reason}</p>
+                )}
               </div>
 
               {/* Gyms */}
@@ -1500,6 +1590,32 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 >
                   + Add day
                 </button>
+              </div>
+
+              {/* Data */}
+              <div>
+                <label className="text-xs text-white/40 uppercase tracking-wider block mb-3">Data</label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleExport}
+                    className="flex-1 rounded-xl bg-white/8 border border-white/10 px-4 py-3 text-sm font-medium text-white active:opacity-70"
+                  >
+                    Export JSON
+                  </button>
+                  <button
+                    onClick={() => importRef.current?.click()}
+                    className="flex-1 rounded-xl bg-white/8 border border-white/10 px-4 py-3 text-sm font-medium text-white active:opacity-70"
+                  >
+                    Import JSON
+                  </button>
+                  <button
+                    onClick={handleReset}
+                    className="flex-1 rounded-xl border border-red-500/40 px-4 py-3 text-sm font-medium text-red-400 active:opacity-70"
+                  >
+                    Reset all
+                  </button>
+                </div>
+                <input ref={importRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
               </div>
             </div>
 
