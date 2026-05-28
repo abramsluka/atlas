@@ -1390,25 +1390,25 @@ function WaterSection({
               <div className="grid grid-cols-2 gap-2.5">
                 <WSettingField label="Height (ft)" hint="Improves calorie accuracy">
                   <input type="number" min="3" max="8"
-                    value={localProfile.height_cm != null ? Math.floor(localProfile.height_cm / 30.48) : ''}
+                    value={localProfile.height_cm != null ? Math.floor(Math.round(localProfile.height_cm / 2.54) / 12) : ''}
                     onChange={e => {
                       const ft = parseInt(e.target.value) || 0
                       const existingIn = localProfile.height_cm != null
-                        ? Math.round((localProfile.height_cm % 30.48) / 2.54)
+                        ? Math.round(localProfile.height_cm / 2.54) % 12
                         : 0
-                      updateLocal({ height_cm: Math.round((ft * 12 + existingIn) * 2.54) })
+                      updateLocal({ height_cm: (ft * 12 + existingIn) * 2.54 })
                     }}
                     className={INPUT_CLS} />
                 </WSettingField>
                 <WSettingField label="Height (in)">
                   <input type="number" min="0" max="11"
-                    value={localProfile.height_cm != null ? Math.round((localProfile.height_cm % 30.48) / 2.54) : ''}
+                    value={localProfile.height_cm != null ? Math.round(localProfile.height_cm / 2.54) % 12 : ''}
                     onChange={e => {
                       const inches = parseInt(e.target.value) || 0
                       const existingFt = localProfile.height_cm != null
-                        ? Math.floor(localProfile.height_cm / 30.48)
+                        ? Math.floor(Math.round(localProfile.height_cm / 2.54) / 12)
                         : 0
-                      updateLocal({ height_cm: Math.round((existingFt * 12 + inches) * 2.54) })
+                      updateLocal({ height_cm: (existingFt * 12 + inches) * 2.54 })
                     }}
                     className={INPUT_CLS} />
                 </WSettingField>
