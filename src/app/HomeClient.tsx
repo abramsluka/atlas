@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useTodayCheckin } from '@/features/workouts/queries'
-import { useSaveMorningCheckin, useSaveEveningCheckin } from '@/features/workouts/mutations'
+import { useSaveEveningCheckin } from '@/features/workouts/mutations'
 import type { DailyCheckin } from '@/features/workouts/types'
 
 // ─── Day Ring ────────────────────────────────────────────────────────────────
@@ -163,49 +163,22 @@ function DayRing() {
 
 interface TickerItem { status: 'done' | 'pending' | 'empty'; text: string }
 
-function buildTickerItems(checkin: DailyCheckin | null | undefined, isMorning: boolean): TickerItem[] {
-  const items: TickerItem[] = []
-
-  if (!checkin) {
-    return isMorning
-      ? [{ status: 'pending', text: 'Morning check-in pending — training today?' }]
-      : [{ status: 'pending', text: 'Evening check-in pending — how did training go?' }]
+function buildTickerItems(checkin: DailyCheckin | null | undefined): TickerItem[] {
+  if (!checkin || checkin.evening_actual_training === null || checkin.evening_actual_training === undefined) {
+    return [{ status: 'pending', text: 'Daily check-in pending' }]
   }
-
-  if (checkin.morning_planned_training !== null && checkin.morning_planned_training !== undefined) {
-    items.push({
-      status: 'done',
-      text: checkin.morning_planned_training
-        ? (checkin.morning_intent ? `Training planned — ${checkin.morning_intent}` : 'Training planned ✓')
-        : 'Rest day planned ✓',
-    })
-  } else {
-    items.push({ status: 'pending', text: 'Morning check-in pending' })
-  }
-
-  if (!isMorning || checkin.evening_actual_training !== null) {
-    if (checkin.evening_actual_training !== null && checkin.evening_actual_training !== undefined) {
-      items.push({
-        status: 'done',
-        text: checkin.evening_actual_training
-          ? (checkin.evening_reflection ? `Trained — ${checkin.evening_reflection}` : 'Trained today ✓')
-          : 'Rest day ✓',
-      })
-    } else {
-      items.push({ status: 'pending', text: 'Evening check-in pending' })
-    }
-  }
-
-  if (items.length === 0) items.push({ status: 'empty', text: 'Atlas is watching — start your check-in' })
-  return items
+  const text = checkin.evening_actual_training
+    ? (checkin.evening_reflection ? `Trained — ${checkin.evening_reflection}` : 'Trained today ✓')
+    : 'Rest day ✓'
+  return [{ status: 'done', text }]
 }
 
 function statusGlyph(s: TickerItem['status']) {
   return s === 'done' ? '✓' : s === 'pending' ? '○' : '·'
 }
 
-function GoalTicker({ checkin, isMorning }: { checkin: DailyCheckin | null | undefined; isMorning: boolean }) {
-  const items  = buildTickerItems(checkin, isMorning)
+function GoalTicker({ checkin }: { checkin: DailyCheckin | null | undefined }) {
+  const items  = buildTickerItems(checkin)
   const done   = items.filter(i => i.status === 'done').length
   const total  = items.length
 
@@ -304,66 +277,16 @@ function SectionTitle({ label }: { label: string }) {
   )
 }
 
-// ─── Morning / Evening Check-in ───────────────────────────────────────────────
+// ─── Daily Check-in ───────────────────────────────────────────────────────────
 
-function MorningCheckin({ today, checkin }: { today: string; checkin: DailyCheckin | null }) {
-  const [intent, setIntent] = useState('')
-  const mutation = useSaveMorningCheckin(today)
-
-  if (checkin?.morning_planned_training !== null && checkin?.morning_planned_training !== undefined) {
-    return (
-      <div className="rounded-2xl bg-white/[0.04] backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.45)] p-5">
-        <p className="text-[10.5px] font-bold tracking-[0.14em] uppercase text-zinc-600 mb-2">Morning check-in</p>
-        <p className="text-lg font-semibold text-white">
-          {checkin.morning_planned_training ? '✓ Training planned' : '✓ Rest day'}
-        </p>
-        {checkin.morning_intent && (
-          <p className="mt-1 text-sm text-zinc-400">{checkin.morning_intent}</p>
-        )}
-      </div>
-    )
-  }
-
-  return (
-    <div className="rounded-2xl bg-white/[0.04] backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.45)] p-5">
-      <p className="mb-4 text-lg font-semibold text-white">Training today?</p>
-      <textarea
-        value={intent}
-        onChange={e => setIntent(e.target.value)}
-        placeholder="What's the plan? (optional)"
-        rows={2}
-        className="mb-4 w-full resize-none rounded-xl bg-black/30 border border-white/[0.06] px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-white/20"
-      />
-      <div className="flex gap-3">
-        <button
-          onClick={() => mutation.mutate({ planned: true, intent: intent || undefined })}
-          disabled={mutation.isPending}
-          className="flex h-12 flex-1 items-center justify-center rounded-xl text-base font-semibold text-black disabled:opacity-50 active:opacity-80"
-          style={{ background: 'linear-gradient(180deg,#ffffff 0%,#e8e5dd 100%)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.55),0 4px 14px rgba(0,0,0,0.40)' }}
-        >
-          Yes
-        </button>
-        <button
-          onClick={() => mutation.mutate({ planned: false })}
-          disabled={mutation.isPending}
-          className="flex h-12 flex-1 items-center justify-center rounded-xl bg-white/[0.06] border border-white/[0.08] text-base font-semibold text-white disabled:opacity-50 active:opacity-80"
-        >
-          No
-        </button>
-      </div>
-      {mutation.error && <p className="mt-2 text-sm text-red-400">{String(mutation.error)}</p>}
-    </div>
-  )
-}
-
-function EveningCheckin({ today, checkin }: { today: string; checkin: DailyCheckin | null }) {
-  const [reflection, setReflection] = useState('')
+function DailyCheckinCard({ today, checkin }: { today: string; checkin: DailyCheckin | null }) {
+  const [notes, setNotes] = useState('')
   const mutation = useSaveEveningCheckin(today)
 
   if (checkin?.evening_actual_training !== null && checkin?.evening_actual_training !== undefined) {
     return (
       <div className="rounded-2xl bg-white/[0.04] backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.45)] p-5">
-        <p className="text-[10.5px] font-bold tracking-[0.14em] uppercase text-zinc-600 mb-2">Evening check-in</p>
+        <p className="text-[10.5px] font-bold tracking-[0.14em] uppercase text-zinc-600 mb-2">Daily check-in</p>
         <p className="text-lg font-semibold text-white">
           {checkin.evening_actual_training ? '✓ Trained today' : '✓ Rest day'}
         </p>
@@ -376,17 +299,17 @@ function EveningCheckin({ today, checkin }: { today: string; checkin: DailyCheck
 
   return (
     <div className="rounded-2xl bg-white/[0.04] backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.45)] p-5">
-      <p className="mb-4 text-lg font-semibold text-white">Did you train?</p>
+      <p className="mb-4 text-lg font-semibold text-white">Did you train today?</p>
       <textarea
-        value={reflection}
-        onChange={e => setReflection(e.target.value)}
-        placeholder="How'd it go? (optional)"
+        value={notes}
+        onChange={e => setNotes(e.target.value)}
+        placeholder="What'd you do? (optional)"
         rows={2}
         className="mb-4 w-full resize-none rounded-xl bg-black/30 border border-white/[0.06] px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-white/20"
       />
       <div className="flex gap-3">
         <button
-          onClick={() => mutation.mutate({ trained: true, reflection: reflection || undefined })}
+          onClick={() => mutation.mutate({ trained: true, reflection: notes || undefined })}
           disabled={mutation.isPending}
           className="flex h-12 flex-1 items-center justify-center rounded-xl text-base font-semibold text-black disabled:opacity-50 active:opacity-80"
           style={{ background: 'linear-gradient(180deg,#ffffff 0%,#e8e5dd 100%)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.55),0 4px 14px rgba(0,0,0,0.40)' }}
@@ -394,7 +317,7 @@ function EveningCheckin({ today, checkin }: { today: string; checkin: DailyCheck
           Yes
         </button>
         <button
-          onClick={() => mutation.mutate({ trained: false })}
+          onClick={() => mutation.mutate({ trained: false, reflection: notes || undefined })}
           disabled={mutation.isPending}
           className="flex h-12 flex-1 items-center justify-center rounded-xl bg-white/[0.06] border border-white/[0.08] text-base font-semibold text-white disabled:opacity-50 active:opacity-80"
         >
@@ -413,20 +336,15 @@ export default function HomeClient({ today, initialCheckin }: { today: string; i
   if (initialCheckin) queryClient.setQueryData(['checkin', today], initialCheckin)
 
   const { data: checkin } = useTodayCheckin(today)
-  const hour = new Date().getHours()
-  const isMorning = hour < 14
 
   return (
     <main className="min-h-screen px-4 pb-24 pt-14">
-      <GoalTicker checkin={checkin} isMorning={isMorning} />
+      <GoalTicker checkin={checkin} />
       <DayRing />
 
       <section>
-        <SectionTitle label="Check-ins" />
-        {isMorning
-          ? <MorningCheckin today={today} checkin={checkin ?? null} />
-          : <EveningCheckin today={today} checkin={checkin ?? null} />
-        }
+        <SectionTitle label="Check-in" />
+        <DailyCheckinCard today={today} checkin={checkin ?? null} />
       </section>
     </main>
   )
