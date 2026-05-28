@@ -213,7 +213,6 @@ interface ExModalState {
   gymId: string
   dayId: string
   bodyweight: boolean
-  startWeight: number
   repMin: number
   repMax: number
   step: number
@@ -221,7 +220,7 @@ interface ExModalState {
 
 const EMPTY_EX_MODAL: ExModalState = {
   open: false, mode: 'add', name: '', gymId: 'g_default', dayId: '',
-  bodyweight: false, startWeight: 20, repMin: 6, repMax: 8, step: 2.5,
+  bodyweight: false, repMin: 8, repMax: 12, step: 2.5,
 }
 
 // ─── main ────────────────────────────────────────────────────────────────────
@@ -391,7 +390,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     setCurrentExId(id)
     const logs = allLogs.filter(l => l.exercise_id === id).sort((a, b) => a.logged_at.localeCompare(b.logged_at))
     const lastLog = logs[logs.length - 1]
-    setWeightInput(String(lastLog?.weight ?? ex.start_weight ?? 0))
+    setWeightInput(String(lastLog?.weight ?? 0))
     setSelectedReps(ex.rep_max)
   }
 
@@ -410,7 +409,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
       open: true, mode: 'add',
       gymId: filterGym,
       dayId: filterDay,
-      repMax: 8,
     })
   }
 
@@ -425,7 +423,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
       gymId: currentEx.gym_id,
       dayId: currentEx.day_id,
       bodyweight: currentEx.bodyweight,
-      startWeight: currentEx.start_weight,
       repMin: currentEx.rep_min,
       repMax: currentEx.rep_max,
       step: currentEx.step,
@@ -433,14 +430,14 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   }
 
   function saveEx() {
-    const { mode, id, name, gymId, dayId, bodyweight, startWeight, repMin, repMax, step } = exModal
+    const { mode, id, name, gymId, dayId, bodyweight, repMin, repMax, step } = exModal
     if (!name.trim() || !gymId || !dayId) return
     if (mode === 'edit' && id) {
-      updateEx.mutate({ id, name: name.trim(), gym_id: gymId, day_id: dayId, bodyweight, start_weight: startWeight, rep_min: repMin, rep_max: repMax, step })
+      updateEx.mutate({ id, name: name.trim(), gym_id: gymId, day_id: dayId, bodyweight, start_weight: 0, rep_min: repMin, rep_max: repMax, step })
     } else {
       createEx.mutate(
-        { name: name.trim(), gym_id: gymId, day_id: dayId, bodyweight, start_weight: startWeight, rep_min: repMin, rep_max: repMax, step, order_index: exercises.length },
-        { onSuccess: (ex) => { setCurrentExId(ex.id); setWeightInput(String(ex.start_weight)) } }
+        { name: name.trim(), gym_id: gymId, day_id: dayId, bodyweight, start_weight: 0, rep_min: repMin, rep_max: repMax, step, order_index: exercises.length },
+        { onSuccess: (ex) => { setCurrentExId(ex.id); setWeightInput('0') } }
       )
     }
     setExModal(EMPTY_EX_MODAL)
@@ -1350,12 +1347,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
               {!exModal.bodyweight && (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Start weight</label>
-                    <input type="number" step="2.5" value={exModal.startWeight}
-                      onChange={e => setExModal(m => ({ ...m, startWeight: parseFloat(e.target.value) || 0 }))}
-                      className="w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white focus:outline-none" />
-                  </div>
-                  <div>
                     <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Step ({config.units})</label>
                     <input type="number" step="1.25" value={exModal.step}
                       disabled={stepAuto}
@@ -1389,18 +1380,41 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Rep min</label>
-                  <input type="number" min="1" value={exModal.repMin}
-                    onChange={e => setExModal(m => ({ ...m, repMin: parseInt(e.target.value) || 1 }))}
-                    className="w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white focus:outline-none" />
+              <div>
+                <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Training goal</label>
+                <div className="flex gap-2 mb-3">
+                  {([
+                    { label: 'Strength', min: 3, max: 5 },
+                    { label: 'Hypertrophy', min: 8, max: 12 },
+                    { label: 'Endurance', min: 15, max: 20 },
+                  ] as const).map(g => (
+                    <button
+                      key={g.label}
+                      onClick={() => setExModal(m => ({ ...m, repMin: g.min, repMax: g.max }))}
+                      className={`flex-1 rounded-xl py-2 text-xs font-semibold border transition-colors ${
+                        exModal.repMin === g.min && exModal.repMax === g.max
+                          ? 'bg-white text-black border-transparent'
+                          : 'bg-white/5 border-white/10 text-white/50'
+                      }`}
+                    >
+                      {g.label}
+                      <span className="block text-[10px] opacity-60 mt-0.5">{g.min}–{g.max}</span>
+                    </button>
+                  ))}
                 </div>
-                <div>
-                  <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Rep max</label>
-                  <input type="number" min="1" value={exModal.repMax}
-                    onChange={e => setExModal(m => ({ ...m, repMax: parseInt(e.target.value) || 1 }))}
-                    className="w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white focus:outline-none" />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-white/40 uppercase tracking-wider block mb-1.5">Rep min</label>
+                    <input type="number" min="1" value={exModal.repMin}
+                      onChange={e => setExModal(m => ({ ...m, repMin: parseInt(e.target.value) || 1 }))}
+                      className="w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white focus:outline-none" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-white/40 uppercase tracking-wider block mb-1.5">Rep max</label>
+                    <input type="number" min="1" value={exModal.repMax}
+                      onChange={e => setExModal(m => ({ ...m, repMax: parseInt(e.target.value) || 1 }))}
+                      className="w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white focus:outline-none" />
+                  </div>
                 </div>
               </div>
             </div>
