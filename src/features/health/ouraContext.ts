@@ -39,14 +39,21 @@ export async function getOuraContextRange(
 }
 
 /**
- * Build a short recovery summary string for AI coach prompts.
- * Returns null when no Oura data is available so the prompt can skip the section entirely.
+ * Build a recovery summary string for AI coach prompts.
+ * Accepts up to 30 days of rows; computes a 30-day baseline and compares the last 7 days to it.
+ * Returns null when no Oura data is available.
  */
 export function summarizeOuraForCoach(rows: CacheRow[]): string | null {
   if (rows.length === 0) return null
 
-  // Find the most recent row with any real data
-  const latest = rows.find(r =>
+  // rows come in descending order from the DB
+  const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date))
+  const cutoff = sorted.length > 0
+    ? (() => { const d = new Date(sorted[sorted.length - 1].date); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10) })()
+    : ''
+  const recentRows = sorted.filter(r => r.date >= cutoff)
+
+  const latest = [...sorted].reverse().find(r =>
     r.data?.readiness?.score != null ||
     r.data?.sleep?.score != null ||
     r.data?.sleep?.average_hrv != null,
@@ -71,12 +78,32 @@ export function summarizeOuraForCoach(rows: CacheRow[]): string | null {
     `Most recent (${latest.date}): readiness ${readiness ?? '?'}, sleep score ${sleepScore ?? '?'}, slept ${formatSleep(sleepDur)}, HRV ${hrv != null ? Math.round(hrv) + 'ms' : '?'}, deep ${formatSleep(deep)}, REM ${formatSleep(rem)}, latency ${latency != null ? Math.round(latency / 60) + 'min' : '?'}, RHR ${rhr != null ? Math.round(rhr) + 'bpm' : '?'}${tempDev != null ? `, temp deviation ${tempDev >= 0 ? '+' : ''}${tempDev.toFixed(2)}°C` : ''}`,
   )
 
-  if (rows.length >= 3) {
+  // 30-day baseline vs 7-day recent comparison
+  const baselineHrv = avg(sorted.map(r => r.data?.sleep?.average_hrv))
+  const recentHrv = avg(recentRows.map(r => r.data?.sleep?.average_hrv))
+  const baselineReadiness = avg(sorted.map(r => r.data?.readiness?.score))
+  const recentReadiness = avg(recentRows.map(r => r.data?.readiness?.score))
+
+  if (sorted.length >= 14 && baselineHrv != null && recentHrv != null) {
+    const hrvDelta = Math.round(recentHrv - baselineHrv)
+    const sign = hrvDelta >= 0 ? '+' : ''
+    lines.push(
+      `HRV baseline (${sorted.length}-day avg): ${Math.round(baselineHrv)}ms — last 7-day avg: ${Math.round(recentHrv)}ms (${sign}${hrvDelta}ms vs baseline)`,
+    )
+  } else if (rows.length >= 3) {
     const readinessAvg = avg(rows.map(r => r.data?.readiness?.score))
     const sleepScoreAvg = avg(rows.map(r => r.data?.sleep?.score))
     const hrvAvg = avg(rows.map(r => r.data?.sleep?.average_hrv))
     lines.push(
       `${rows.length}-day avg: readiness ${readinessAvg != null ? Math.round(readinessAvg) : '?'}, sleep score ${sleepScoreAvg != null ? Math.round(sleepScoreAvg) : '?'}, HRV ${hrvAvg != null ? Math.round(hrvAvg) + 'ms' : '?'}`,
+    )
+  }
+
+  if (sorted.length >= 14 && baselineReadiness != null && recentReadiness != null) {
+    const rDelta = Math.round(recentReadiness - baselineReadiness)
+    const sign = rDelta >= 0 ? '+' : ''
+    lines.push(
+      `Readiness baseline (${sorted.length}-day avg): ${Math.round(baselineReadiness)} — last 7-day avg: ${Math.round(recentReadiness)} (${sign}${rDelta} vs baseline)`,
     )
   }
 

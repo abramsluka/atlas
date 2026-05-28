@@ -5,6 +5,16 @@ import { format, subDays } from 'date-fns'
 import { getOuraContextRange } from '@/features/health/ouraContext'
 import type { OuraData } from '@/features/health/types'
 
+function logDatePST(utcStr: string): string {
+  return new Date(utcStr).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
+}
+
+function avg(values: Array<number | null | undefined>): number | null {
+  const nums = values.filter((v): v is number => typeof v === 'number')
+  if (!nums.length) return null
+  return nums.reduce((a, b) => a + b, 0) / nums.length
+}
+
 function fmtSleep(seconds: number | null | undefined): string {
   if (seconds == null) return '?'
   const h = Math.floor(seconds / 3600)
@@ -30,6 +40,7 @@ export async function POST(_request: NextRequest) {
   const today = format(new Date(), 'yyyy-MM-dd')
   const sevenDaysAgo = format(subDays(new Date(), 7), 'yyyy-MM-dd')
   const fourteenDaysAgo = format(subDays(new Date(), 14), 'yyyy-MM-dd')
+  const thirtyDaysAgo = format(subDays(new Date(), 30), 'yyyy-MM-dd')
 
   const [
     ouraRows,
@@ -38,13 +49,19 @@ export async function POST(_request: NextRequest) {
     caffeineResult,
     waterResult,
     profileResult,
+    poLogsResult,
   ] = await Promise.all([
-    getOuraContextRange(db, user.id, sevenDaysAgo, today),
+    getOuraContextRange(db, user.id, thirtyDaysAgo, today),
     db.from('supplements').select('*').eq('user_id', user.id).eq('active', true).order('created_at'),
     db.from('supplement_logs').select('*').eq('user_id', user.id).gte('date', sevenDaysAgo),
     db.from('caffeine_logs').select('*').eq('user_id', user.id).gte('date', sevenDaysAgo).order('logged_at'),
     db.from('water_logs').select('*').eq('user_id', user.id).gte('date', sevenDaysAgo),
     db.from('health_profile').select('*').eq('user_id', user.id).maybeSingle(),
+    db.from('po_logs')
+      .select('logged_at, weight, reps, po_exercises(name, bodyweight)')
+      .eq('user_id', user.id)
+      .gte('logged_at', sevenDaysAgo + 'T00:00:00')
+      .order('logged_at', { ascending: true }),
   ])
 
   const supplements = supplementsResult.data ?? []
@@ -52,15 +69,61 @@ export async function POST(_request: NextRequest) {
   const caffeineLogs = caffeineResult.data ?? []
   const waterLogs = waterResult.data ?? []
   const profile = profileResult.data
+  type PoLog = { logged_at: string; weight: number; reps: number; po_exercises: { name: string; bodyweight: boolean }[] | null }
+  const poLogs = (poLogsResult.data ?? []) as unknown as PoLog[]
 
-  // Build the body / Oura block (per-day)
+  // Build the body / Oura block — last 7 days shown per-day, 30-day baseline computed separately
+  const recentOuraRows = ouraRows.filter(r => r.date >= sevenDaysAgo)
   const ouraLines: string[] = []
   if (ouraRows.length > 0) {
-    for (const row of ouraRows) {
+    // Baseline comparisons using full 30-day window
+    const baselineHrv = avg(ouraRows.map(r => (r.data as OuraData)?.sleep?.average_hrv))
+    const recentHrv = avg(recentOuraRows.map(r => (r.data as OuraData)?.sleep?.average_hrv))
+    const baselineReadiness = avg(ouraRows.map(r => (r.data as OuraData)?.readiness?.score))
+    const recentReadiness = avg(recentOuraRows.map(r => (r.data as OuraData)?.readiness?.score))
+
+    if (ouraRows.length >= 14 && baselineHrv != null && recentHrv != null) {
+      const hrvDelta = Math.round(recentHrv - baselineHrv)
+      const sign = hrvDelta >= 0 ? '+' : ''
+      ouraLines.push(`  HRV baseline (${ouraRows.length}-day avg): ${Math.round(baselineHrv)}ms | Last 7-day avg: ${Math.round(recentHrv)}ms (${sign}${hrvDelta}ms vs baseline)`)
+    }
+    if (ouraRows.length >= 14 && baselineReadiness != null && recentReadiness != null) {
+      const rDelta = Math.round(recentReadiness - baselineReadiness)
+      const sign = rDelta >= 0 ? '+' : ''
+      ouraLines.push(`  Readiness baseline (${ouraRows.length}-day avg): ${Math.round(baselineReadiness)} | Last 7-day avg: ${Math.round(recentReadiness)} (${sign}${rDelta} vs baseline)`)
+    }
+
+    for (const row of recentOuraRows) {
       const d = row.data as OuraData
       ouraLines.push(
         `  ${row.date}: readiness ${d.readiness?.score ?? '?'}, sleep score ${d.sleep?.score ?? '?'}, slept ${fmtSleep(d.sleep?.total_sleep_duration)}, latency ${d.sleep?.latency != null ? Math.round(d.sleep.latency / 60) + 'min' : '?'}, deep ${fmtSleep(d.sleep?.deep_sleep_duration)}, REM ${fmtSleep(d.sleep?.rem_sleep_duration)}, HRV ${d.sleep?.average_hrv != null ? Math.round(d.sleep.average_hrv) + 'ms' : '?'}, RHR ${d.sleep?.resting_heart_rate != null ? Math.round(d.sleep.resting_heart_rate) + 'bpm' : '?'}`,
       )
+    }
+  }
+
+  // Training load — group PO logs by PST date, compute volume per day
+  const trainingByDay = new Map<string, { exercises: Set<string>; volume: number }>()
+  for (const log of poLogs) {
+    const dk = logDatePST(log.logged_at)
+    const entry = trainingByDay.get(dk) ?? { exercises: new Set(), volume: 0 }
+    const ex = Array.isArray(log.po_exercises) ? log.po_exercises[0] : log.po_exercises
+    entry.exercises.add(ex?.name ?? 'Unknown')
+    if (!ex?.bodyweight) entry.volume += log.weight * log.reps
+    trainingByDay.set(dk, entry)
+  }
+  // Fill in all 7 days (including rest days)
+  const trainingLines: string[] = []
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date()
+    d.setDate(d.getDate() - i)
+    const dk = d.toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
+    const entry = trainingByDay.get(dk)
+    if (entry) {
+      const names = [...entry.exercises].join(', ')
+      const vol = entry.volume > 0 ? `, ${entry.volume.toLocaleString()} lbs volume` : ''
+      trainingLines.push(`  ${dk}: trained — ${names} (${entry.exercises.size} exercise${entry.exercises.size !== 1 ? 's' : ''}${vol})`)
+    } else {
+      trainingLines.push(`  ${dk}: no training logged`)
     }
   }
 
@@ -108,6 +171,8 @@ export async function POST(_request: NextRequest) {
     '',
     ouraLines.length > 0 ? `Body data (Oura, by day):\n${ouraLines.join('\n')}` : 'Body data: not connected or empty',
     '',
+    `Training load (last 7 days):\n${trainingLines.join('\n')}`,
+    '',
     supplementLines.length > 0 ? `Supplement stack:\n${supplementLines.join('\n')}` : 'Supplement stack: empty',
     recentlyAdded.length > 0 ? `\nNote: ${recentlyAdded.map(s => s.name).join(', ')} ${recentlyAdded.length === 1 ? 'was' : 'were'} added in the last 14 days — comment specifically on whether the body data shows any change since the addition.` : '',
     '',
@@ -121,12 +186,14 @@ export async function POST(_request: NextRequest) {
   const stream = anthropic.messages.stream({
     model: 'claude-sonnet-4-6',
     max_tokens: 500,
-    system: `You are Atlas, a personal health coach. The user is sharing the last 7 days of their wearable, supplement, caffeine, and hydration data. Cross-reference everything and give direct, specific, observation-driven feedback in 4–6 sentences. Priorities:
+    system: `You are Atlas, a personal health coach. The user is sharing the last 7 days of their wearable, supplement, caffeine, hydration, and training data. Cross-reference everything and give direct, specific, observation-driven feedback in 4–6 sentences. Priorities:
 
-1. Caffeine timing vs sleep latency and deep sleep. If they had caffeine after 2pm and that night their latency was elevated or deep sleep was short, name it specifically with the numbers.
-2. Supplement adherence vs sleep / HRV. If they're consistent on a supplement and HRV is up, say so. If they're missing doses, call it out.
-3. Recently added supplements: compare body data before and after the addition. Honest read — is it doing anything visible yet?
-4. Hydration only if there's a clear pattern.
+1. Training load vs recovery. If the user trained hard and readiness dropped the next day, name it with the numbers. If they haven't trained in 3+ days and readiness is still low, that's worth noting. Cross-reference training days with the Oura readiness for the following day.
+2. HRV and readiness vs baseline. If a baseline is provided and the recent week is notably below it, name the gap and what might be driving it.
+3. Caffeine timing vs sleep latency and deep sleep. If they had caffeine after 2pm and that night their latency was elevated or deep sleep was short, name it specifically with the numbers.
+4. Supplement adherence vs sleep / HRV. If they're consistent on a supplement and HRV is up, say so. If they're missing doses, call it out.
+5. Recently added supplements: compare body data before and after the addition. Honest read — is it doing anything visible yet?
+6. Hydration only if there's a clear pattern.
 
 Be specific with numbers. Don't list — write a tight paragraph. No bullet points, no headers. Don't cheerlead. If the data is too thin to draw conclusions, say that.`,
     messages: [{ role: 'user', content: userMessage }],
