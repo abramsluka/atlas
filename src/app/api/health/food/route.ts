@@ -48,6 +48,7 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData()
   const photo = formData.get('photo') as File | null
   if (!photo) return NextResponse.json({ error: 'No photo provided' }, { status: 400 })
+  const description = (formData.get('description') as string | null)?.trim() ?? ''
 
   const bytes = await photo.arrayBuffer()
   const base64 = Buffer.from(bytes).toString('base64')
@@ -73,7 +74,9 @@ export async function POST(request: NextRequest) {
             { type: 'image_url', image_url: { url: dataUrl } },
             {
               type: 'text',
-              text: 'Estimate the calories, protein, and carbs in this meal. Return JSON with: item_name, calories, protein_g, carbs_g, confidence, notes.',
+              text: description
+                ? `The user says: "${description}". Trust this description — use it to confirm the food identity and portion size. Estimate the calories, protein, and carbs. Return JSON with: item_name, calories, protein_g, carbs_g, confidence, notes.`
+                : 'Estimate the calories, protein, and carbs in this meal. Return JSON with: item_name, calories, protein_g, carbs_g, confidence, notes.',
             },
           ],
         },

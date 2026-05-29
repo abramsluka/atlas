@@ -1828,6 +1828,9 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
   const [editingMeal, setEditingMeal] = useState<FoodLog | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [targetSheetOpen, setTargetSheetOpen] = useState(false)
+  const [pendingFile, setPendingFile] = useState<File | null>(null)
+  const [pendingPreview, setPendingPreview] = useState<string | null>(null)
+  const [description, setDescription] = useState('')
   const updateProfile = useUpdateHealthProfile()
 
   const today = (() => {
@@ -1851,22 +1854,33 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
 
   const hasTarget = !!profile?.daily_calorie_target
 
-  const handlePhoto = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhoto = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
+    setPendingFile(file)
+    setPendingPreview(URL.createObjectURL(file))
+    setDescription('')
+  }, [])
+
+  const submitPendingPhoto = useCallback(async () => {
+    if (!pendingFile) return
     setUploading(true)
+    setPendingPreview(null)
+    setPendingFile(null)
     try {
-      const resized = await resizeImage(file, 1024)
+      const resized = await resizeImage(pendingFile, 1024)
       const fd = new FormData()
       fd.append('photo', resized, 'meal.jpg')
+      if (description.trim()) fd.append('description', description.trim())
       await logFood.mutateAsync(fd)
     } catch (err) {
       console.error('Food log error:', err)
     } finally {
       setUploading(false)
+      setDescription('')
     }
-  }, [logFood])
+  }, [pendingFile, description, logFood])
 
   return (
     <section>
@@ -2015,6 +2029,54 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
           onSave={() => setTargetSheetOpen(false)}
           onClose={() => setTargetSheetOpen(false)}
         />
+      )}
+
+      {pendingPreview && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4"
+          style={{ backdropFilter: 'blur(6px)' }}
+          onClick={() => { setPendingPreview(null); setPendingFile(null); setDescription('') }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-[#111113] border border-white/[0.14] p-5 space-y-4"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={pendingPreview} alt="Meal preview" className="w-full h-48 object-cover rounded-xl" />
+            <div>
+              <p className="text-xs text-zinc-500 mb-1.5">What is this? <span className="text-zinc-600">(optional)</span></p>
+              <textarea
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                placeholder="e.g. chicken breast and white rice, about 6oz"
+                rows={2}
+                className="w-full resize-none rounded-xl border border-white/[0.12] bg-black/30 px-3 py-2.5 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-white/30"
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={submitPendingPhoto}
+                className="flex-1 h-12 rounded-xl text-sm font-semibold text-black active:opacity-80"
+                style={{ background: 'linear-gradient(180deg,#ffffff 0%,#e8e5dd 100%)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.55),0 4px 14px rgba(0,0,0,0.40)' }}
+              >
+                Log it
+              </button>
+              <button
+                onClick={() => { setPendingPreview(null); setPendingFile(null); setDescription(''); fileInputRef.current?.click() }}
+                className="h-12 px-4 rounded-xl bg-white/[0.06] border border-white/[0.08] text-sm font-semibold text-white active:opacity-80"
+              >
+                Retake
+              </button>
+              <button
+                onClick={() => { setPendingPreview(null); setPendingFile(null); setDescription('') }}
+                className="h-12 px-4 rounded-xl bg-white/[0.06] border border-white/[0.08] text-sm font-semibold text-zinc-400 active:opacity-80"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </section>
   )
