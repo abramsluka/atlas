@@ -340,10 +340,10 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const [settingsDays, setSettingsDays] = useState(config.days)
   const [settingsUnits, setSettingsUnits] = useState(config.units)
   const [settingsUpgradeAt, setSettingsUpgradeAt] = useState(config.upgrade_at_reps)
-  const [settingsUpgradeAtAuto, setSettingsUpgradeAtAuto] = useState(config.upgrade_at_reps_auto ?? false)
   const [coachRepRec, setCoachRepRec] = useState<{ reps: number; reason: string } | null>(null)
-  const [stepAuto, setStepAuto] = useState(false)
+  const [coachRepLoading, setCoachRepLoading] = useState(false)
   const [coachStepRec, setCoachStepRec] = useState<{ step: number; reason: string } | null>(null)
+  const [coachStepLoading, setCoachStepLoading] = useState(false)
   const importRef = useRef<HTMLInputElement>(null)
 
   // ── derived ──────────────────────────────────────────────────────────────
@@ -413,7 +413,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   }
 
   function openAddEx() {
-    setStepAuto(false)
     setCoachStepRec(null)
     setExModal({
       ...EMPTY_EX_MODAL,
@@ -425,7 +424,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
 
   function openEditEx() {
     if (!currentEx) return
-    setStepAuto(false)
     setCoachStepRec(null)
     setExModal({
       open: true, mode: 'edit',
@@ -481,14 +479,12 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   }
 
   function saveSettings() {
-    const finalReps = settingsUpgradeAtAuto && coachRepRec ? coachRepRec.reps : settingsUpgradeAt
     saveConfig.mutate({
       ...config,
       gyms: settingsGyms,
       days: settingsDays,
       units: settingsUnits,
-      upgrade_at_reps: finalReps,
-      upgrade_at_reps_auto: settingsUpgradeAtAuto,
+      upgrade_at_reps: settingsUpgradeAt,
     })
     setShowSettings(false)
   }
@@ -498,13 +494,13 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     setSettingsDays(config.days.map(d => ({ ...d })))
     setSettingsUnits(config.units)
     setSettingsUpgradeAt(config.upgrade_at_reps)
-    setSettingsUpgradeAtAuto(config.upgrade_at_reps_auto ?? false)
     setCoachRepRec(null)
     setShowSettings(true)
   }
 
   async function fetchCoachStep(exerciseName: string, isBodyweight: boolean) {
     setCoachStepRec(null)
+    setCoachStepLoading(true)
     try {
       const res = await fetch('/api/gym/coach-step', {
         method: 'POST',
@@ -516,17 +512,24 @@ export default function GymClient({ today, initialConfig, initialExercises, init
       setExModal(m => ({ ...m, step: json.step }))
     } catch {
       setCoachStepRec({ step: 2.5, reason: 'Could not reach coach — using default.' })
+    } finally {
+      setCoachStepLoading(false)
     }
   }
 
   async function fetchCoachReps() {
     setCoachRepRec(null)
+    setCoachRepLoading(true)
     try {
       const res = await fetch('/api/gym/coach-reps', { method: 'POST' })
       const json = await res.json()
       setCoachRepRec(json)
+      setSettingsUpgradeAt(json.reps)
     } catch {
       setCoachRepRec({ reps: 12, reason: 'Could not reach coach — using default.' })
+      setSettingsUpgradeAt(12)
+    } finally {
+      setCoachRepLoading(false)
     }
   }
 
@@ -1381,27 +1384,17 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   <div>
                     <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Step ({config.units})</label>
                     <input type="number" step="1.25" value={exModal.step}
-                      disabled={stepAuto}
                       onChange={e => setExModal(m => ({ ...m, step: parseFloat(e.target.value) || 2.5 }))}
-                      className={`w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white focus:outline-none ${stepAuto ? 'opacity-40 cursor-not-allowed' : ''}`} />
+                      className="w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white focus:outline-none" />
                     <button
-                      onClick={() => {
-                        const next = !stepAuto
-                        setStepAuto(next)
-                        if (next) fetchCoachStep(exModal.name, exModal.bodyweight)
-                        else setCoachStepRec(null)
-                      }}
-                      className={`mt-2 flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium border transition-colors ${stepAuto ? 'bg-white/10 border-white/25 text-white' : 'bg-transparent border-white/12 text-white/35 hover:text-white/50'}`}
+                      onClick={() => fetchCoachStep(exModal.name, exModal.bodyweight)}
+                      disabled={coachStepLoading}
+                      className="mt-2 text-xs text-white/35 hover:text-white/60 transition-colors disabled:opacity-40"
                     >
-                      <div className={`w-3.5 h-3.5 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${stepAuto ? 'bg-white border-white' : 'border-white/30'}`}>
-                        {stepAuto && <svg viewBox="0 0 10 8" fill="none" className="w-2 h-2"><path d="M1 4l3 3 5-6" stroke="black" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                      </div>
-                      Let coach decide
-                      {stepAuto && coachStepRec && <span className="text-white/50">· {coachStepRec.step} {config.units}</span>}
-                      {stepAuto && !coachStepRec && <span className="text-white/30">· asking…</span>}
+                      {coachStepLoading ? 'Asking coach…' : 'Let coach decide'}
                     </button>
-                    {stepAuto && coachStepRec && (
-                      <p className="text-[10px] text-white/30 mt-1.5 leading-relaxed">{coachStepRec.reason}</p>
+                    {coachStepRec && (
+                      <p className="text-[10px] text-white/30 mt-1 leading-relaxed">{coachStepRec.reason}</p>
                     )}
                   </div>
                 </div>
@@ -1587,31 +1580,21 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Upgrade at reps</label>
                 <input
                   type="number" min="1" max="30" value={settingsUpgradeAt}
-                  disabled={settingsUpgradeAtAuto}
                   onChange={e => setSettingsUpgradeAt(parseInt(e.target.value) || 12)}
-                  className={`w-full rounded-xl bg-white/8 border border-white/10 px-4 py-3 text-sm text-white focus:outline-none ${settingsUpgradeAtAuto ? 'opacity-40 cursor-not-allowed' : ''}`}
+                  className="w-full rounded-xl bg-white/8 border border-white/10 px-4 py-3 text-sm text-white focus:outline-none"
                 />
                 <p className="text-xs text-white/30 mt-1">Hit this rep count 2 sessions in a row → increase weight</p>
 
                 <button
-                  onClick={() => {
-                    const next = !settingsUpgradeAtAuto
-                    setSettingsUpgradeAtAuto(next)
-                    if (next) fetchCoachReps()
-                    else setCoachRepRec(null)
-                  }}
-                  className={`mt-3 flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium border transition-colors ${settingsUpgradeAtAuto ? 'bg-white/10 border-white/25 text-white' : 'bg-transparent border-white/12 text-white/35 hover:text-white/50'}`}
+                  onClick={fetchCoachReps}
+                  disabled={coachRepLoading}
+                  className="mt-2 text-xs text-white/35 hover:text-white/60 transition-colors disabled:opacity-40"
                 >
-                  <div className={`w-3.5 h-3.5 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${settingsUpgradeAtAuto ? 'bg-white border-white' : 'border-white/30'}`}>
-                    {settingsUpgradeAtAuto && <svg viewBox="0 0 10 8" fill="none" className="w-2 h-2"><path d="M1 4l3 3 5-6" stroke="black" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                  </div>
-                  Let coach decide
-                  {settingsUpgradeAtAuto && coachRepRec && <span className="text-white/50">· {coachRepRec.reps} reps</span>}
-                  {settingsUpgradeAtAuto && !coachRepRec && <span className="text-white/30">· asking…</span>}
+                  {coachRepLoading ? 'Asking coach…' : 'Let coach decide'}
                 </button>
 
-                {settingsUpgradeAtAuto && coachRepRec && (
-                  <p className="text-xs text-white/30 mt-2 leading-relaxed">{coachRepRec.reason}</p>
+                {coachRepRec && (
+                  <p className="text-xs text-white/30 mt-1 leading-relaxed">{coachRepRec.reason}</p>
                 )}
               </div>
 
