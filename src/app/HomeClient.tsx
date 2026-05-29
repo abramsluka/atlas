@@ -365,6 +365,17 @@ export default function HomeClient({ today, initialCheckin }: { today: string; i
 
   return (
     <main className="min-h-screen px-4 pb-24 pt-14">
+      <h1
+        className="mb-4 text-5xl font-bold tracking-tight"
+        style={{
+          background: 'linear-gradient(180deg, #FFFFFF 0%, #C7C4BC 120%)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          backgroundClip: 'text',
+        }}
+      >
+        L
+      </h1>
       <GoalTicker checkin={checkin} />
       <DayRing />
 
