@@ -1389,7 +1389,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     <button
                       onClick={() => fetchCoachStep(exModal.name, exModal.bodyweight)}
                       disabled={coachStepLoading}
-                      className="mt-2 text-xs text-white/35 hover:text-white/60 transition-colors disabled:opacity-40"
+                      className="mt-2 w-full rounded-xl py-2.5 text-xs font-semibold text-black disabled:opacity-50 active:scale-[0.98] transition-transform"
+                      style={{ background: 'linear-gradient(180deg,#ffffff 0%,#e8e5dd 100%)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.55),0 2px 8px rgba(0,0,0,0.35)' }}
                     >
                       {coachStepLoading ? 'Asking coach…' : 'Let coach decide'}
                     </button>
@@ -1588,7 +1589,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 <button
                   onClick={fetchCoachReps}
                   disabled={coachRepLoading}
-                  className="mt-2 text-xs text-white/35 hover:text-white/60 transition-colors disabled:opacity-40"
+                  className="mt-2 w-full rounded-xl py-2.5 text-xs font-semibold text-black disabled:opacity-50 active:scale-[0.98] transition-transform"
+                  style={{ background: 'linear-gradient(180deg,#ffffff 0%,#e8e5dd 100%)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.55),0 2px 8px rgba(0,0,0,0.35)' }}
                 >
                   {coachRepLoading ? 'Asking coach…' : 'Let coach decide'}
                 </button>
