@@ -69,7 +69,9 @@ export async function DELETE(
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  await db.storage.from('food-photos').remove([existing.storage_path])
+  if (existing.storage_path) {
+    await db.storage.from('food-photos').remove([existing.storage_path])
+  }
 
   const { error } = await db.from('food_logs').delete().eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
