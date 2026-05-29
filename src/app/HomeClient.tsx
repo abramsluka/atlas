@@ -374,7 +374,7 @@ export default function HomeClient({ today, initialCheckin }: { today: string; i
           backgroundClip: 'text',
         }}
       >
-        L
+        Luka's Dashboard
       </h1>
       <GoalTicker checkin={checkin} />
       <DayRing />
