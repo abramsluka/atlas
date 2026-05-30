@@ -45,5 +45,5 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL(`/health?error=db_${upsertError.code}`, req.url))
   }
 
-  return NextResponse.redirect(new URL('/health', req.url))
+  return NextResponse.redirect(new URL('/health?connected=whoop', req.url))
 }

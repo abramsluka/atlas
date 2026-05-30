@@ -3,6 +3,8 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import HealthClient from './HealthClient'
 import type { OuraData, WhoopData } from '@/features/health/types'
 
+export const dynamic = 'force-dynamic'
+
 export default async function HealthPage() {
   const authClient = await createClient()
   const { data: { user } } = await authClient.auth.getUser()
