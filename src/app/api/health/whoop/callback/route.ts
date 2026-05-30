@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
     body: new URLSearchParams({
       grant_type: 'authorization_code',
       code,
-      redirect_uri: `${process.env.NEXT_PUBLIC_APP_URL ?? req.nextUrl.origin}/api/health/whoop/callback`,
+      redirect_uri: 'https://atlas-phi-plum.vercel.app/api/health/whoop/callback',
       client_id: process.env.WHOOP_CLIENT_ID!,
       client_secret: process.env.WHOOP_CLIENT_SECRET!,
     }),
