@@ -7,7 +7,11 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.redirect(new URL('/login', req.url))
 
   const code = req.nextUrl.searchParams.get('code')
-  if (!code) return NextResponse.redirect(new URL('/health?error=no_code', req.url))
+  const whoopError = req.nextUrl.searchParams.get('error')
+  if (!code) {
+    console.error('Whoop callback missing code. error:', whoopError, 'params:', req.nextUrl.search)
+    return NextResponse.redirect(new URL(`/health?error=no_code&why=${whoopError ?? 'unknown'}`, req.url))
+  }
 
   const tokenRes = await fetch('https://api.prod.whoop.com/oauth/oauth2/token', {
     method: 'POST',
