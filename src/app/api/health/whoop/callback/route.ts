@@ -7,10 +7,18 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.redirect(new URL('/login', req.url))
 
   const code = req.nextUrl.searchParams.get('code')
+  const returnedState = req.nextUrl.searchParams.get('state')
+  const savedState = req.cookies.get('whoop_state')?.value
   const whoopError = req.nextUrl.searchParams.get('error')
+
   if (!code) {
     console.error('Whoop callback missing code. error:', whoopError, 'params:', req.nextUrl.search)
     return NextResponse.redirect(new URL(`/health?error=no_code&why=${whoopError ?? 'unknown'}`, req.url))
+  }
+
+  if (!savedState || returnedState !== savedState) {
+    console.error('Whoop state mismatch', { returnedState, savedState })
+    return NextResponse.redirect(new URL('/health?error=state_mismatch', req.url))
   }
 
   const tokenRes = await fetch('https://api.prod.whoop.com/oauth/oauth2/token', {
@@ -49,5 +57,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL(`/health?error=db_${upsertError.code}`, req.url))
   }
 
-  return NextResponse.redirect(new URL('/health?connected=whoop', req.url))
+  const successRes = NextResponse.redirect(new URL('/health?connected=whoop', req.url))
+  successRes.cookies.delete('whoop_state')
+  return successRes
 }
