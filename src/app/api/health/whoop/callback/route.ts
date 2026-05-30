@@ -29,16 +29,21 @@ export async function GET(req: NextRequest) {
   const expiresAt = new Date(Date.now() + (tokens.expires_in ?? 3600) * 1000).toISOString()
 
   const db = createServiceClient()
-  await db.from('wearable_tokens').upsert(
+  const { error: upsertError } = await db.from('wearable_tokens').upsert(
     {
       user_id: user.id,
       provider: 'whoop',
       access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
+      refresh_token: tokens.refresh_token ?? '',
       expires_at: expiresAt,
     },
     { onConflict: 'user_id,provider' }
   )
+
+  if (upsertError) {
+    console.error('Whoop token upsert failed:', upsertError)
+    return NextResponse.redirect(new URL(`/health?error=db_${upsertError.code}`, req.url))
+  }
 
   return NextResponse.redirect(new URL('/health', req.url))
 }
