@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
 
   if (cached && cachedHasData) {
     const age = Date.now() - new Date(cached.fetched_at).getTime()
-    if (age < 60 * 60 * 1000) {
+    if (age < 15 * 60 * 1000) {
       return NextResponse.json(cached.data)
     }
   }
@@ -109,9 +109,14 @@ export async function GET(req: NextRequest) {
   // the night ending on `sleepScore.day`, so we match on `day` (Oura sets day = wake date).
   const scoreDay = sleepScore?.day as string | undefined
   const sleepDetailRecords: Array<Record<string, unknown>> = sleepDetailJson?.data ?? []
+  // Oura v2 /sleep records use `type` ("long_sleep", "rest", "nap", etc.), not a `nap` boolean.
+  // Prefer long_sleep for the same day as the score; fall back to any non-nap; then any same-day record.
   const sleepDetail: Record<string, unknown> | undefined = scoreDay
     ? (sleepDetailRecords
-        .filter(r => r.day === scoreDay && !r.nap)
+        .filter(r => r.day === scoreDay && r.type === 'long_sleep')
+        .sort((a, b) => String(b.bedtime_end ?? '').localeCompare(String(a.bedtime_end ?? '')))[0]
+      ?? sleepDetailRecords
+        .filter(r => r.day === scoreDay && r.type !== 'nap')
         .sort((a, b) => String(b.bedtime_end ?? '').localeCompare(String(a.bedtime_end ?? '')))[0]
       ?? sleepDetailRecords
         .filter(r => r.day === scoreDay)
