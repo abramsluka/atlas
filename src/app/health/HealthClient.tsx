@@ -9,7 +9,6 @@ import {
   useHealthProfile,
   useWaterHistory,
   useOuraData,
-  useOuraHistory,
   useWhoopData,
 } from '@/features/health/queries'
 import {
@@ -93,47 +92,6 @@ function getStackDate(): string {
 
 // ─── Wearables Section ──────────────────────────────────────────────────────
 
-function Sparkline({
-  values,
-  color,
-}: {
-  values: Array<number | null>
-  color: string
-}) {
-  const nums = values.filter((v): v is number => typeof v === 'number')
-  if (nums.length < 2) {
-    return <div className="h-5 w-full" />
-  }
-  const min = Math.min(...nums)
-  const max = Math.max(...nums)
-  const range = max - min || 1
-  const w = 100
-  const h = 20
-  const step = values.length > 1 ? w / (values.length - 1) : 0
-  const points = values
-    .map((v, i) => {
-      if (v == null) return null
-      const x = i * step
-      const y = h - ((v - min) / range) * h
-      return `${x.toFixed(1)},${y.toFixed(1)}`
-    })
-    .filter(Boolean)
-    .join(' ')
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="h-5 w-full">
-      <polyline
-        points={points}
-        fill="none"
-        stroke={color}
-        strokeWidth={1.5}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
-  )
-}
-
 function WearablesSection({
   hasOura,
   hasWhoop,
@@ -149,7 +107,6 @@ function WearablesSection({
 }) {
   const { data: oura } = useOuraData(today, hasOura, initialOura)
   const { data: whoop } = useWhoopData(today, hasWhoop, initialWhoop)
-  const { data: ouraHistory } = useOuraHistory(14, hasOura)
 
   return (
     <section>
@@ -170,19 +127,11 @@ function WearablesSection({
             <p className="text-xs text-zinc-500">Syncing...</p>
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-[10px] uppercase tracking-wide text-zinc-500">Readiness</p>
-                  <p className={`text-3xl font-bold ${scoreColor(oura.readiness?.score)}`}>
-                    {oura.readiness?.score ?? '--'}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wide text-zinc-500">Steps</p>
-                  <p className="text-3xl font-bold text-white">
-                    {oura.activity?.steps != null ? oura.activity.steps.toLocaleString() : '--'}
-                  </p>
-                </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-zinc-500">Readiness</p>
+                <p className={`text-3xl font-bold ${scoreColor(oura.readiness?.score)}`}>
+                  {oura.readiness?.score ?? '--'}
+                </p>
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div>
@@ -202,25 +151,6 @@ function WearablesSection({
                   </p>
                 </div>
               </div>
-              {ouraHistory && ouraHistory.length >= 2 && (
-                <div className="space-y-2 pt-2 border-t border-white/[0.04]">
-                  <p className="text-[10px] uppercase tracking-wide text-zinc-500">14-day trend</p>
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-3">
-                      <span className="w-16 shrink-0 text-[10px] text-zinc-500">Readiness</span>
-                      <Sparkline values={ouraHistory.map(p => p.readiness)} color="#6BE3A4" />
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="w-16 shrink-0 text-[10px] text-zinc-500">HRV</span>
-                      <Sparkline values={ouraHistory.map(p => p.hrv)} color="#7B5BB0" />
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="w-16 shrink-0 text-[10px] text-zinc-500">Sleep</span>
-                      <Sparkline values={ouraHistory.map(p => p.sleep_score)} color="#F2C063" />
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -237,26 +167,32 @@ function WearablesSection({
           ) : !whoop ? (
             <p className="text-xs text-zinc-500">Syncing...</p>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-4">
               <div>
                 <p className="text-[10px] uppercase tracking-wide text-zinc-500">Recovery</p>
                 <p className={`text-3xl font-bold ${scoreColor(whoop.recovery?.score)}`}>
                   {whoop.recovery?.score != null ? `${whoop.recovery.score}%` : '--'}
                 </p>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <p className="text-[10px] uppercase tracking-wide text-zinc-500">Strain</p>
                   <p className="text-sm font-semibold text-white">
-                    {whoop.workout?.strain != null ? whoop.workout.strain.toFixed(1) : '--'}
+                    {whoop.cycle?.strain != null ? whoop.cycle.strain.toFixed(1) : '--'}
                   </p>
                 </div>
                 <div>
                   <p className="text-[10px] uppercase tracking-wide text-zinc-500">Cals</p>
                   <p className="text-sm font-semibold text-white">
-                    {whoop.workout?.kilojoule != null
-                      ? Math.round(whoop.workout.kilojoule * 0.239)
+                    {whoop.cycle?.kilojoule != null
+                      ? Math.round(whoop.cycle.kilojoule * 0.239).toLocaleString()
                       : '--'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide text-zinc-500">Sleep</p>
+                  <p className="text-sm font-semibold text-white">
+                    {formatDuration(whoop.sleep?.duration_seconds)}
                   </p>
                 </div>
               </div>

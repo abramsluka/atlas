@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
+import type { OuraData, WhoopData } from '@/features/health/types'
 
 export async function POST(_request: NextRequest) {
   const authClient = await createClient()
@@ -23,6 +24,8 @@ export async function POST(_request: NextRequest) {
     debloatTodayRes,
     debloatHistoryRes,
     bodyweightRes,
+    ouraWearableRes,
+    whoopWearableRes,
   ] = await Promise.all([
     db.from('daily_checkins')
       .select('*')
@@ -87,6 +90,9 @@ export async function POST(_request: NextRequest) {
       .eq('user_id', user.id)
       .order('logged_at', { ascending: false })
       .limit(14),
+
+    db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'oura').eq('date', today).maybeSingle(),
+    db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'whoop').eq('date', today).maybeSingle(),
   ])
 
   const checkin = checkinRes.data
@@ -146,6 +152,32 @@ export async function POST(_request: NextRequest) {
     ? ((bodyweightRes.data[0].weight_lbs - bodyweightRes.data[4].weight_lbs) > 0 ? 'up' : 'down')
     : null
 
+  const ouraToday = ouraWearableRes.data?.data as OuraData | null
+  const whoopToday = whoopWearableRes.data?.data as WhoopData | null
+
+  const wearableLines: string[] = []
+  if (ouraToday) {
+    if (ouraToday.readiness?.score != null) wearableLines.push(`  Oura readiness: ${ouraToday.readiness.score}`)
+    if (ouraToday.sleep?.score != null) wearableLines.push(`  Oura sleep score: ${ouraToday.sleep.score}`)
+    if (ouraToday.sleep?.average_hrv != null) wearableLines.push(`  Oura HRV: ${Math.round(ouraToday.sleep.average_hrv)}ms`)
+    if (ouraToday.sleep?.total_sleep_duration != null) {
+      const h = Math.floor(ouraToday.sleep.total_sleep_duration / 3600)
+      const m = Math.floor((ouraToday.sleep.total_sleep_duration % 3600) / 60)
+      wearableLines.push(`  Oura sleep duration: ${h}h${m}m`)
+    }
+  }
+  if (whoopToday) {
+    if (whoopToday.recovery?.score != null) wearableLines.push(`  Whoop recovery: ${whoopToday.recovery.score}%`)
+    if (whoopToday.recovery?.hrv_rmssd_milli != null) wearableLines.push(`  Whoop HRV: ${Math.round(whoopToday.recovery.hrv_rmssd_milli)}ms`)
+    if (whoopToday.cycle?.strain != null) wearableLines.push(`  Whoop strain: ${whoopToday.cycle.strain.toFixed(1)}`)
+    if (whoopToday.cycle?.kilojoule != null) wearableLines.push(`  Whoop calories: ${Math.round(whoopToday.cycle.kilojoule * 0.239)} kcal`)
+    if (whoopToday.sleep?.duration_seconds != null) {
+      const h = Math.floor(whoopToday.sleep.duration_seconds / 3600)
+      const m = Math.floor((whoopToday.sleep.duration_seconds % 3600) / 60)
+      wearableLines.push(`  Whoop sleep: ${h}h${m}m`)
+    }
+  }
+
   const hour = now.getHours()
   const timeOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening'
 
@@ -186,6 +218,9 @@ export async function POST(_request: NextRequest) {
           }
           return `  • ${g.title} (${g.type})`
         }).join('\n'),
+    '',
+    '--- WEARABLES ---',
+    wearableLines.length > 0 ? wearableLines.join('\n') : 'No wearable data for today.',
     '',
     '--- HEALTH ---',
     `Water today: ${waterOz > 0 ? `${waterOz} oz` : 'none logged'}`,

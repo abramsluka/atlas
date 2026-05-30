@@ -94,20 +94,29 @@ export async function GET(req: NextRequest) {
     activityRes.ok ? activityRes.json() : null,
   ])
 
-  // Pick the most recent entry from each collection
+  // Pick the most recent daily entry
   const pickLatest = (arr?: Array<Record<string, unknown>>): Record<string, unknown> | undefined => {
     if (!arr || arr.length === 0) return undefined
-    return [...arr].sort((a, b) => {
-      const ad = String(a.day ?? a.bedtime_end ?? '')
-      const bd = String(b.day ?? b.bedtime_end ?? '')
-      return bd.localeCompare(ad)
-    })[0]
+    return [...arr].sort((a, b) => String(b.day ?? b.bedtime_end ?? '').localeCompare(String(a.day ?? a.bedtime_end ?? '')))[0]
   }
 
   const sleepScore = pickLatest(sleepScoreJson?.data)
-  const sleepDetail = pickLatest(sleepDetailJson?.data)
   const readiness = pickLatest(readinessJson?.data)
   const activity = pickLatest(activityJson?.data)
+
+  // Match sleepDetail (from /sleep) to the same calendar day as the sleepScore record.
+  // The /sleep endpoint returns individual sleep periods; the daily_sleep score refers to
+  // the night ending on `sleepScore.day`, so we match on `day` (Oura sets day = wake date).
+  const scoreDay = sleepScore?.day as string | undefined
+  const sleepDetailRecords: Array<Record<string, unknown>> = sleepDetailJson?.data ?? []
+  const sleepDetail: Record<string, unknown> | undefined = scoreDay
+    ? (sleepDetailRecords
+        .filter(r => r.day === scoreDay && !r.nap)
+        .sort((a, b) => String(b.bedtime_end ?? '').localeCompare(String(a.bedtime_end ?? '')))[0]
+      ?? sleepDetailRecords
+        .filter(r => r.day === scoreDay)
+        .sort((a, b) => String(b.bedtime_end ?? '').localeCompare(String(a.bedtime_end ?? '')))[0])
+    : pickLatest(sleepDetailRecords)
 
   const num = (v: unknown): number | null => (typeof v === 'number' ? v : null)
 

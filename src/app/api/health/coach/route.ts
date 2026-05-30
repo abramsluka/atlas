@@ -3,7 +3,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { format, subDays } from 'date-fns'
 import { getOuraContextRange } from '@/features/health/ouraContext'
-import type { OuraData } from '@/features/health/types'
+import type { OuraData, WhoopData } from '@/features/health/types'
 
 function logDatePST(utcStr: string): string {
   return new Date(utcStr).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
@@ -44,6 +44,7 @@ export async function POST(_request: NextRequest) {
 
   const [
     ouraRows,
+    whoopTodayResult,
     supplementsResult,
     supplementLogsResult,
     caffeineResult,
@@ -52,6 +53,7 @@ export async function POST(_request: NextRequest) {
     poLogsResult,
   ] = await Promise.all([
     getOuraContextRange(db, user.id, thirtyDaysAgo, today),
+    db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'whoop').eq('date', today).maybeSingle(),
     db.from('supplements').select('*').eq('user_id', user.id).eq('active', true).order('created_at'),
     db.from('supplement_logs').select('*').eq('user_id', user.id).gte('date', sevenDaysAgo),
     db.from('caffeine_logs').select('*').eq('user_id', user.id).gte('date', sevenDaysAgo).order('logged_at'),
@@ -63,6 +65,8 @@ export async function POST(_request: NextRequest) {
       .gte('logged_at', sevenDaysAgo + 'T00:00:00')
       .order('logged_at', { ascending: true }),
   ])
+
+  const whoopToday = whoopTodayResult.data?.data as WhoopData | null
 
   const supplements = supplementsResult.data ?? []
   const supplementLogs = supplementLogsResult.data ?? []
@@ -166,10 +170,25 @@ export async function POST(_request: NextRequest) {
     waterLines.push(`  ${date}: ${Math.round(total)}oz${target ? ` / ${target}oz target` : ''}`)
   }
 
+  const whoopLines: string[] = []
+  if (whoopToday) {
+    if (whoopToday.recovery?.score != null) whoopLines.push(`  Recovery score: ${whoopToday.recovery.score}%`)
+    if (whoopToday.recovery?.hrv_rmssd_milli != null) whoopLines.push(`  HRV (RMSSD): ${Math.round(whoopToday.recovery.hrv_rmssd_milli)}ms`)
+    if (whoopToday.cycle?.strain != null) whoopLines.push(`  Day strain: ${whoopToday.cycle.strain.toFixed(1)}`)
+    if (whoopToday.cycle?.kilojoule != null) whoopLines.push(`  Calories burned: ${Math.round(whoopToday.cycle.kilojoule * 0.239)} kcal`)
+    if (whoopToday.sleep?.duration_seconds != null) {
+      const h = Math.floor(whoopToday.sleep.duration_seconds / 3600)
+      const m = Math.floor((whoopToday.sleep.duration_seconds % 3600) / 60)
+      whoopLines.push(`  Sleep duration: ${h}h${m}m`)
+    }
+  }
+
   const userMessage = [
     'Last 7 days of my health data:',
     '',
     ouraLines.length > 0 ? `Body data (Oura, by day):\n${ouraLines.join('\n')}` : 'Body data: not connected or empty',
+    '',
+    whoopLines.length > 0 ? `Whoop (today):\n${whoopLines.join('\n')}` : '',
     '',
     `Training load (last 7 days):\n${trainingLines.join('\n')}`,
     '',
