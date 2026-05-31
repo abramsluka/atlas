@@ -1385,8 +1385,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Step ({config.units})</label>
-                    <input type="number" inputMode="decimal" step="1.25" placeholder="0" value={exModal.step}
-                      onChange={e => { const v = parseFloat(e.target.value); setExModal(m => ({ ...m, step: isNaN(v) ? m.step : v })) }}
+                    <input type="number" inputMode="decimal" step="1.25" placeholder="0" value={exModal.step === 0 ? '' : exModal.step}
+                      onChange={e => { const v = parseFloat(e.target.value); setExModal(m => ({ ...m, step: isNaN(v) ? 0 : v })) }}
                       className="w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white focus:outline-none" />
                     <button
                       onClick={() => fetchCoachStep(exModal.name, exModal.bodyweight)}

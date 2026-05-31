@@ -695,7 +695,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                         type="number"
                         inputMode="decimal"
                         step={currentEx.step}
-                        value={weightInput}
+                        value={weightInput === 0 ? '' : weightInput}
                         onChange={e => { const v = parseFloat(e.target.value); setWeightInput(isNaN(v) ? 0 : v) }}
                         className="w-full text-center text-2xl font-bold bg-transparent focus:outline-none"
                       />
@@ -916,14 +916,14 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Start weight</label>
-                    <input type="number" inputMode="decimal" step="2.5" placeholder="0" value={exModal.startWeight}
-                      onChange={e => { const v = parseFloat(e.target.value); setExModal(m => ({ ...m, startWeight: isNaN(v) ? m.startWeight : v })) }}
+                    <input type="number" inputMode="decimal" step="2.5" placeholder="0" value={exModal.startWeight === 0 ? '' : exModal.startWeight}
+                      onChange={e => { const v = parseFloat(e.target.value); setExModal(m => ({ ...m, startWeight: isNaN(v) ? 0 : v })) }}
                       className="w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white focus:outline-none" />
                   </div>
                   <div>
                     <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Step ({config.units})</label>
-                    <input type="number" inputMode="decimal" step="1.25" placeholder="0" value={exModal.step}
-                      onChange={e => { const v = parseFloat(e.target.value); setExModal(m => ({ ...m, step: isNaN(v) ? m.step : v })) }}
+                    <input type="number" inputMode="decimal" step="1.25" placeholder="0" value={exModal.step === 0 ? '' : exModal.step}
+                      onChange={e => { const v = parseFloat(e.target.value); setExModal(m => ({ ...m, step: isNaN(v) ? 0 : v })) }}
                       className="w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white focus:outline-none" />
                   </div>
                 </div>
