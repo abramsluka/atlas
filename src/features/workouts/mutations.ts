@@ -229,6 +229,24 @@ export function useDeleteWorkout() {
   })
 }
 
+export function useDeleteExercise(workoutId: string) {
+  return useMutation({
+    mutationFn: async (exerciseId: string) => {
+      const res = await fetch(`/api/workouts/${workoutId}/exercises/${exerciseId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to delete exercise')
+    },
+  })
+}
+
+export function useDeleteSet(workoutId: string) {
+  return useMutation({
+    mutationFn: async ({ exerciseId, setId }: { exerciseId: string; setId: string }) => {
+      const res = await fetch(`/api/workouts/${workoutId}/exercises/${exerciseId}/sets/${setId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to delete set')
+    },
+  })
+}
+
 export function useToggleSetComplete(workoutId: string) {
   const queryClient = useQueryClient()
 

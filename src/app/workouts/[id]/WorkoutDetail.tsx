@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import type { WorkoutWithExercises } from '@/features/workouts/types'
-import { useUpdateSet, useToggleSetComplete } from '@/features/workouts/mutations'
+import { useUpdateSet, useToggleSetComplete, useDeleteSet, useDeleteExercise } from '@/features/workouts/mutations'
 
 interface Props {
   workout: WorkoutWithExercises
@@ -35,19 +35,45 @@ interface SetRowProps {
   setIndex: number
   onFieldChange: (field: ActiveField, value: string) => void
   onToggle: () => void
+  onDelete: () => void
 }
 
-function SetRow({ set, setIndex, onFieldChange, onToggle }: SetRowProps) {
+const DELETE_WIDTH = 72
+
+function SetRow({ set, setIndex, onFieldChange, onToggle, onDelete }: SetRowProps) {
   const [activeField, setActiveField] = useState<ActiveField | null>(null)
+  const [swipeX, setSwipeX] = useState(0)
+  const [dragging, setDragging] = useState(false)
+  const touchStartX = useRef(0)
+  const swipeStartX = useRef(0)
 
   function tap(field: ActiveField) {
+    if (swipeX !== 0) { setSwipeX(0); return }
     if (set.completed) onToggle()
     setActiveField((f) => (f === field && !set.completed ? null : field))
   }
 
   function handleToggle() {
+    if (swipeX !== 0) { setSwipeX(0); return }
     setActiveField(null)
     onToggle()
+  }
+
+  function handleTouchStart(e: React.TouchEvent) {
+    touchStartX.current = e.touches[0].clientX
+    swipeStartX.current = swipeX
+    setDragging(true)
+  }
+
+  function handleTouchMove(e: React.TouchEvent) {
+    const dx = e.touches[0].clientX - touchStartX.current
+    const next = Math.max(-DELETE_WIDTH, Math.min(0, swipeStartX.current + dx))
+    setSwipeX(next)
+  }
+
+  function handleTouchEnd() {
+    setDragging(false)
+    setSwipeX(swipeX < -(DELETE_WIDTH / 2) ? -DELETE_WIDTH : 0)
   }
 
   function handleSlider(e: React.ChangeEvent<HTMLInputElement>) {
@@ -68,49 +94,79 @@ function SetRow({ set, setIndex, onFieldChange, onToggle }: SetRowProps) {
   }
 
   return (
-    <div className={`mb-2 ${set.completed ? 'opacity-60' : ''}`}>
-      <div className="flex items-center gap-2">
-        <span className="w-8 flex-shrink-0 text-center text-sm text-zinc-500">
-          {setIndex + 1}
-        </span>
+    <div className="relative mb-2 overflow-hidden">
+      <button
+        onClick={onDelete}
+        className="absolute inset-y-0 right-0 flex items-center justify-center bg-red-600 text-sm font-semibold text-white"
+        style={{ width: DELETE_WIDTH }}
+      >
+        Delete
+      </button>
 
-        {(['reps', 'weight_lbs', 'rpe'] as ActiveField[]).map((field) => (
+      <div
+        className={set.completed ? 'opacity-60' : ''}
+        style={{
+          transform: `translateX(${swipeX}px)`,
+          transition: dragging ? 'none' : 'transform 0.2s ease',
+          position: 'relative',
+          zIndex: 1,
+          backgroundColor: 'rgb(24 24 27)',
+        }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
+        <div className="flex items-center gap-2">
+          <span className="w-8 flex-shrink-0 text-center text-sm text-zinc-500">
+            {setIndex + 1}
+          </span>
+
+          {(['reps', 'weight_lbs', 'rpe'] as ActiveField[]).map((field) => (
+            <button
+              key={field}
+              onClick={() => tap(field)}
+              className={`flex h-9 flex-1 items-center justify-center rounded-lg text-sm font-medium transition-colors active:opacity-80 ${
+                activeField === field
+                  ? 'bg-zinc-700 text-white'
+                  : 'bg-zinc-800 text-zinc-400'
+              }`}
+            >
+              {fieldLabel(field)}
+            </button>
+          ))}
+
           <button
-            key={field}
-            onClick={() => tap(field)}
-            className={`flex h-9 flex-1 items-center justify-center rounded-lg text-sm font-medium transition-colors active:opacity-80 ${
-              activeField === field
-                ? 'bg-zinc-700 text-white'
-                : 'bg-zinc-800 text-zinc-400'
-            }`}
+            onClick={handleToggle}
+            className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-base transition-colors ${
+              set.completed ? 'bg-white text-black' : 'bg-zinc-800 text-zinc-600'
+            } active:opacity-80`}
           >
-            {fieldLabel(field)}
+            ✓
           </button>
-        ))}
 
-        <button
-          onClick={handleToggle}
-          className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-base transition-colors ${
-            set.completed ? 'bg-white text-black' : 'bg-zinc-800 text-zinc-600'
-          } active:opacity-80`}
-        >
-          ✓
-        </button>
-      </div>
-
-      {activeField && cfg && (
-        <div className="mt-2 px-1">
-          <input
-            type="range"
-            min={cfg.min}
-            max={cfg.max}
-            step={cfg.step}
-            value={sliderVal}
-            onChange={handleSlider}
-            className="w-full accent-white"
-          />
+          <button
+            onClick={onDelete}
+            className="hidden md:flex h-9 w-8 flex-shrink-0 items-center justify-center text-zinc-700 hover:text-red-400 transition-colors"
+            aria-label="Delete set"
+          >
+            ×
+          </button>
         </div>
-      )}
+
+        {activeField && cfg && (
+          <div className="mt-2 px-1">
+            <input
+              type="range"
+              min={cfg.min}
+              max={cfg.max}
+              step={cfg.step}
+              value={sliderVal}
+              onChange={handleSlider}
+              className="w-full accent-white"
+            />
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -149,6 +205,12 @@ export default function WorkoutDetail({ workout, initialCoachResponse, backHref 
 
   const updateSet = useUpdateSet()
   const toggleComplete = useToggleSetComplete(workout.id)
+  const deleteSet = useDeleteSet(workout.id)
+  const deleteExercise = useDeleteExercise(workout.id)
+
+  const [deletedSetIds, setDeletedSetIds] = useState<Set<string>>(new Set())
+  const [deletedExerciseIds, setDeletedExerciseIds] = useState<Set<string>>(new Set())
+  const [confirmDeleteExerciseId, setConfirmDeleteExerciseId] = useState<string | null>(null)
 
   useEffect(() => {
     if (initialCoachResponse) return
@@ -227,6 +289,17 @@ export default function WorkoutDetail({ workout, initialCoachResponse, backHref 
       [setId]: { ...prev[setId], completed: next },
     }))
     toggleComplete.mutate({ id: setId, completed: next })
+  }
+
+  function handleDeleteSet(exerciseId: string, setId: string) {
+    setDeletedSetIds((prev) => new Set(prev).add(setId))
+    deleteSet.mutate({ exerciseId, setId })
+  }
+
+  function handleDeleteExercise(exerciseId: string) {
+    setDeletedExerciseIds((prev) => new Set(prev).add(exerciseId))
+    setConfirmDeleteExerciseId(null)
+    deleteExercise.mutate(exerciseId)
   }
 
   function calcVolume() {
@@ -311,27 +384,70 @@ export default function WorkoutDetail({ workout, initialCoachResponse, backHref 
         {workout.exercises
           .slice()
           .sort((a, b) => a.order_index - b.order_index)
-          .map((exercise) => (
-            <div key={exercise.id} className="rounded-xl bg-zinc-900 px-4 py-4">
-              <h2 className="mb-3 font-semibold">{exercise.name || 'Unnamed exercise'}</h2>
+          .filter((exercise) => !deletedExerciseIds.has(exercise.id))
+          .map((exercise) => {
+            const visibleSets = exercise.sets
+              .slice()
+              .sort((a, b) => a.order_index - b.order_index)
+              .filter((s) => !deletedSetIds.has(s.id))
 
-              {exercise.sets.length === 0 && (
-                <p className="text-sm text-zinc-500">No sets</p>
-              )}
+            return (
+              <div key={exercise.id} className="rounded-xl bg-zinc-900 px-4 py-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <h2 className="flex-1 font-semibold">{exercise.name || 'Unnamed exercise'}</h2>
+                  <button
+                    onClick={() => setConfirmDeleteExerciseId(
+                      confirmDeleteExerciseId === exercise.id ? null : exercise.id
+                    )}
+                    className="flex-shrink-0 p-1 text-zinc-600 active:text-red-400 transition-colors"
+                    aria-label="Delete exercise"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                      <path d="M10 11v6M14 11v6" />
+                      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                    </svg>
+                  </button>
+                </div>
 
-              {exercise.sets.length > 0 && (
-                <div>
-                  <div className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-zinc-600">
-                    <span className="w-8 flex-shrink-0" />
-                    <span className="flex-1 text-center">Reps</span>
-                    <span className="flex-1 text-center">Weight</span>
-                    <span className="flex-1 text-center">RPE</span>
-                    <span className="w-9 flex-shrink-0" />
+                {confirmDeleteExerciseId === exercise.id && (
+                  <div className="mb-3 rounded-xl bg-zinc-800 px-4 py-3">
+                    <p className="mb-3 text-sm text-zinc-200">
+                      Delete <span className="font-semibold">{exercise.name || 'this exercise'}</span> and all its sets?
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setConfirmDeleteExerciseId(null)}
+                        className="flex h-9 flex-1 items-center justify-center rounded-lg bg-zinc-700 text-sm text-white active:opacity-80"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => handleDeleteExercise(exercise.id)}
+                        className="flex h-9 flex-1 items-center justify-center rounded-lg bg-red-600 text-sm font-semibold text-white active:opacity-80"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
-                  {exercise.sets
-                    .slice()
-                    .sort((a, b) => a.order_index - b.order_index)
-                    .map((set, i) => {
+                )}
+
+                {visibleSets.length === 0 && !confirmDeleteExerciseId && (
+                  <p className="text-sm text-zinc-500">No sets</p>
+                )}
+
+                {visibleSets.length > 0 && (
+                  <div>
+                    <div className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-zinc-600">
+                      <span className="w-8 flex-shrink-0" />
+                      <span className="flex-1 text-center">Reps</span>
+                      <span className="flex-1 text-center">Weight</span>
+                      <span className="flex-1 text-center">RPE</span>
+                      <span className="w-9 flex-shrink-0" />
+                      <span className="w-8 flex-shrink-0" />
+                    </div>
+                    {visibleSets.map((set, i) => {
                       const local = localSets[set.id]
                       if (!local) return null
                       return (
@@ -343,13 +459,15 @@ export default function WorkoutDetail({ workout, initialCoachResponse, backHref 
                             handleSetFieldChange(set.id, field, value)
                           }
                           onToggle={() => handleToggleComplete(set.id)}
+                          onDelete={() => handleDeleteSet(exercise.id, set.id)}
                         />
                       )
                     })}
-                </div>
-              )}
-            </div>
-          ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
       </div>
 
       {workout.completed_at && (

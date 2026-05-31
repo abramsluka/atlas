@@ -13,6 +13,8 @@ import {
   useToggleSetComplete,
   useFinishWorkout,
   useDeleteWorkout,
+  useDeleteExercise,
+  useDeleteSet,
 } from '@/features/workouts/mutations'
 import { useWorkout } from '@/features/workouts/queries'
 
@@ -77,6 +79,8 @@ function NewWorkoutContent() {
   const toggleComplete = useToggleSetComplete(workout?.id ?? '')
   const finishWorkout = useFinishWorkout()
   const deleteWorkout = useDeleteWorkout()
+  const deleteExercise = useDeleteExercise(workout?.id ?? '')
+  const deleteSet = useDeleteSet(workout?.id ?? '')
 
   const { data: existingWorkout } = useWorkout(resumeId ?? '', { enabled: !!resumeId })
 
@@ -294,6 +298,27 @@ function NewWorkoutContent() {
     toggleComplete.mutate({ id: setId, completed: next })
   }
 
+  function handleDeleteSet(exerciseId: string, setId: string) {
+    setWorkout((w) =>
+      w
+        ? {
+            ...w,
+            exercises: w.exercises.map((e) =>
+              e.id !== exerciseId ? e : { ...e, sets: e.sets.filter((s) => s.id !== setId) }
+            ),
+          }
+        : w
+    )
+    deleteSet.mutate({ exerciseId, setId })
+  }
+
+  function handleDeleteExercise(exerciseId: string) {
+    setWorkout((w) =>
+      w ? { ...w, exercises: w.exercises.filter((e) => e.id !== exerciseId) } : w
+    )
+    deleteExercise.mutate(exerciseId)
+  }
+
   function handleFinish() {
     finishWorkout.mutate(workout!.id, {
       onSuccess: (id) => {
@@ -389,6 +414,8 @@ function NewWorkoutContent() {
             onToggleComplete={(setId, current) =>
               handleToggleComplete(exercise.id, setId, current)
             }
+            onDeleteSet={(setId) => handleDeleteSet(exercise.id, setId)}
+            onDeleteExercise={() => handleDeleteExercise(exercise.id)}
           />
         ))}
       </div>
@@ -440,6 +467,8 @@ interface ExerciseCardProps {
   onAddSet: () => void
   onSetChange: (setId: string, field: 'reps' | 'weight_lbs' | 'rpe', value: string) => void
   onToggleComplete: (setId: string, current: boolean) => void
+  onDeleteSet: (setId: string) => void
+  onDeleteExercise: () => void
 }
 
 function ExerciseCard({
@@ -449,16 +478,51 @@ function ExerciseCard({
   onAddSet,
   onSetChange,
   onToggleComplete,
+  onDeleteSet,
+  onDeleteExercise,
 }: ExerciseCardProps) {
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
   return (
     <div className="rounded-xl bg-zinc-900 px-4 py-4">
-      <input
-        type="text"
-        value={exercise.name}
-        onChange={(e) => onNameChange(e.target.value)}
-        placeholder={`Exercise ${exerciseIndex + 1}`}
-        className="mb-4 w-full bg-transparent text-lg font-semibold text-white placeholder:text-zinc-600 outline-none"
-      />
+      <div className="mb-4 flex items-center gap-2">
+        <input
+          type="text"
+          value={exercise.name}
+          onChange={(e) => onNameChange(e.target.value)}
+          placeholder={`Exercise ${exerciseIndex + 1}`}
+          className="flex-1 bg-transparent text-lg font-semibold text-white placeholder:text-zinc-600 outline-none"
+        />
+        <button
+          onClick={() => setConfirmDelete(true)}
+          className="flex-shrink-0 p-1 text-zinc-600 active:text-red-400 transition-colors"
+          aria-label="Delete exercise"
+        >
+          <TrashIcon />
+        </button>
+      </div>
+
+      {confirmDelete && (
+        <div className="mb-4 rounded-xl bg-zinc-800 px-4 py-3">
+          <p className="mb-3 text-sm text-zinc-200">
+            Delete <span className="font-semibold">{exercise.name || `Exercise ${exerciseIndex + 1}`}</span> and all its sets?
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setConfirmDelete(false)}
+              className="flex h-9 flex-1 items-center justify-center rounded-lg bg-zinc-700 text-sm text-white active:opacity-80"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onDeleteExercise}
+              className="flex h-9 flex-1 items-center justify-center rounded-lg bg-red-600 text-sm font-semibold text-white active:opacity-80"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      )}
 
       {exercise.sets.length > 0 && (
         <div className="mb-3">
@@ -468,6 +532,7 @@ function ExerciseCard({
             <span className="flex-1 text-center">Weight</span>
             <span className="flex-1 text-center">RPE</span>
             <span className="w-9 flex-shrink-0"></span>
+            <span className="w-8 flex-shrink-0"></span>
           </div>
           {exercise.sets.map((set, si) => (
             <SetRow
@@ -476,6 +541,7 @@ function ExerciseCard({
               setIndex={si}
               onFieldChange={(field, value) => onSetChange(set.id, field, value)}
               onToggle={() => onToggleComplete(set.id, set.completed)}
+              onDelete={() => onDeleteSet(set.id)}
             />
           ))}
         </div>
@@ -496,6 +562,7 @@ interface SetRowProps {
   setIndex: number
   onFieldChange: (field: 'reps' | 'weight_lbs' | 'rpe', value: string) => void
   onToggle: () => void
+  onDelete: () => void
 }
 
 type ActiveField = 'reps' | 'weight_lbs' | 'rpe'
@@ -506,17 +573,42 @@ const SLIDER_CONFIG: Record<ActiveField, { min: number; max: number; step: numbe
   rpe:        { min: 0, max: 10,  step: 1   },
 }
 
-function SetRow({ set, setIndex, onFieldChange, onToggle }: SetRowProps) {
+const DELETE_WIDTH = 72
+
+function SetRow({ set, setIndex, onFieldChange, onToggle, onDelete }: SetRowProps) {
   const [activeField, setActiveField] = useState<ActiveField | null>(null)
+  const [swipeX, setSwipeX] = useState(0)
+  const [dragging, setDragging] = useState(false)
+  const touchStartX = useRef(0)
+  const swipeStartX = useRef(0)
 
   function tap(field: ActiveField) {
+    if (swipeX !== 0) { setSwipeX(0); return }
     if (set.completed) onToggle()
     setActiveField((f) => (f === field && !set.completed ? null : field))
   }
 
   function handleToggle() {
+    if (swipeX !== 0) { setSwipeX(0); return }
     setActiveField(null)
     onToggle()
+  }
+
+  function handleTouchStart(e: React.TouchEvent) {
+    touchStartX.current = e.touches[0].clientX
+    swipeStartX.current = swipeX
+    setDragging(true)
+  }
+
+  function handleTouchMove(e: React.TouchEvent) {
+    const dx = e.touches[0].clientX - touchStartX.current
+    const next = Math.max(-DELETE_WIDTH, Math.min(0, swipeStartX.current + dx))
+    setSwipeX(next)
+  }
+
+  function handleTouchEnd() {
+    setDragging(false)
+    setSwipeX(swipeX < -(DELETE_WIDTH / 2) ? -DELETE_WIDTH : 0)
   }
 
   function handleSlider(e: React.ChangeEvent<HTMLInputElement>) {
@@ -537,49 +629,82 @@ function SetRow({ set, setIndex, onFieldChange, onToggle }: SetRowProps) {
   }
 
   return (
-    <div className={`mb-2 ${set.completed ? 'opacity-60' : ''}`}>
-      <div className="flex items-center gap-2">
-        <span className="w-8 flex-shrink-0 text-center text-sm text-zinc-500">
-          {setIndex + 1}
-        </span>
+    <div className="relative mb-2 overflow-hidden">
+      {/* Swipe-to-delete target (mobile) */}
+      <button
+        onClick={onDelete}
+        className="absolute inset-y-0 right-0 flex items-center justify-center bg-red-600 text-sm font-semibold text-white"
+        style={{ width: DELETE_WIDTH }}
+      >
+        Delete
+      </button>
 
-        {(['reps', 'weight_lbs', 'rpe'] as ActiveField[]).map((field) => (
+      {/* Swipeable row */}
+      <div
+        className={set.completed ? 'opacity-60' : ''}
+        style={{
+          transform: `translateX(${swipeX}px)`,
+          transition: dragging ? 'none' : 'transform 0.2s ease',
+          position: 'relative',
+          zIndex: 1,
+          backgroundColor: 'rgb(24 24 27)',
+        }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
+        <div className="flex items-center gap-2">
+          <span className="w-8 flex-shrink-0 text-center text-sm text-zinc-500">
+            {setIndex + 1}
+          </span>
+
+          {(['reps', 'weight_lbs', 'rpe'] as ActiveField[]).map((field) => (
+            <button
+              key={field}
+              onClick={() => tap(field)}
+              className={`flex h-9 flex-1 items-center justify-center rounded-lg text-sm font-medium transition-colors active:opacity-80 ${
+                activeField === field
+                  ? 'bg-zinc-700 text-white'
+                  : 'bg-zinc-800 text-zinc-400'
+              }`}
+            >
+              {fieldLabel(field)}
+            </button>
+          ))}
+
           <button
-            key={field}
-            onClick={() => tap(field)}
-            className={`flex h-9 flex-1 items-center justify-center rounded-lg text-sm font-medium transition-colors active:opacity-80 ${
-              activeField === field
-                ? 'bg-zinc-700 text-white'
-                : 'bg-zinc-800 text-zinc-400'
-            }`}
+            onClick={handleToggle}
+            className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-base transition-colors ${
+              set.completed ? 'bg-white text-black' : 'bg-zinc-800 text-zinc-600'
+            } active:opacity-80`}
           >
-            {fieldLabel(field)}
+            ✓
           </button>
-        ))}
 
-        <button
-          onClick={handleToggle}
-          className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-base transition-colors ${
-            set.completed ? 'bg-white text-black' : 'bg-zinc-800 text-zinc-600'
-          } active:opacity-80`}
-        >
-          ✓
-        </button>
-      </div>
-
-      {activeField && cfg && (
-        <div className="mt-2 px-1">
-          <input
-            type="range"
-            min={cfg.min}
-            max={cfg.max}
-            step={cfg.step}
-            value={sliderVal}
-            onChange={handleSlider}
-            className="w-full accent-white"
-          />
+          {/* Desktop: trash icon */}
+          <button
+            onClick={onDelete}
+            className="hidden md:flex h-9 w-8 flex-shrink-0 items-center justify-center text-zinc-700 hover:text-red-400 transition-colors"
+            aria-label="Delete set"
+          >
+            ×
+          </button>
         </div>
-      )}
+
+        {activeField && cfg && (
+          <div className="mt-2 px-1">
+            <input
+              type="range"
+              min={cfg.min}
+              max={cfg.max}
+              step={cfg.step}
+              value={sliderVal}
+              onChange={handleSlider}
+              className="w-full accent-white"
+            />
+          </div>
+        )}
+      </div>
     </div>
   )
 }

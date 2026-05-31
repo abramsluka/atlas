@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback, useMemo } from 'react'
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useGymConfig, useGymExercises, useAllGymLogs, useBodyWeights, useProgressPhotos } from '@/features/gym/queries'
 import { useHealthProfile, useWhoopData } from '@/features/health/queries'
@@ -283,6 +283,49 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     const match = config.days.find(d => d.name.toLowerCase() === effectiveName.toLowerCase())
     return match?.id ?? config.days[0]?.id ?? ''
   })
+  const autoAdvancedRef = useRef(false)
+
+  // After data loads, override calendar-based day selection with last-workout-based advancement
+  useEffect(() => {
+    if (autoAdvancedRef.current) return
+    if (allLogs.length === 0 || exercises.length === 0) return
+
+    autoAdvancedRef.current = true
+
+    if (config.split_rotation.length === 0 || config.days.length === 0) return
+
+    // If today already has logs, snap to that day
+    const todayLogs = allLogs.filter(l => logDatePST(l.logged_at) === today)
+    if (todayLogs.length > 0) {
+      const ex = exercises.find(e => e.id === todayLogs[0].exercise_id)
+      if (ex && config.days.find(d => d.id === ex.day_id)) {
+        setFilterDay(ex.day_id)
+      }
+      return
+    }
+
+    // Advance from the last logged day
+    const mostRecent = allLogs.reduce((a, b) => a.logged_at > b.logged_at ? a : b)
+    const lastEx = exercises.find(e => e.id === mostRecent.exercise_id)
+    if (!lastEx) return
+
+    const lastDay = config.days.find(d => d.id === lastEx.day_id)
+    if (!lastDay) return
+
+    const rot = config.split_rotation
+    const lastIdx = rot.findIndex(name => name.toLowerCase() === lastDay.name.toLowerCase())
+    if (lastIdx === -1) return
+
+    let nextIdx = (lastIdx + 1) % rot.length
+    for (let i = 0; i < rot.length; i++) {
+      if (!isRest(rot[nextIdx])) break
+      nextIdx = (nextIdx + 1) % rot.length
+    }
+
+    const nextDay = config.days.find(d => d.name.toLowerCase() === rot[nextIdx].toLowerCase())
+    if (nextDay) setFilterDay(nextDay.id)
+  }, [allLogs, exercises, config, today])
+
   const [currentExId, setCurrentExId] = useState<string | null>(null)
 
   // Weight stepper
