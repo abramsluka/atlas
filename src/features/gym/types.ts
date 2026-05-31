@@ -67,7 +67,7 @@ export interface ProgressPhoto {
   url: string  // signed URL, 60-min expiry
 }
 
-export type PrescriptionAction = 'INCREASE' | 'HOLD' | 'REPEAT' | 'DELOAD'
+export type PrescriptionAction = 'INCREASE' | 'HOLD' | 'REPEAT' | 'DROP' | 'DELOAD'
 
 export interface Prescription {
   action: PrescriptionAction

@@ -101,6 +101,14 @@ function getRx(logs: GymLog[], ex: GymExercise, upgradeAtReps: number, units: st
     action: 'HOLD',
     reason: `${reps} reps in target. Stay at ${weight}${units}, push for ${reps + 1}.`,
   }
+  const dropWeight = Math.max(0, Math.round((weight - step) / step) * step)
+  if (dropWeight < weight) {
+    return {
+      action: 'DROP',
+      reason: `${reps} reps short of ${repMin}. Drop to ${dropWeight}${units} next session.`,
+      nextWeight: dropWeight,
+    }
+  }
   return {
     action: 'REPEAT',
     reason: `${reps} reps short of ${repMin}–${upgradeAt}. Repeat ${weight}${units} until you hit ${repMin}+ clean.`,
@@ -588,10 +596,11 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     INCREASE: 'text-green-400 border-green-400/30 bg-green-400/10',
     HOLD: 'text-yellow-400 border-yellow-400/30 bg-yellow-400/10',
     REPEAT: 'text-white/60 border-white/10 bg-white/5',
+    DROP: 'text-orange-400 border-orange-400/30 bg-orange-400/10',
     DELOAD: 'text-red-400 border-red-400/30 bg-red-400/10',
   }
   const rxIcons: Record<string, string> = {
-    INCREASE: '↑', HOLD: '→', REPEAT: '↺', DELOAD: '↓',
+    INCREASE: '↑', HOLD: '→', REPEAT: '↺', DROP: '↓', DELOAD: '⬇',
   }
 
   const bwDelta = bodyWeights.length >= 2

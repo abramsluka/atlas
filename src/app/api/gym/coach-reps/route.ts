@@ -36,12 +36,21 @@ export async function POST() {
   const currentCeiling = config?.upgrade_at_reps ?? 12
   const ceilingHits = logs.filter((l: { reps: number }) => l.reps >= currentCeiling).length
 
-  // Rep range across exercises
+  // Rep range across exercises + infer training preset
   const repMins = exercises.map((e: { rep_min: number }) => e.rep_min)
   const repMaxs = exercises.map((e: { rep_max: number }) => e.rep_max)
   const repRangeStr = exercises.length
     ? `${Math.min(...repMins)}–${Math.max(...repMaxs)}`
     : 'unknown'
+
+  const avgRepMax = exercises.length
+    ? repMaxs.reduce((s: number, v: number) => s + v, 0) / exercises.length
+    : 12
+  const trainingPreset = avgRepMax <= 6
+    ? 'Strength (target: 3–5 reps, upgrade ceiling ~5–6)'
+    : avgRepMax <= 14
+      ? 'Hypertrophy (target: 8–12 reps, upgrade ceiling ~10–12)'
+      : 'Endurance (target: 15–20 reps, upgrade ceiling ~20–25)'
 
   // Body weight trend
   const bwLatest = bodyweights[0]?.weight_lbs
@@ -55,6 +64,7 @@ export async function POST() {
     profile?.sex ? `Sex: ${profile.sex === 'm' ? 'male' : profile.sex === 'f' ? 'female' : 'other'}` : null,
     profile?.weight_goal ? `Weight goal: ${profile.weight_goal}` : null,
     bwLatest ? `Current body weight: ${bwLatest} lbs${bwTrend ? ` (trending ${bwTrend} over last ${bodyweights.length} entries)` : ''}` : null,
+    `Training preset: ${trainingPreset}`,
     `Exercises tracked: ${exercises.length}`,
     avgReps ? `Average reps logged in last 30 days: ${avgReps}` : 'No recent logs.',
     `Current upgrade_at_reps setting: ${currentCeiling}`,
@@ -68,7 +78,7 @@ export async function POST() {
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 150,
-      system: `You are an expert strength and conditioning coach. Given a user's training data, recommend a single "upgrade_at_reps" number — the rep ceiling at which they should increase weight. This number should be set so that progressions happen roughly every 2–4 weeks for most exercises, balancing hypertrophy (8–15 rep range) and progressive overload. Return ONLY valid JSON with no markdown: { "reps": number, "reason": string }. The reason must be 1 concise sentence, specific to their data.`,
+      system: `You are an expert strength and conditioning coach. Given a user's training data and their training preset, recommend a single "upgrade_at_reps" number — the rep ceiling at which they should increase weight. Match the ceiling to their training goal: Strength preset → ceiling around 5–6; Hypertrophy preset → ceiling around 10–12; Endurance preset → ceiling around 20–25. Progressions should happen roughly every 2–4 weeks. Return ONLY valid JSON with no markdown: { "reps": number, "reason": string }. The reason must be 1 concise sentence, specific to their data and preset.`,
       messages: [{
         role: 'user',
         content: `Here is my training data:\n\n${contextLines}\n\nWhat should my upgrade_at_reps be?`,
