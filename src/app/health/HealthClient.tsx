@@ -106,7 +106,7 @@ function WearablesSection({
   today: string
 }) {
   const { data: oura, isPending: ouraPending } = useOuraData(today, hasOura, initialOura)
-  const { data: whoop, isPending: whoopPending } = useWhoopData(today, hasWhoop, initialWhoop)
+  const { data: whoop, isPending: whoopPending, error: whoopError } = useWhoopData(today, hasWhoop, initialWhoop)
 
   return (
     <section>
@@ -165,6 +165,13 @@ function WearablesSection({
               className="block rounded-lg bg-white px-3 py-2 text-center text-xs font-semibold text-black"
             >
               Connect
+            </a>
+          ) : whoopError?.message === 'auth' ? (
+            <a
+              href="/api/health/whoop/connect"
+              className="block rounded-lg bg-white px-3 py-2 text-center text-xs font-semibold text-black"
+            >
+              Reconnect
             </a>
           ) : whoopPending ? (
             <p className="text-xs text-zinc-500">Syncing...</p>

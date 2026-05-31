@@ -56,13 +56,13 @@ export async function GET(req: NextRequest) {
     .eq('provider', 'whoop')
     .maybeSingle()
 
-  if (!tokenRow) return NextResponse.json(null)
+  if (!tokenRow) return NextResponse.json({ error: 'auth' }, { status: 401 })
 
   // Refresh if expired
   let accessToken = tokenRow.access_token
   if (new Date(tokenRow.expires_at) <= new Date()) {
     const newToken = await refreshWhoopToken(db, user.id, tokenRow.refresh_token)
-    if (!newToken) return NextResponse.json(null)
+    if (!newToken) return NextResponse.json({ error: 'auth' }, { status: 401 })
     accessToken = newToken
   }
 
@@ -75,6 +75,11 @@ export async function GET(req: NextRequest) {
     fetch(`https://api.prod.whoop.com/developer/v1/cycle?start=${yesterday}T00:00:00.000Z&end=${today}T23:59:59.000Z`, { headers }),
     fetch(`https://api.prod.whoop.com/developer/v1/activity/sleep?start=${yesterday}T00:00:00.000Z&end=${today}T23:59:59.000Z`, { headers }),
   ])
+
+  // If Whoop rejects the token, signal auth failure so the UI prompts reconnect
+  if (recoveryRes.status === 401 || cycleRes.status === 401 || sleepRes.status === 401) {
+    return NextResponse.json({ error: 'auth' }, { status: 401 })
+  }
 
   const [recoveryJson, cycleJson, sleepJson] = await Promise.all([
     recoveryRes.ok ? recoveryRes.json() : null,

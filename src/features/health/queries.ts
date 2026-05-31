@@ -136,8 +136,10 @@ export function useWhoopData(today: string, enabled: boolean, initialData?: Whoo
     initialData: initialData !== undefined ? initialData ?? undefined : undefined,
     queryFn: async (): Promise<WhoopData | null> => {
       const res = await fetch('/api/health/whoop/data')
+      if (res.status === 401) throw new Error('auth')
       if (!res.ok) return null
       return res.json()
     },
+    retry: false,
   })
 }
