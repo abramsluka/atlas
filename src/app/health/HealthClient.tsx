@@ -105,8 +105,8 @@ function WearablesSection({
   initialWhoop: WhoopData | null
   today: string
 }) {
-  const { data: oura } = useOuraData(today, hasOura, initialOura)
-  const { data: whoop } = useWhoopData(today, hasWhoop, initialWhoop)
+  const { data: oura, isPending: ouraPending } = useOuraData(today, hasOura, initialOura)
+  const { data: whoop, isPending: whoopPending } = useWhoopData(today, hasWhoop, initialWhoop)
 
   return (
     <section>
@@ -123,8 +123,10 @@ function WearablesSection({
             >
               Connect
             </a>
-          ) : !oura ? (
+          ) : ouraPending ? (
             <p className="text-xs text-zinc-500">Syncing...</p>
+          ) : !oura ? (
+            <p className="text-xs text-zinc-500">No data yet</p>
           ) : (
             <div className="space-y-4">
               <div>
@@ -164,8 +166,10 @@ function WearablesSection({
             >
               Connect
             </a>
-          ) : !whoop ? (
+          ) : whoopPending ? (
             <p className="text-xs text-zinc-500">Syncing...</p>
+          ) : !whoop ? (
+            <p className="text-xs text-zinc-500">No data yet</p>
           ) : (
             <div className="space-y-4">
               <div>
