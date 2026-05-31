@@ -246,7 +246,7 @@ function SubscriptionForm({
             step="0.01"
             min="0"
             value={form.amount}
-            onChange={(e) => set('amount', e.target.value)}
+            onFocus={e => e.target.select()} onChange={(e) => set('amount', e.target.value)}
             placeholder="9.99"
             className="w-full rounded-xl border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
             required

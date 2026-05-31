@@ -360,7 +360,7 @@ export default function GoalsClient({ initialData, today }: Props) {
                             type="number"
                             inputMode="decimal"
                             value={editingValue}
-                            onChange={e => setEditingValue(e.target.value)}
+                            onFocus={e => e.target.select()} onChange={e => setEditingValue(e.target.value)}
                             onClick={e => e.stopPropagation()}
                             className="w-20 rounded-lg bg-zinc-800 px-2 py-1 text-right text-sm text-white focus:outline-none"
                             autoFocus
@@ -568,7 +568,7 @@ export default function GoalsClient({ initialData, today }: Props) {
                           inputMode="decimal"
                           placeholder={addDirection === 'descending' ? 'Current (e.g. 175)' : 'Current (e.g. 0)'}
                           value={addCurrent}
-                          onChange={e => setAddCurrent(e.target.value)}
+                          onFocus={e => e.target.select()} onChange={e => setAddCurrent(e.target.value)}
                           className="flex-1 rounded-xl bg-zinc-800 px-4 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none"
                         />
                         <input
@@ -576,7 +576,7 @@ export default function GoalsClient({ initialData, today }: Props) {
                           inputMode="decimal"
                           placeholder={addDirection === 'descending' ? 'Target (e.g. 155)' : 'Target (e.g. 225)'}
                           value={addTarget}
-                          onChange={e => setAddTarget(e.target.value)}
+                          onFocus={e => e.target.select()} onChange={e => setAddTarget(e.target.value)}
                           className="flex-1 rounded-xl bg-zinc-800 px-4 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none"
                         />
                       </div>

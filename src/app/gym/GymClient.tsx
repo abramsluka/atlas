@@ -703,6 +703,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     inputMode="decimal"
                     step="0.1"
                     value={bwInput}
+                    onFocus={e => e.target.select()}
                     onChange={e => setBwInput(e.target.value)}
                     placeholder={`Weight in ${config.units}`}
                     className="flex-1 rounded-xl bg-white/8 border border-white/10 px-4 py-3 text-base text-white placeholder:text-white/20 focus:outline-none"
@@ -855,6 +856,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                         inputMode="decimal"
                         step={currentEx.step}
                         value={weightInput}
+                        onFocus={e => e.target.select()}
                         onChange={e => setWeightInput(e.target.value)}
                         className="w-28 text-center text-2xl font-bold bg-transparent focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       />
@@ -1386,7 +1388,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   <div>
                     <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Step ({config.units})</label>
                     <input type="number" inputMode="decimal" step="1.25" placeholder="0" value={exModal.step === 0 ? '' : exModal.step}
-                      onChange={e => { const v = parseFloat(e.target.value); setExModal(m => ({ ...m, step: isNaN(v) ? 0 : v })) }}
+                      onFocus={e => e.target.select()} onChange={e => { const v = parseFloat(e.target.value); setExModal(m => ({ ...m, step: isNaN(v) ? 0 : v })) }}
                       className="w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white focus:outline-none" />
                     <button
                       onClick={() => fetchCoachStep(exModal.name, exModal.bodyweight)}
@@ -1429,13 +1431,13 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   <div>
                     <label className="text-xs text-white/40 uppercase tracking-wider block mb-1.5">Rep min</label>
                     <input type="number" inputMode="numeric" min="1" value={exModal.repMin}
-                      onChange={e => setExModal(m => ({ ...m, repMin: parseInt(e.target.value) || 1 }))}
+                      onFocus={e => e.target.select()} onChange={e => setExModal(m => ({ ...m, repMin: parseInt(e.target.value) || 1 }))}
                       className="w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white focus:outline-none" />
                   </div>
                   <div>
                     <label className="text-xs text-white/40 uppercase tracking-wider block mb-1.5">Rep max</label>
                     <input type="number" inputMode="numeric" min="1" value={exModal.repMax}
-                      onChange={e => setExModal(m => ({ ...m, repMax: parseInt(e.target.value) || 1 }))}
+                      onFocus={e => e.target.select()} onChange={e => setExModal(m => ({ ...m, repMax: parseInt(e.target.value) || 1 }))}
                       className="w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white focus:outline-none" />
                   </div>
                 </div>
@@ -1583,7 +1585,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Upgrade at reps</label>
                 <input
                   type="number" inputMode="numeric" min="1" max="30" value={settingsUpgradeAt}
-                  onChange={e => setSettingsUpgradeAt(parseInt(e.target.value) || 12)}
+                  onFocus={e => e.target.select()} onChange={e => setSettingsUpgradeAt(parseInt(e.target.value) || 12)}
                   className="w-full rounded-xl bg-white/8 border border-white/10 px-4 py-3 text-sm text-white focus:outline-none"
                 />
                 <p className="text-xs text-white/30 mt-1">Hit this rep count 2 sessions in a row → increase weight</p>
