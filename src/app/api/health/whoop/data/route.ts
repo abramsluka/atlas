@@ -68,19 +68,23 @@ export async function GET(req: NextRequest) {
 
   const headers = { Authorization: `Bearer ${accessToken}` }
 
-  // Fetch recovery and most recent workout in parallel
-  const [recoveryRes, workoutRes] = await Promise.all([
-    fetch(`https://api.prod.whoop.com/developer/v1/recovery?start=${today}T00:00:00.000Z&end=${today}T23:59:59.000Z`, { headers }),
-    fetch('https://api.prod.whoop.com/developer/v1/activity/workout?limit=1', { headers }),
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
+
+  const [recoveryRes, cycleRes, sleepRes] = await Promise.all([
+    fetch(`https://api.prod.whoop.com/developer/v1/recovery?start=${yesterday}T00:00:00.000Z&end=${today}T23:59:59.000Z`, { headers }),
+    fetch(`https://api.prod.whoop.com/developer/v1/cycle?start=${yesterday}T00:00:00.000Z&end=${today}T23:59:59.000Z`, { headers }),
+    fetch(`https://api.prod.whoop.com/developer/v1/activity/sleep?start=${yesterday}T00:00:00.000Z&end=${today}T23:59:59.000Z`, { headers }),
   ])
 
-  const [recoveryJson, workoutJson] = await Promise.all([
+  const [recoveryJson, cycleJson, sleepJson] = await Promise.all([
     recoveryRes.ok ? recoveryRes.json() : null,
-    workoutRes.ok ? workoutRes.json() : null,
+    cycleRes.ok ? cycleRes.json() : null,
+    sleepRes.ok ? sleepRes.json() : null,
   ])
 
   const recoveryRecord = recoveryJson?.records?.[0]
-  const workoutRecord = workoutJson?.records?.[0]
+  const cycleRecord = cycleJson?.records?.[0]
+  const sleepRecord = sleepJson?.records?.find((r: Record<string, unknown>) => r.nap === false) ?? sleepJson?.records?.[0]
 
   const whoopData: WhoopData = {
     recovery: recoveryRecord
@@ -89,10 +93,17 @@ export async function GET(req: NextRequest) {
           hrv_rmssd_milli: recoveryRecord.score?.hrv_rmssd_milli ?? null,
         }
       : undefined,
-    workout: workoutRecord
+    cycle: cycleRecord
       ? {
-          strain: workoutRecord.score?.strain ?? null,
-          kilojoule: workoutRecord.kilojoule ?? null,
+          strain: cycleRecord.score?.strain ?? null,
+          kilojoule: cycleRecord.score?.kilojoule ?? null,
+        }
+      : undefined,
+    sleep: sleepRecord
+      ? {
+          duration_seconds: sleepRecord.score?.stage_summary?.total_in_bed_time_milli != null
+            ? Math.round(sleepRecord.score.stage_summary.total_in_bed_time_milli / 1000)
+            : null,
         }
       : undefined,
   }

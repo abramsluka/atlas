@@ -119,8 +119,11 @@ export interface WhoopData {
     score: number | null
     hrv_rmssd_milli: number | null
   }
-  workout?: {
+  cycle?: {
     strain: number | null
     kilojoule: number | null
+  }
+  sleep?: {
+    duration_seconds: number | null
   }
 }
