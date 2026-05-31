@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
   const db = createServiceClient()
   const today = new Date().toISOString().split('T')[0]
 
-  // Check cache first (fresh = within 1 hour)
+  // Check cache first (fresh = within 15 min)
   const { data: cached } = await db
     .from('wearable_data')
     .select('data, fetched_at')
@@ -43,7 +43,9 @@ export async function GET(req: NextRequest) {
 
   if (cached) {
     const age = Date.now() - new Date(cached.fetched_at).getTime()
-    if (age < 60 * 60 * 1000) {
+    const d = cached.data as WhoopData | null
+    const hasRealData = d?.recovery?.score != null || d?.cycle?.strain != null
+    if (age < 15 * 60 * 1000 && hasRealData) {
       return NextResponse.json(cached.data)
     }
   }
@@ -68,12 +70,10 @@ export async function GET(req: NextRequest) {
 
   const headers = { Authorization: `Bearer ${accessToken}` }
 
-  const threeDaysAgo = new Date(Date.now() - 3 * 86400000).toISOString().split('T')[0]
-
   const [recoveryRes, cycleRes, sleepRes] = await Promise.all([
-    fetch(`https://api.prod.whoop.com/developer/v1/recovery?start=${threeDaysAgo}T00:00:00.000Z&end=${today}T23:59:59.000Z`, { headers }),
-    fetch(`https://api.prod.whoop.com/developer/v1/cycle?start=${threeDaysAgo}T00:00:00.000Z&end=${today}T23:59:59.000Z`, { headers }),
-    fetch(`https://api.prod.whoop.com/developer/v1/activity/sleep?start=${threeDaysAgo}T00:00:00.000Z&end=${today}T23:59:59.000Z`, { headers }),
+    fetch('https://api.prod.whoop.com/developer/v1/recovery?limit=5', { headers }),
+    fetch('https://api.prod.whoop.com/developer/v1/cycle?limit=5', { headers }),
+    fetch('https://api.prod.whoop.com/developer/v1/activity/sleep?limit=5', { headers }),
   ])
 
   // If Whoop rejects the token, signal auth failure so the UI prompts reconnect
