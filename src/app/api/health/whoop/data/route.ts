@@ -68,12 +68,12 @@ export async function GET(req: NextRequest) {
 
   const headers = { Authorization: `Bearer ${accessToken}` }
 
-  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
+  const threeDaysAgo = new Date(Date.now() - 3 * 86400000).toISOString().split('T')[0]
 
   const [recoveryRes, cycleRes, sleepRes] = await Promise.all([
-    fetch(`https://api.prod.whoop.com/developer/v1/recovery?start=${yesterday}T00:00:00.000Z&end=${today}T23:59:59.000Z`, { headers }),
-    fetch(`https://api.prod.whoop.com/developer/v1/cycle?start=${yesterday}T00:00:00.000Z&end=${today}T23:59:59.000Z`, { headers }),
-    fetch(`https://api.prod.whoop.com/developer/v1/activity/sleep?start=${yesterday}T00:00:00.000Z&end=${today}T23:59:59.000Z`, { headers }),
+    fetch(`https://api.prod.whoop.com/developer/v1/recovery?start=${threeDaysAgo}T00:00:00.000Z&end=${today}T23:59:59.000Z`, { headers }),
+    fetch(`https://api.prod.whoop.com/developer/v1/cycle?start=${threeDaysAgo}T00:00:00.000Z&end=${today}T23:59:59.000Z`, { headers }),
+    fetch(`https://api.prod.whoop.com/developer/v1/activity/sleep?start=${threeDaysAgo}T00:00:00.000Z&end=${today}T23:59:59.000Z`, { headers }),
   ])
 
   // If Whoop rejects the token, signal auth failure so the UI prompts reconnect
@@ -87,27 +87,38 @@ export async function GET(req: NextRequest) {
     sleepRes.ok ? sleepRes.json() : null,
   ])
 
-  const recoveryRecord = recoveryJson?.records?.[0]
-  const cycleRecord = cycleJson?.records?.[0]
-  const sleepRecord = sleepJson?.records?.find((r: Record<string, unknown>) => r.nap === false) ?? sleepJson?.records?.[0]
+  // Pick the most recent record from each endpoint
+  const pickLatest = (records?: Array<Record<string, unknown>>): Record<string, unknown> | undefined =>
+    records?.slice().sort((a, b) => String(b.end ?? b.created_at ?? '').localeCompare(String(a.end ?? a.created_at ?? '')))[0]
+
+  const recoveryRecord = pickLatest(recoveryJson?.records)
+  const cycleRecord = pickLatest(cycleJson?.records)
+  const sleepRecord =
+    sleepJson?.records?.find((r: Record<string, unknown>) => r.nap === false) ??
+    sleepJson?.records?.[0]
+
+  const rScore = recoveryRecord?.score as Record<string, unknown> | null | undefined
+  const cScore = cycleRecord?.score as Record<string, unknown> | null | undefined
+  const sScore = sleepRecord?.score as Record<string, unknown> | null | undefined
+  const stageSummary = sScore?.stage_summary as Record<string, unknown> | null | undefined
 
   const whoopData: WhoopData = {
     recovery: recoveryRecord
       ? {
-          score: recoveryRecord.score?.recovery_score ?? null,
-          hrv_rmssd_milli: recoveryRecord.score?.hrv_rmssd_milli ?? null,
+          score: (rScore?.recovery_score as number | null) ?? null,
+          hrv_rmssd_milli: (rScore?.hrv_rmssd_milli as number | null) ?? null,
         }
       : undefined,
     cycle: cycleRecord
       ? {
-          strain: cycleRecord.score?.strain ?? null,
-          kilojoule: cycleRecord.score?.kilojoule ?? null,
+          strain: (cScore?.strain as number | null) ?? null,
+          kilojoule: (cScore?.kilojoule as number | null) ?? null,
         }
       : undefined,
     sleep: sleepRecord
       ? {
-          duration_seconds: sleepRecord.score?.stage_summary?.total_in_bed_time_milli != null
-            ? Math.round(sleepRecord.score.stage_summary.total_in_bed_time_milli / 1000)
+          duration_seconds: stageSummary?.total_in_bed_time_milli != null
+            ? Math.round(stageSummary.total_in_bed_time_milli as number / 1000)
             : null,
         }
       : undefined,
