@@ -43,7 +43,7 @@ function MealEditSheet({
           ].map(({ label, val, set }) => (
             <div key={label}>
               <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">{label}</label>
-              <input type="number" min="0" className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white outline-none focus:border-white/40" value={val} onChange={e => set(e.target.value)} />
+              <input type="number" inputMode="decimal" min="0" placeholder="0" className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white outline-none focus:border-white/40" value={val} onChange={e => set(e.target.value)} />
             </div>
           ))}
         </div>

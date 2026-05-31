@@ -242,6 +242,7 @@ function SubscriptionForm({
           </label>
           <input
             type="number"
+            inputMode="decimal"
             step="0.01"
             min="0"
             value={form.amount}

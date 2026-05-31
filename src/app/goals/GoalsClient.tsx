@@ -358,6 +358,7 @@ export default function GoalsClient({ initialData, today }: Props) {
                         <>
                           <input
                             type="number"
+                            inputMode="decimal"
                             value={editingValue}
                             onChange={e => setEditingValue(e.target.value)}
                             onClick={e => e.stopPropagation()}
@@ -564,6 +565,7 @@ export default function GoalsClient({ initialData, today }: Props) {
                       <div className="flex gap-2">
                         <input
                           type="number"
+                          inputMode="decimal"
                           placeholder={addDirection === 'descending' ? 'Current (e.g. 175)' : 'Current (e.g. 0)'}
                           value={addCurrent}
                           onChange={e => setAddCurrent(e.target.value)}
@@ -571,6 +573,7 @@ export default function GoalsClient({ initialData, today }: Props) {
                         />
                         <input
                           type="number"
+                          inputMode="decimal"
                           placeholder={addDirection === 'descending' ? 'Target (e.g. 155)' : 'Target (e.g. 225)'}
                           value={addTarget}
                           onChange={e => setAddTarget(e.target.value)}

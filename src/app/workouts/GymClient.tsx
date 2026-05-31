@@ -561,6 +561,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 <div className="flex gap-2">
                   <input
                     type="number"
+                    inputMode="decimal"
                     step="0.1"
                     value={bwInput}
                     onChange={e => setBwInput(e.target.value)}
@@ -692,9 +693,10 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     <div className="flex-1 text-center">
                       <input
                         type="number"
+                        inputMode="decimal"
                         step={currentEx.step}
                         value={weightInput}
-                        onChange={e => setWeightInput(parseFloat(e.target.value) || 0)}
+                        onChange={e => { const v = parseFloat(e.target.value); setWeightInput(isNaN(v) ? 0 : v) }}
                         className="w-full text-center text-2xl font-bold bg-transparent focus:outline-none"
                       />
                       <p className="text-xs text-white/30 -mt-1">{config.units}</p>
@@ -914,14 +916,14 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Start weight</label>
-                    <input type="number" step="2.5" value={exModal.startWeight}
-                      onChange={e => setExModal(m => ({ ...m, startWeight: parseFloat(e.target.value) || 0 }))}
+                    <input type="number" inputMode="decimal" step="2.5" placeholder="0" value={exModal.startWeight}
+                      onChange={e => { const v = parseFloat(e.target.value); setExModal(m => ({ ...m, startWeight: isNaN(v) ? m.startWeight : v })) }}
                       className="w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white focus:outline-none" />
                   </div>
                   <div>
                     <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Step ({config.units})</label>
-                    <input type="number" step="1.25" value={exModal.step}
-                      onChange={e => setExModal(m => ({ ...m, step: parseFloat(e.target.value) || 2.5 }))}
+                    <input type="number" inputMode="decimal" step="1.25" placeholder="0" value={exModal.step}
+                      onChange={e => { const v = parseFloat(e.target.value); setExModal(m => ({ ...m, step: isNaN(v) ? m.step : v })) }}
                       className="w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white focus:outline-none" />
                   </div>
                 </div>
@@ -930,13 +932,13 @@ export default function GymClient({ today, initialConfig, initialExercises, init
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Rep min</label>
-                  <input type="number" min="1" value={exModal.repMin}
+                  <input type="number" inputMode="numeric" min="1" value={exModal.repMin}
                     onChange={e => setExModal(m => ({ ...m, repMin: parseInt(e.target.value) || 1 }))}
                     className="w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white focus:outline-none" />
                 </div>
                 <div>
                   <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Rep max</label>
-                  <input type="number" min="1" value={exModal.repMax}
+                  <input type="number" inputMode="numeric" min="1" value={exModal.repMax}
                     onChange={e => setExModal(m => ({ ...m, repMax: parseInt(e.target.value) || 1 }))}
                     className="w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white focus:outline-none" />
                 </div>
@@ -1083,7 +1085,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
               <div>
                 <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Upgrade at reps</label>
                 <input
-                  type="number" min="1" max="20" value={settingsUpgradeAt}
+                  type="number" inputMode="numeric" min="1" max="20" value={settingsUpgradeAt}
                   onChange={e => setSettingsUpgradeAt(parseInt(e.target.value) || 12)}
                   className="w-full rounded-xl bg-white/8 border border-white/10 px-4 py-3 text-sm text-white focus:outline-none"
                 />

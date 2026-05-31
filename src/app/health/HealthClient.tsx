@@ -1307,7 +1307,7 @@ function WaterSection({
             <WSettingSection title="Profile">
               <div className="grid grid-cols-2 gap-2.5">
                 <WSettingField label="Weight">
-                  <input type="number" step="0.5" min="20" max="300"
+                  <input type="number" inputMode="decimal" step="0.5" min="20" max="300"
                     value={localProfile.weight_lbs ?? ''}
                     onChange={e => updateLocal({ weight_lbs: e.target.value ? parseFloat(e.target.value) : null })}
                     className={INPUT_CLS} />
@@ -1322,7 +1322,7 @@ function WaterSection({
               </div>
               <div className="grid grid-cols-2 gap-2.5">
                 <WSettingField label="Age">
-                  <input type="number" min="13" max="100"
+                  <input type="number" inputMode="numeric" min="13" max="100"
                     value={localProfile.age ?? ''}
                     onChange={e => updateLocal({ age: e.target.value ? parseInt(e.target.value) : null })}
                     className={INPUT_CLS} />
@@ -1337,7 +1337,7 @@ function WaterSection({
               </div>
               <div className="grid grid-cols-2 gap-2.5">
                 <WSettingField label="Height (ft)" hint="Improves calorie accuracy">
-                  <input type="number" min="3" max="8"
+                  <input type="number" inputMode="numeric" min="3" max="8"
                     value={localProfile.height_cm != null ? Math.floor(Math.round(localProfile.height_cm / 2.54) / 12) : ''}
                     onChange={e => {
                       const ft = parseInt(e.target.value) || 0
@@ -1349,7 +1349,7 @@ function WaterSection({
                     className={INPUT_CLS} />
                 </WSettingField>
                 <WSettingField label="Height (in)">
-                  <input type="number" min="0" max="11"
+                  <input type="number" inputMode="numeric" min="0" max="11"
                     value={localProfile.height_cm != null ? Math.round(localProfile.height_cm / 2.54) % 12 : ''}
                     onChange={e => {
                       const inches = parseInt(e.target.value) || 0
@@ -1362,7 +1362,7 @@ function WaterSection({
                 </WSettingField>
               </div>
               <WSettingField label="Activity (training hours per week)">
-                <input type="number" min="0" max="40" step="0.5"
+                <input type="number" inputMode="decimal" min="0" max="40" step="0.5"
                   value={localProfile.activity_hrs_per_week}
                   onChange={e => updateLocal({ activity_hrs_per_week: parseFloat(e.target.value) || 0 })}
                   className={INPUT_CLS} />
@@ -1384,13 +1384,13 @@ function WaterSection({
               </WSettingField>
               <div className="grid grid-cols-2 gap-2.5">
                 <WSettingField label="Bottle size (ml)">
-                  <input type="number" min="100" max="2000" step="50"
+                  <input type="number" inputMode="numeric" min="100" max="2000" step="50"
                     value={localProfile.bottle_ml}
                     onChange={e => updateLocal({ bottle_ml: parseFloat(e.target.value) || 500 })}
                     className={INPUT_CLS} />
                 </WSettingField>
                 <WSettingField label="Glass size (ml)">
-                  <input type="number" min="100" max="500" step="10"
+                  <input type="number" inputMode="numeric" min="100" max="500" step="10"
                     value={localProfile.glass_ml}
                     onChange={e => updateLocal({ glass_ml: parseFloat(e.target.value) || 250 })}
                     className={INPUT_CLS} />
@@ -1403,7 +1403,7 @@ function WaterSection({
                 label="Average caffeine per day (mg)"
                 hint="~1 cup of coffee = 95mg · espresso shot = 75mg · energy drink = 160mg. Above 200mg/day starts to add a small water requirement."
               >
-                <input type="number" min="0" max="1000" step="10"
+                <input type="number" inputMode="numeric" min="0" max="1000" step="10"
                   value={localProfile.caffeine_mg_per_day}
                   onChange={e => updateLocal({ caffeine_mg_per_day: parseFloat(e.target.value) || 0 })}
                   className={INPUT_CLS} />
@@ -1452,7 +1452,7 @@ function WaterSection({
                         </div>
                         <div className="inline-flex items-center gap-1.5 bg-black/30 border border-white/[0.06] rounded-[8px] px-2 py-1">
                           <input
-                            type="number" min="0" step="0.5"
+                            type="number" inputMode="decimal" min="0" step="0.5"
                             value={s.dose ?? s.defaultDose}
                             onChange={e => {
                               const dose = parseFloat(e.target.value) || 0
@@ -1625,15 +1625,15 @@ function MealEditSheet({
         <div className="grid grid-cols-3 gap-2">
           <div>
             <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Cal</label>
-            <input type="number" min="0" className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white outline-none focus:border-white/40" value={calories} onChange={e => setCalories(e.target.value)} />
+            <input type="number" inputMode="numeric" min="0" placeholder="0" className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white outline-none focus:border-white/40" value={calories} onChange={e => setCalories(e.target.value)} />
           </div>
           <div>
             <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Protein (g)</label>
-            <input type="number" min="0" className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white outline-none focus:border-white/40" value={protein} onChange={e => setProtein(e.target.value)} />
+            <input type="number" inputMode="decimal" min="0" placeholder="0" className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white outline-none focus:border-white/40" value={protein} onChange={e => setProtein(e.target.value)} />
           </div>
           <div>
             <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Carbs (g)</label>
-            <input type="number" min="0" className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white outline-none focus:border-white/40" value={carbs} onChange={e => setCarbs(e.target.value)} />
+            <input type="number" inputMode="decimal" min="0" placeholder="0" className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white outline-none focus:border-white/40" value={carbs} onChange={e => setCarbs(e.target.value)} />
           </div>
         </div>
         <textarea
@@ -1706,7 +1706,7 @@ function CalorieTargetSheet({
         <div>
           <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Target weight (lbs)</label>
           <input
-            type="number" min="80" max="500" step="0.5"
+            type="number" inputMode="decimal" min="80" max="500" step="0.5"
             className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white placeholder-zinc-600 outline-none focus:border-white/40"
             placeholder="e.g. 165"
             value={targetWeight}
