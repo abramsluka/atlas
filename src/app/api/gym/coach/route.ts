@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { subDays } from 'date-fns'
 import { formatInTimeZone } from 'date-fns-tz'
+import type { WhoopData } from '@/features/health/types'
 
 const TZ = 'America/Los_Angeles'
 
@@ -20,7 +21,7 @@ export async function POST(request: NextRequest) {
   const sevenDaysAgo = formatInTimeZone(subDays(now, 7), TZ, 'yyyy-MM-dd')
   const fourteenDaysAgo = formatInTimeZone(subDays(now, 14), TZ, 'yyyy-MM-dd')
 
-  const [gymLogsResult, checkinsResult] = await Promise.all([
+  const [gymLogsResult, checkinsResult, whoopWearableRes] = await Promise.all([
     db
       .from('gym_logs')
       .select('logged_at')
@@ -33,10 +34,12 @@ export async function POST(request: NextRequest) {
       .eq('user_id', user.id)
       .gte('date', fourteenDaysAgo)
       .order('date', { ascending: false }),
+    db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'whoop').eq('date', today).maybeSingle(),
   ])
 
   const gymLogs = gymLogsResult.data ?? []
   const checkins = checkinsResult.data ?? []
+  const whoopToday = whoopWearableRes.data?.data as WhoopData | null
 
   const todayCheckin = checkins.find(c => c.date === today)
 
@@ -103,6 +106,14 @@ export async function POST(request: NextRequest) {
 
   if (todayCheckin?.morning_intent) {
     lines.push(`What they said they wanted to do today: "${todayCheckin.morning_intent}".`)
+  }
+
+  if (whoopToday) {
+    const whoopLines: string[] = []
+    if (whoopToday.recovery?.score != null) whoopLines.push(`Recovery: ${whoopToday.recovery.score}%`)
+    if (whoopToday.cycle?.strain != null) whoopLines.push(`Strain: ${whoopToday.cycle.strain.toFixed(1)}/21`)
+    if (whoopToday.cycle?.kilojoule != null) whoopLines.push(`Calories burned: ${Math.round(whoopToday.cycle.kilojoule * 0.239)} kcal`)
+    if (whoopLines.length > 0) lines.push(`Whoop today — ${whoopLines.join(', ')}.`)
   }
 
   const context = lines.join('\n')

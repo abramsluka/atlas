@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useGymConfig, useGymExercises, useAllGymLogs, useBodyWeights, useProgressPhotos } from '@/features/gym/queries'
-import { useHealthProfile } from '@/features/health/queries'
+import { useHealthProfile, useWhoopData } from '@/features/health/queries'
 import {
   useSaveGymConfig,
   useCreateExercise, useUpdateExercise, useDeleteExercise,
@@ -255,6 +255,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const { data: bodyWeights = [] } = useBodyWeights()
   const { data: photos = [] } = useProgressPhotos()
   const { data: healthProfile } = useHealthProfile()
+  const { data: whoopToday } = useWhoopData(today, true, null)
 
   const saveConfig = useSaveGymConfig()
   const createEx = useCreateExercise()
@@ -751,6 +752,37 @@ export default function GymClient({ today, initialConfig, initialExercises, init
           </div>
           <span style={{ color: '#6ee7b7', fontSize: 20 }}>→</span>
         </button>
+
+        {/* ── Whoop Today ───────────────────────────────────────────── */}
+        {whoopToday && (whoopToday.cycle?.strain != null || whoopToday.recovery?.score != null) && (
+          <section className="rounded-2xl bg-white/5 border border-white/8 px-5 py-4">
+            <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30 mb-3">Whoop Today</p>
+            <div className="flex gap-6">
+              {whoopToday.recovery?.score != null && (
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide text-white/30">Recovery</p>
+                  <p className={`text-2xl font-bold ${whoopToday.recovery.score >= 67 ? 'text-green-400' : whoopToday.recovery.score >= 34 ? 'text-yellow-400' : 'text-red-400'}`}>
+                    {whoopToday.recovery.score}%
+                  </p>
+                </div>
+              )}
+              {whoopToday.cycle?.strain != null && (
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide text-white/30">Strain</p>
+                  <p className="text-2xl font-bold text-white">{whoopToday.cycle.strain.toFixed(1)}</p>
+                  <p className="text-[10px] text-white/20">/21</p>
+                </div>
+              )}
+              {whoopToday.cycle?.kilojoule != null && (
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide text-white/30">Cals Burned</p>
+                  <p className="text-2xl font-bold text-white">{Math.round(whoopToday.cycle.kilojoule * 0.239).toLocaleString()}</p>
+                  <p className="text-[10px] text-white/20">kcal</p>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
         {/* ── PO Coach ──────────────────────────────────────────────── */}
         <section className="rounded-2xl bg-white/5 border border-white/8 overflow-hidden">

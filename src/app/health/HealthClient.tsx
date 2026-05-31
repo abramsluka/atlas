@@ -105,8 +105,34 @@ function WearablesSection({
   initialWhoop: WhoopData | null
   today: string
 }) {
-  const { data: oura, isPending: ouraPending } = useOuraData(today, hasOura, initialOura)
-  const { data: whoop, isPending: whoopPending, error: whoopError } = useWhoopData(today, hasWhoop, initialWhoop)
+  const { data: oura, isPending: ouraPending, refetch: refetchOura } = useOuraData(today, hasOura, initialOura)
+  const { data: whoop, isPending: whoopPending, error: whoopError, refetch: refetchWhoop } = useWhoopData(today, hasWhoop, initialWhoop)
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+
+  useEffect(() => {
+    if (!ouraPending && !whoopPending) {
+      setLastUpdated(new Date())
+    }
+  }, [oura, whoop, ouraPending, whoopPending])
+
+  useEffect(() => {
+    const id = setInterval(async () => {
+      if (hasOura) refetchOura()
+      if (hasWhoop) refetchWhoop()
+    }, 15 * 60 * 1000)
+    return () => clearInterval(id)
+  }, [hasOura, hasWhoop, refetchOura, refetchWhoop])
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true)
+    await Promise.allSettled([
+      hasOura ? refetchOura() : Promise.resolve(),
+      hasWhoop ? refetchWhoop() : Promise.resolve(),
+    ])
+    setLastUpdated(new Date())
+    setRefreshing(false)
+  }, [hasOura, hasWhoop, refetchOura, refetchWhoop])
 
   return (
     <section>
@@ -211,6 +237,38 @@ function WearablesSection({
           )}
         </div>
       </div>
+
+      {/* Freshness footer */}
+      {(hasOura || hasWhoop) && (
+        <div className="flex items-center justify-between mt-2 px-1">
+          <span className="text-[11px] text-zinc-600">
+            {lastUpdated
+              ? `Updated ${lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+              : ouraPending || whoopPending ? 'Syncing...' : ''}
+          </span>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            aria-label="Refresh wearable data"
+            className="flex items-center justify-center w-7 h-7 rounded-lg text-zinc-500 hover:text-white hover:bg-white/8 transition-colors disabled:opacity-40"
+          >
+            <svg
+              viewBox="0 0 16 16"
+              width="14"
+              height="14"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className={refreshing ? 'animate-spin' : ''}
+            >
+              <path d="M13.5 8A5.5 5.5 0 1 1 8 2.5a5.5 5.5 0 0 1 3.9 1.6L13.5 5.5" />
+              <path d="M13.5 2.5v3h-3" />
+            </svg>
+          </button>
+        </div>
+      )}
     </section>
   )
 }
@@ -1050,11 +1108,13 @@ function WaterSection({
   initialCaffeine: _initialCaffeine,
   initialProfile,
   today,
+  hasWhoop,
 }: {
   initialWater: WaterLog[]
   initialCaffeine: CaffeineLog[]
   initialProfile: HealthProfile | null
   today: string
+  hasWhoop?: boolean
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [whyOpen, setWhyOpen] = useState(false)
@@ -1066,9 +1126,13 @@ function WaterSection({
   const { data: waterLogs } = useWaterLogs(today, initialWater)
   const { data: profileData } = useHealthProfile(initialProfile)
   const { data: history } = useWaterHistory()
+  const { data: whoopForWater } = useWhoopData(today, hasWhoop ?? false, undefined)
   const logWater = useLogWater(today)
   const deleteWater = useDeleteWaterLog(today)
   const updateProfile = useUpdateHealthProfile()
+  const whoopKcal = whoopForWater?.cycle?.kilojoule != null
+    ? Math.round(whoopForWater.cycle.kilojoule * 0.239)
+    : null
 
   useEffect(() => {
     if (!settingsOpen) setLocalProfile(mergeProfile(profileData))
@@ -1208,6 +1272,12 @@ function WaterSection({
         <p className={`text-center text-[12px] mt-3 ${helper.good ? 'text-[#6ee7b7]' : 'text-white/40 italic'}`}>
           {helper.text}
         </p>
+
+        {whoopKcal != null && whoopKcal > 600 && (
+          <p className="mt-2 text-center text-[11px] text-sky-400/80 italic">
+            You burned {whoopKcal.toLocaleString()} kcal today per Whoop — consider bumping your water goal by 500ml.
+          </p>
+        )}
 
         {/* Why this target? */}
         <button
@@ -1625,15 +1695,15 @@ function MealEditSheet({
         <div className="grid grid-cols-3 gap-2">
           <div>
             <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Cal</label>
-            <input type="number" inputMode="numeric" min="0" placeholder="0" className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white outline-none focus:border-white/40" value={calories} onChange={e => setCalories(e.target.value)} />
+            <input type="number" inputMode="numeric" min="0" placeholder="0" onFocus={e => e.target.select()} className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white outline-none focus:border-white/40" value={calories} onChange={e => setCalories(e.target.value)} />
           </div>
           <div>
             <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Protein (g)</label>
-            <input type="number" inputMode="decimal" min="0" placeholder="0" className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white outline-none focus:border-white/40" value={protein} onChange={e => setProtein(e.target.value)} />
+            <input type="number" inputMode="decimal" min="0" placeholder="0" onFocus={e => e.target.select()} className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white outline-none focus:border-white/40" value={protein} onChange={e => setProtein(e.target.value)} />
           </div>
           <div>
             <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Carbs (g)</label>
-            <input type="number" inputMode="decimal" min="0" placeholder="0" className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white outline-none focus:border-white/40" value={carbs} onChange={e => setCarbs(e.target.value)} />
+            <input type="number" inputMode="decimal" min="0" placeholder="0" onFocus={e => e.target.select()} className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white outline-none focus:border-white/40" value={carbs} onChange={e => setCarbs(e.target.value)} />
           </div>
         </div>
         <textarea
@@ -2104,6 +2174,7 @@ export default function HealthClient({
         initialCaffeine={todayCaffeine}
         initialProfile={profile}
         today={today}
+        hasWhoop={hasWhoop}
       />
       <CaffeineSection initialCaffeine={todayCaffeine} today={today} />
       <DebloatSection today={today} />

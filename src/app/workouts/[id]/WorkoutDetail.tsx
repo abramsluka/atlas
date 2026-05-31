@@ -117,12 +117,20 @@ function SetRow({ set, setIndex, onFieldChange, onToggle }: SetRowProps) {
 
 // --- Main component ---
 
+interface WhoopSession {
+  strain: number | null
+  average_heart_rate: number | null
+  max_heart_rate: number | null
+  kcal: number | null
+}
+
 export default function WorkoutDetail({ workout, initialCoachResponse, backHref }: Props) {
   const router = useRouter()
   const [coachText, setCoachText] = useState(initialCoachResponse ?? '')
   const [streaming, setStreaming] = useState(false)
   const [streamError, setStreamError] = useState<string | null>(null)
   const hasStreamed = useRef(false)
+  const [whoopSession, setWhoopSession] = useState<WhoopSession | null>(null)
 
   const [localSets, setLocalSets] = useState<Record<string, LocalSet>>(() => {
     const map: Record<string, LocalSet> = {}
@@ -183,6 +191,16 @@ export default function WorkoutDetail({ workout, initialCoachResponse, backHref 
 
     return () => controller.abort()
   }, [workout.id, workout.completed_at, initialCoachResponse])
+
+  useEffect(() => {
+    if (!workout.completed_at) return
+    const start = encodeURIComponent(workout.created_at)
+    const end = encodeURIComponent(workout.completed_at)
+    fetch(`/api/health/whoop/workout?start=${start}&end=${end}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setWhoopSession(data) })
+      .catch(() => {})
+  }, [workout.id, workout.created_at, workout.completed_at])
 
   function handleSetFieldChange(setId: string, field: ActiveField, value: string) {
     setLocalSets((prev) => ({
@@ -250,6 +268,42 @@ export default function WorkoutDetail({ workout, initialCoachResponse, backHref 
           <p className="text-xs uppercase tracking-widest text-zinc-500">Total Volume</p>
           <p className="mt-1 text-4xl font-bold">{vol.toLocaleString()}</p>
           <p className="text-sm text-zinc-400">lbs</p>
+        </div>
+      )}
+
+      {whoopSession && (
+        <div className="mb-8 rounded-xl bg-zinc-900 px-5 py-4">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-zinc-500">Whoop Session</p>
+          <div className="flex gap-6">
+            {whoopSession.strain != null && (
+              <div>
+                <p className="text-xs text-zinc-500">Strain</p>
+                <p className="text-2xl font-bold text-white">{whoopSession.strain.toFixed(1)}</p>
+                <p className="text-xs text-zinc-600">/21</p>
+              </div>
+            )}
+            {whoopSession.average_heart_rate != null && (
+              <div>
+                <p className="text-xs text-zinc-500">Avg HR</p>
+                <p className="text-2xl font-bold text-white">{whoopSession.average_heart_rate}</p>
+                <p className="text-xs text-zinc-600">bpm</p>
+              </div>
+            )}
+            {whoopSession.max_heart_rate != null && (
+              <div>
+                <p className="text-xs text-zinc-500">Max HR</p>
+                <p className="text-2xl font-bold text-white">{whoopSession.max_heart_rate}</p>
+                <p className="text-xs text-zinc-600">bpm</p>
+              </div>
+            )}
+            {whoopSession.kcal != null && (
+              <div>
+                <p className="text-xs text-zinc-500">Calories</p>
+                <p className="text-2xl font-bold text-white">{whoopSession.kcal.toLocaleString()}</p>
+                <p className="text-xs text-zinc-600">kcal</p>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
