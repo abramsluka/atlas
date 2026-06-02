@@ -4,7 +4,8 @@ import { redirect } from 'next/navigation'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import GoalsClient from './GoalsClient'
 import type { GoalsData } from '@/features/goals/types'
-import { format, subDays } from 'date-fns'
+import { getUserTimezone } from '@/lib/getUserTimezone'
+import { toLocalDate, daysAgoLocal } from '@/lib/date'
 
 export default async function GoalsPage() {
   const authClient = await createClient()
@@ -12,8 +13,9 @@ export default async function GoalsPage() {
   if (!user) redirect('/login')
 
   const db = createServiceClient()
-  const today = format(new Date(), 'yyyy-MM-dd')
-  const thirtyDaysAgo = format(subDays(new Date(), 30), 'yyyy-MM-dd')
+  const tz = await getUserTimezone(user.id)
+  const today = toLocalDate(tz)
+  const thirtyDaysAgo = daysAgoLocal(30, tz)
 
   const [goalsResult, logsResult] = await Promise.all([
     db

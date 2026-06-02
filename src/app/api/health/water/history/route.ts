@@ -1,16 +1,18 @@
 import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { formatInTimeZone } from 'date-fns-tz'
+import { getUserTimezone } from '@/lib/getUserTimezone'
 
 export async function GET() {
   const authClient = await createClient()
   const { data: { user } } = await authClient.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const tz = await getUserTimezone(user.id)
   const dates: string[] = []
   for (let i = 13; i >= 0; i--) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
-    dates.push(d.toISOString().split('T')[0])
+    const d = new Date(Date.now() - i * 86400000)
+    dates.push(formatInTimeZone(d, tz, 'yyyy-MM-dd'))
   }
   const earliest = dates[0]
 

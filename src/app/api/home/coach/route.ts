@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { getUserTimezone } from '@/lib/getUserTimezone'
+import { toLocalDate } from '@/lib/date'
 import type { OuraData, WhoopData } from '@/features/health/types'
 
 export async function POST(_request: NextRequest) {
@@ -9,7 +11,8 @@ export async function POST(_request: NextRequest) {
   if (!user) return new Response('Unauthorized', { status: 401 })
 
   const db = createServiceClient()
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
+  const tz = await getUserTimezone(user.id)
+  const today = toLocalDate(tz)
   const now = new Date()
 
   const [
@@ -106,7 +109,7 @@ export async function POST(_request: NextRequest) {
   const workoutDaysThisWeek = new Set(
     (recentWorkoutsRes.data ?? [])
       .filter(w => w.logged_at && new Date(w.logged_at) >= sevenDaysAgo)
-      .map(w => new Date(w.logged_at!).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' }))
+      .map(w => new Date(w.logged_at!).toLocaleDateString('en-CA', { timeZone: tz }))
   ).size
 
   const habits = habitsRes.data ?? []

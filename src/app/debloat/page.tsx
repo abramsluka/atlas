@@ -3,7 +3,8 @@ export const dynamic = 'force-dynamic'
 import { redirect } from 'next/navigation'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import DebloatClient from './DebloatClient'
-import { format, subDays } from 'date-fns'
+import { getUserTimezone } from '@/lib/getUserTimezone'
+import { toLocalDate, daysAgoLocal } from '@/lib/date'
 import type { DebloatLog } from '@/features/debloat/types'
 
 export default async function DebloatPage() {
@@ -12,8 +13,9 @@ export default async function DebloatPage() {
   if (!user) redirect('/login')
 
   const db = createServiceClient()
-  const today = format(new Date(), 'yyyy-MM-dd')
-  const cutoff = format(subDays(new Date(), 14), 'yyyy-MM-dd')
+  const tz = await getUserTimezone(user.id)
+  const today = toLocalDate(tz)
+  const cutoff = daysAgoLocal(14, tz)
 
   const [todayResult, historyResult] = await Promise.all([
     db

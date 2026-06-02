@@ -1,13 +1,12 @@
 import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
-import { format, subDays } from 'date-fns'
+import { subDays } from 'date-fns'
+import { formatInTimeZone } from 'date-fns-tz'
+import { getUserTimezone } from '@/lib/getUserTimezone'
+import { toLocalDate } from '@/lib/date'
 import { getOuraContextRange } from '@/features/health/ouraContext'
 import type { OuraData, WhoopData } from '@/features/health/types'
-
-function logDatePST(utcStr: string): string {
-  return new Date(utcStr).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
-}
 
 function avg(values: Array<number | null | undefined>): number | null {
   const nums = values.filter((v): v is number => typeof v === 'number')
@@ -37,10 +36,12 @@ export async function POST(_request: NextRequest) {
   if (!user) return new Response('Unauthorized', { status: 401 })
 
   const db = createServiceClient()
-  const today = format(new Date(), 'yyyy-MM-dd')
-  const sevenDaysAgo = format(subDays(new Date(), 7), 'yyyy-MM-dd')
-  const fourteenDaysAgo = format(subDays(new Date(), 14), 'yyyy-MM-dd')
-  const thirtyDaysAgo = format(subDays(new Date(), 30), 'yyyy-MM-dd')
+  const TZ = await getUserTimezone(user.id)
+  const now = new Date()
+  const today = toLocalDate(TZ)
+  const sevenDaysAgo = formatInTimeZone(subDays(now, 7), TZ, 'yyyy-MM-dd')
+  const fourteenDaysAgo = formatInTimeZone(subDays(now, 14), TZ, 'yyyy-MM-dd')
+  const thirtyDaysAgo = formatInTimeZone(subDays(now, 30), TZ, 'yyyy-MM-dd')
 
   const [
     ouraRows,
@@ -105,10 +106,14 @@ export async function POST(_request: NextRequest) {
     }
   }
 
-  // Training load — group PO logs by PST date, compute volume per day
+  function logDateTZ(utcStr: string): string {
+    return formatInTimeZone(new Date(utcStr), TZ, 'yyyy-MM-dd')
+  }
+
+  // Training load — group PO logs by user's local date, compute volume per day
   const trainingByDay = new Map<string, { exercises: Set<string>; volume: number }>()
   for (const log of poLogs) {
-    const dk = logDatePST(log.logged_at)
+    const dk = logDateTZ(log.logged_at)
     const entry = trainingByDay.get(dk) ?? { exercises: new Set(), volume: 0 }
     const ex = Array.isArray(log.po_exercises) ? log.po_exercises[0] : log.po_exercises
     entry.exercises.add(ex?.name ?? 'Unknown')
@@ -120,7 +125,7 @@ export async function POST(_request: NextRequest) {
   for (let i = 6; i >= 0; i--) {
     const d = new Date()
     d.setDate(d.getDate() - i)
-    const dk = d.toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
+    const dk = formatInTimeZone(d, TZ, 'yyyy-MM-dd')
     const entry = trainingByDay.get(dk)
     if (entry) {
       const names = [...entry.exercises].join(', ')

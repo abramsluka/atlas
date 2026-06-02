@@ -2,6 +2,8 @@ import { redirect } from 'next/navigation'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import HealthClient from './HealthClient'
 import type { OuraData, WhoopData } from '@/features/health/types'
+import { getUserTimezone } from '@/lib/getUserTimezone'
+import { toLocalDate } from '@/lib/date'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,7 +13,8 @@ export default async function HealthPage() {
   if (!user) redirect('/login')
 
   const db = createServiceClient()
-  const today = new Date().toISOString().split('T')[0]
+  const tz = await getUserTimezone(user.id)
+  const today = toLocalDate(tz)
 
   const [
     supplementsResult,

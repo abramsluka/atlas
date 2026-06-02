@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { format } from 'date-fns'
+import { getUserTimezone } from '@/lib/getUserTimezone'
+import { toLocalDate } from '@/lib/date'
 
 export async function POST(
   _request: NextRequest,
@@ -12,7 +13,8 @@ export async function POST(
   const { data: { user } } = await authClient.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const today = format(new Date(), 'yyyy-MM-dd')
+  const tz = await getUserTimezone(user.id)
+  const today = toLocalDate(tz)
   const db = createServiceClient()
 
   const { error } = await db.from('habit_logs').insert({
@@ -38,7 +40,8 @@ export async function DELETE(
   const { data: { user } } = await authClient.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const today = format(new Date(), 'yyyy-MM-dd')
+  const tz = await getUserTimezone(user.id)
+  const today = toLocalDate(tz)
   const db = createServiceClient()
 
   const { error } = await db

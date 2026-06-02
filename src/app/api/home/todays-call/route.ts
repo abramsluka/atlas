@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { getUserTimezone } from '@/lib/getUserTimezone'
+import { toLocalDate } from '@/lib/date'
 import type { OuraData, WhoopData } from '@/features/health/types'
 
 type Verdict = 'GREEN' | 'YELLOW' | 'RED'
@@ -70,7 +72,8 @@ export async function POST() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const db = createServiceClient()
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
+  const tz = await getUserTimezone(user.id)
+  const today = toLocalDate(tz)
 
   // Return cached result if it exists for today
   const { data: cached } = await db

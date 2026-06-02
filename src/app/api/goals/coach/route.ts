@@ -1,7 +1,9 @@
 import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
-import { format, subDays, differenceInDays } from 'date-fns'
+import { differenceInDays, format } from 'date-fns'
+import { getUserTimezone } from '@/lib/getUserTimezone'
+import { toLocalDate, daysAgoLocal } from '@/lib/date'
 import type { Goal, HabitLog } from '@/features/goals/types'
 
 function computeStreak(goalId: string, logs: HabitLog[], today: string): number {
@@ -56,7 +58,8 @@ export async function POST(_request: NextRequest) {
   if (!user) return new Response('Unauthorized', { status: 401 })
 
   const db = createServiceClient()
-  const today = format(new Date(), 'yyyy-MM-dd')
+  const tz = await getUserTimezone(user.id)
+  const today = toLocalDate(tz)
 
   const [goalsResult, logsResult] = await Promise.all([
     db
@@ -68,7 +71,7 @@ export async function POST(_request: NextRequest) {
       .from('habit_logs')
       .select('*')
       .eq('user_id', user.id)
-      .gte('date', format(subDays(new Date(), 90), 'yyyy-MM-dd')),
+      .gte('date', daysAgoLocal(90, tz)),
   ])
 
   const goals: Goal[] = goalsResult.data ?? []

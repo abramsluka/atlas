@@ -419,9 +419,18 @@ function TodaysCallCard() {
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
-export default function HomeClient({ today, initialCheckin }: { today: string; initialCheckin: DailyCheckin | null }) {
+export default function HomeClient({ today, timezone, initialCheckin }: { today: string; timezone: string; initialCheckin: DailyCheckin | null }) {
   const queryClient = useQueryClient()
   if (initialCheckin) queryClient.setQueryData(['checkin', today], initialCheckin)
+
+  useEffect(() => {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+    fetch('/api/user/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ timezone: tz }),
+    })
+  }, [])
 
   const { data: checkin } = useTodayCheckin(today)
 

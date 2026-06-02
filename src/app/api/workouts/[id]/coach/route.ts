@@ -1,11 +1,10 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest } from 'next/server'
-import { format, subDays, subWeeks } from 'date-fns'
-
-function logDatePST(utcStr: string): string {
-  return new Date(utcStr).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
-}
+import { subDays, subWeeks } from 'date-fns'
+import { formatInTimeZone } from 'date-fns-tz'
+import { getUserTimezone } from '@/lib/getUserTimezone'
+import { toLocalDate } from '@/lib/date'
 import { getOuraContextRange, summarizeOuraForCoach } from '@/features/health/ouraContext'
 
 export async function POST(
@@ -24,6 +23,11 @@ export async function POST(
   }
 
   const supabase = createServiceClient()
+  const TZ = await getUserTimezone(user.id)
+
+  function logDateTZ(utcStr: string): string {
+    return formatInTimeZone(new Date(utcStr), TZ, 'yyyy-MM-dd')
+  }
 
   const { data: workout, error: workoutError } = await supabase
     .from('workouts')
@@ -47,8 +51,8 @@ export async function POST(
   }
 
   const fourWeeksAgo = subWeeks(new Date(), 4).toISOString()
-  const today = format(new Date(), 'yyyy-MM-dd')
-  const thirtyDaysAgo = format(subDays(new Date(), 30), 'yyyy-MM-dd')
+  const today = toLocalDate(TZ)
+  const thirtyDaysAgo = formatInTimeZone(subDays(new Date(), 30), TZ, 'yyyy-MM-dd')
 
   const [{ data: recentWorkouts }, { data: poLogs }, ouraRows] = await Promise.all([
     supabase
@@ -94,7 +98,7 @@ export async function POST(
   type PoLog = { logged_at: string; weight: number; reps: number; po_exercises: { name: string; bodyweight: boolean }[] | null }
   const poByDate = new Map<string, PoLog[]>()
   for (const log of (poLogs ?? []) as unknown as PoLog[]) {
-    const dk = logDatePST(log.logged_at)
+    const dk = logDateTZ(log.logged_at)
     const arr = poByDate.get(dk) ?? []
     arr.push(log)
     poByDate.set(dk, arr)

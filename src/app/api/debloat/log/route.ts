@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { format, subDays } from 'date-fns'
+import { getUserTimezone } from '@/lib/getUserTimezone'
+import { toLocalDate, daysAgoLocal } from '@/lib/date'
 
 export async function GET(request: NextRequest) {
   const authClient = await createClient()
@@ -10,10 +11,11 @@ export async function GET(request: NextRequest) {
   const db = createServiceClient()
   const { searchParams } = new URL(request.url)
   const history = searchParams.get('history') === 'true'
-  const date = searchParams.get('date') ?? format(new Date(), 'yyyy-MM-dd')
+  const tz = await getUserTimezone(user.id)
+  const date = searchParams.get('date') ?? toLocalDate(tz)
 
   if (history) {
-    const cutoff = format(subDays(new Date(), 14), 'yyyy-MM-dd')
+    const cutoff = daysAgoLocal(14, tz)
     const { data, error } = await db
       .from('debloat_logs')
       .select('*')

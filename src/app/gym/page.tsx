@@ -2,9 +2,10 @@ export const dynamic = 'force-dynamic'
 
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { formatInTimeZone } from 'date-fns-tz'
 import GymClient from './GymClient'
 import type { GymConfig, GymExercise, BodyWeight } from '@/features/gym/types'
+import { getUserTimezone } from '@/lib/getUserTimezone'
+import { toLocalDate } from '@/lib/date'
 
 export default async function GymPage() {
   const authClient = await createClient()
@@ -12,7 +13,8 @@ export default async function GymPage() {
   if (!user) redirect('/login')
 
   const db = createServiceClient()
-  const today = formatInTimeZone(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd')
+  const tz = await getUserTimezone(user.id)
+  const today = toLocalDate(tz)
 
   const [configRes, exercisesRes, bodyWeightsRes] = await Promise.all([
     db.from('gym_config').select('*').eq('user_id', user.id).maybeSingle(),

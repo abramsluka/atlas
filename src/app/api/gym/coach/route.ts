@@ -3,9 +3,8 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { subDays } from 'date-fns'
 import { formatInTimeZone } from 'date-fns-tz'
+import { getUserTimezone } from '@/lib/getUserTimezone'
 import type { WhoopData } from '@/features/health/types'
-
-const TZ = 'America/Los_Angeles'
 
 export async function POST(request: NextRequest) {
   const authClient = await createClient()
@@ -16,6 +15,7 @@ export async function POST(request: NextRequest) {
   const mode: 'devil' | 'angel' = body.mode === 'angel' ? 'angel' : 'devil'
 
   const db = createServiceClient()
+  const TZ = await getUserTimezone(user.id)
   const now = new Date()
   const today = formatInTimeZone(now, TZ, 'yyyy-MM-dd')
   const sevenDaysAgo = formatInTimeZone(subDays(now, 7), TZ, 'yyyy-MM-dd')
