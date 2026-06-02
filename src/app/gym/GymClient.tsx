@@ -343,8 +343,18 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const [bwInput, setBwInput] = useState<string>('')
   const todayBw = bodyWeights.find(w => w.date_key === today)
 
-  // Today done + history collapse
-  const [todayDone, setTodayDone] = useState(false)
+  // Today done + history collapse — persisted to localStorage keyed by date
+  const DONE_KEY = `gym_done_${today}`
+  const [todayDone, setTodayDoneState] = useState(() => {
+    try { return localStorage.getItem(DONE_KEY) === '1' } catch { return false }
+  })
+  function setTodayDone(fn: boolean | ((prev: boolean) => boolean)) {
+    setTodayDoneState(prev => {
+      const next = typeof fn === 'function' ? fn(prev) : fn
+      try { next ? localStorage.setItem(DONE_KEY, '1') : localStorage.removeItem(DONE_KEY) } catch {}
+      return next
+    })
+  }
   const [todayExpanded, setTodayExpanded] = useState(true)
   const [pastExpanded, setPastExpanded] = useState(false)
   const [whoopWorkoutStrain, setWhoopWorkoutStrain] = useState<number | null>(null)
