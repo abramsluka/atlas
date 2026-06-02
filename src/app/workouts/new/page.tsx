@@ -573,42 +573,17 @@ const SLIDER_CONFIG: Record<ActiveField, { min: number; max: number; step: numbe
   rpe:        { min: 0, max: 10,  step: 1   },
 }
 
-const DELETE_WIDTH = 72
-
 function SetRow({ set, setIndex, onFieldChange, onToggle, onDelete }: SetRowProps) {
   const [activeField, setActiveField] = useState<ActiveField | null>(null)
-  const [swipeX, setSwipeX] = useState(0)
-  const [dragging, setDragging] = useState(false)
-  const touchStartX = useRef(0)
-  const swipeStartX = useRef(0)
 
   function tap(field: ActiveField) {
-    if (swipeX !== 0) { setSwipeX(0); return }
     if (set.completed) onToggle()
     setActiveField((f) => (f === field && !set.completed ? null : field))
   }
 
   function handleToggle() {
-    if (swipeX !== 0) { setSwipeX(0); return }
     setActiveField(null)
     onToggle()
-  }
-
-  function handleTouchStart(e: React.TouchEvent) {
-    touchStartX.current = e.touches[0].clientX
-    swipeStartX.current = swipeX
-    setDragging(true)
-  }
-
-  function handleTouchMove(e: React.TouchEvent) {
-    const dx = e.touches[0].clientX - touchStartX.current
-    const next = Math.max(-DELETE_WIDTH, Math.min(0, swipeStartX.current + dx))
-    setSwipeX(next)
-  }
-
-  function handleTouchEnd() {
-    setDragging(false)
-    setSwipeX(swipeX < -(DELETE_WIDTH / 2) ? -DELETE_WIDTH : 0)
   }
 
   function handleSlider(e: React.ChangeEvent<HTMLInputElement>) {
@@ -629,82 +604,57 @@ function SetRow({ set, setIndex, onFieldChange, onToggle, onDelete }: SetRowProp
   }
 
   return (
-    <div className="relative mb-2 overflow-hidden">
-      {/* Swipe-to-delete target (mobile) */}
-      <button
-        onClick={onDelete}
-        className="absolute inset-y-0 right-0 flex items-center justify-center bg-red-600 text-sm font-semibold text-white"
-        style={{ width: DELETE_WIDTH }}
-      >
-        Delete
-      </button>
+    <div className={`mb-2 ${set.completed ? 'opacity-60' : ''}`}>
+      <div className="flex items-center gap-2">
+        <span className="w-8 flex-shrink-0 text-center text-sm text-zinc-500">
+          {setIndex + 1}
+        </span>
 
-      {/* Swipeable row */}
-      <div
-        className={set.completed ? 'opacity-60' : ''}
-        style={{
-          transform: `translateX(${swipeX}px)`,
-          transition: dragging ? 'none' : 'transform 0.2s ease',
-          position: 'relative',
-          zIndex: 1,
-          backgroundColor: 'rgb(24 24 27)',
-        }}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-      >
-        <div className="flex items-center gap-2">
-          <span className="w-8 flex-shrink-0 text-center text-sm text-zinc-500">
-            {setIndex + 1}
-          </span>
-
-          {(['reps', 'weight_lbs', 'rpe'] as ActiveField[]).map((field) => (
-            <button
-              key={field}
-              onClick={() => tap(field)}
-              className={`flex h-9 flex-1 items-center justify-center rounded-lg text-sm font-medium transition-colors active:opacity-80 ${
-                activeField === field
-                  ? 'bg-zinc-700 text-white'
-                  : 'bg-zinc-800 text-zinc-400'
-              }`}
-            >
-              {fieldLabel(field)}
-            </button>
-          ))}
-
+        {(['reps', 'weight_lbs', 'rpe'] as ActiveField[]).map((field) => (
           <button
-            onClick={handleToggle}
-            className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-base transition-colors ${
-              set.completed ? 'bg-white text-black' : 'bg-zinc-800 text-zinc-600'
-            } active:opacity-80`}
+            key={field}
+            onClick={() => tap(field)}
+            className={`flex h-9 flex-1 items-center justify-center rounded-lg text-sm font-medium transition-colors active:opacity-80 ${
+              activeField === field
+                ? 'bg-zinc-700 text-white'
+                : 'bg-zinc-800 text-zinc-400'
+            }`}
           >
-            ✓
+            {fieldLabel(field)}
           </button>
+        ))}
 
-          {/* Desktop: trash icon */}
-          <button
-            onClick={onDelete}
-            className="hidden md:flex h-9 w-8 flex-shrink-0 items-center justify-center text-zinc-700 hover:text-red-400 transition-colors"
-            aria-label="Delete set"
-          >
-            ×
-          </button>
-        </div>
+        <button
+          onClick={handleToggle}
+          className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-base transition-colors ${
+            set.completed ? 'bg-white text-black' : 'bg-zinc-800 text-zinc-600'
+          } active:opacity-80`}
+        >
+          ✓
+        </button>
 
-        {activeField && cfg && (
-          <div className="mt-2 px-1">
-            <input
-              type="range"
-              min={cfg.min}
-              max={cfg.max}
-              step={cfg.step}
-              value={sliderVal}
-              onChange={handleSlider}
-              className="w-full accent-white"
-            />
-          </div>
-        )}
+        <button
+          onClick={onDelete}
+          className="flex h-9 w-8 flex-shrink-0 items-center justify-center text-zinc-600 hover:text-red-400 active:text-red-400 transition-colors text-base leading-none"
+          aria-label="Delete set"
+        >
+          ×
+        </button>
       </div>
+
+      {activeField && cfg && (
+        <div className="mt-2 px-1">
+          <input
+            type="range"
+            min={cfg.min}
+            max={cfg.max}
+            step={cfg.step}
+            value={sliderVal}
+            onChange={handleSlider}
+            className="w-full accent-white"
+          />
+        </div>
+      )}
     </div>
   )
 }

@@ -1122,11 +1122,16 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                           {sets.map((set, i) => (
                             <div key={set.id} className="flex items-center gap-3 text-sm">
                               <span className="w-4 text-white/20 tabular-nums text-xs">{i + 1}</span>
-                              <span className="text-white/80 tabular-nums">
+                              <span className="flex-1 text-white/80 tabular-nums">
                                 {ex?.bodyweight ? 'BW' : `${set.weight} ${config.units}`}
                                 {' × '}
                                 {set.reps}
                               </span>
+                              <button
+                                onClick={() => deleteLog.mutate({ id: set.id, exerciseId: set.exercise_id })}
+                                className="text-white/20 hover:text-red-400 active:text-red-400 text-base leading-none transition-colors"
+                                aria-label="Delete set"
+                              >×</button>
                             </div>
                           ))}
                         </div>
@@ -1210,11 +1215,16 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                               {sets.map((set, i) => (
                                 <div key={set.id} className="flex items-center gap-3 text-sm">
                                   <span className="w-4 text-white/20 tabular-nums text-xs">{i + 1}</span>
-                                  <span className="text-white/70 tabular-nums">
+                                  <span className="flex-1 text-white/70 tabular-nums">
                                     {ex?.bodyweight ? 'BW' : `${set.weight} ${config.units}`}
                                     {' × '}
                                     {set.reps}
                                   </span>
+                                  <button
+                                    onClick={() => deleteLog.mutate({ id: set.id, exerciseId: set.exercise_id })}
+                                    className="text-white/20 hover:text-red-400 active:text-red-400 text-base leading-none transition-colors"
+                                    aria-label="Delete set"
+                                  >×</button>
                                 </div>
                               ))}
                             </div>
