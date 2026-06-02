@@ -157,6 +157,12 @@ export function useLogBodyWeight() {
         const filtered = old.filter(w => w.date_key !== data.date_key)
         return [...filtered, data].sort((a, b) => a.date_key.localeCompare(b.date_key))
       })
+      // Keep health profile weight_lbs in sync so water target reflects latest weight
+      fetch('/api/health/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ weight_lbs: data.weight }),
+      }).then(() => qc.invalidateQueries({ queryKey: ['health', 'profile'] })).catch(() => {})
     },
   })
 }
