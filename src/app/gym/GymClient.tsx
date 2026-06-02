@@ -522,8 +522,19 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     const cleaned = rotDraft.map(s => s.trim()).filter(Boolean)
     if (!cleaned.length) return
     const newTodayIdx = rotTodayIdx >= cleaned.length ? 0 : rotTodayIdx
+
+    // Sync config.days from non-rest entries in the rotation
+    const existingById = new Map(config.days.map(d => [d.name.toLowerCase(), d.id]))
+    const nonRestNames = cleaned.filter(n => !isRest(n))
+    // dedupe while preserving order
+    const seen = new Set<string>()
+    const newDays = nonRestNames
+      .filter(name => { const k = name.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true })
+      .map(name => ({ id: existingById.get(name.toLowerCase()) ?? ('d_' + Date.now() + '_' + Math.random().toString(36).slice(2)), name }))
+
     saveConfig.mutate({
       ...config,
+      days: newDays,
       split_rotation: cleaned,
       split_anchor: { date: today, index: newTodayIdx },
     })
@@ -531,10 +542,30 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   }
 
   function saveSettings() {
+    // Sync split_rotation when days are renamed, added, or removed
+    const oldNameToId = new Map(config.days.map(d => [d.name.toLowerCase(), d.id]))
+    const idToNewName = new Map(settingsDays.map(d => [d.id, d.name]))
+    const oldDayIds = new Set(config.days.map(d => d.id))
+
+    // Update non-rest entries in existing rotation; drop removed days
+    const newRotation = config.split_rotation.flatMap(entry => {
+      if (isRest(entry)) return [entry]
+      const id = oldNameToId.get(entry.toLowerCase())
+      if (!id) return [] // entry wasn't a known day — drop
+      const newName = idToNewName.get(id)
+      return newName ? [newName] : [] // removed day → drop
+    })
+
+    // Append brand-new days (not in old config.days) to the rotation
+    for (const d of settingsDays) {
+      if (!oldDayIds.has(d.id)) newRotation.push(d.name)
+    }
+
     saveConfig.mutate({
       ...config,
       gyms: settingsGyms,
       days: settingsDays,
+      split_rotation: newRotation,
       units: settingsUnits,
       upgrade_at_reps: settingsUpgradeAt,
     })
