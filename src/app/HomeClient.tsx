@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useTodayCheckin } from '@/features/workouts/queries'
 import { useSaveEveningCheckin } from '@/features/workouts/mutations'
@@ -329,6 +329,94 @@ function DailyCheckinCard({ today, checkin }: { today: string; checkin: DailyChe
   )
 }
 
+// ─── Today's Call ─────────────────────────────────────────────────────────────
+
+type Verdict = 'GREEN' | 'YELLOW' | 'RED'
+interface TodaysCallData { color: Verdict; headline: string; bullets: string[] }
+
+const VERDICT_COLOR: Record<Verdict, string> = {
+  GREEN:  '#4ade80',
+  YELLOW: '#fbbf24',
+  RED:    '#f87171',
+}
+const VERDICT_BORDER: Record<Verdict, string> = {
+  GREEN:  'rgba(74,222,128,0.25)',
+  YELLOW: 'rgba(251,191,36,0.25)',
+  RED:    'rgba(248,113,113,0.25)',
+}
+
+function TodaysCallCard() {
+  const [data, setData] = useState<TodaysCallData | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [noData, setNoData] = useState(false)
+  const fetched = useRef(false)
+
+  const fetch_ = useCallback(async () => {
+    if (loading) return
+    setLoading(true)
+    try {
+      const res = await fetch('/api/home/todays-call', { method: 'POST' })
+      if (!res.ok) return
+      const json = await res.json()
+      if (json.noData) { setNoData(true); return }
+      setData(json)
+    } finally {
+      setLoading(false)
+    }
+  }, [loading])
+
+  useEffect(() => {
+    if (fetched.current) return
+    fetched.current = true
+    fetch_()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  if (noData) return null
+  if (!data && !loading) return null
+
+  const color = data ? VERDICT_COLOR[data.color] : 'rgba(255,255,255,0.2)'
+  const border = data ? VERDICT_BORDER[data.color] : 'rgba(255,255,255,0.08)'
+
+  return (
+    <div
+      className="rounded-2xl p-5 mb-4"
+      style={{ background: '#0e0e10', border: `1px solid ${border}`, borderLeft: `3px solid ${color}` }}
+    >
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/40">Today&apos;s Call</span>
+        {data ? (
+          <span
+            className="text-[11px] font-bold tracking-widest px-2 py-0.5 rounded-full"
+            style={{ color, background: `${color}18` }}
+          >
+            {data.color}
+          </span>
+        ) : (
+          <span className="text-[11px] text-white/20 animate-pulse">Loading…</span>
+        )}
+      </div>
+
+      {data ? (
+        <>
+          <p className="text-sm font-semibold text-white leading-snug mb-3">{data.headline}</p>
+          <ul className="space-y-1">
+            {data.bullets.map((b, i) => (
+              <li key={i} className="text-xs text-white/50 leading-relaxed">{b}</li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <div className="space-y-2">
+          <div className="h-4 rounded bg-white/[0.06] animate-pulse w-3/4" />
+          <div className="h-3 rounded bg-white/[0.04] animate-pulse w-1/2" />
+          <div className="h-3 rounded bg-white/[0.04] animate-pulse w-2/3" />
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
 export default function HomeClient({ today, initialCheckin }: { today: string; initialCheckin: DailyCheckin | null }) {
@@ -378,6 +466,7 @@ export default function HomeClient({ today, initialCheckin }: { today: string; i
       </h1>
       <GoalTicker checkin={checkin} />
       <DayRing />
+      <TodaysCallCard />
 
       <section>
         <SectionTitle label="Check-in" />

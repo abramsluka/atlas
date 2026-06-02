@@ -293,6 +293,18 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const uploadPhoto = useUploadPhoto()
   const deletePhotoMut = useDeletePhoto()
 
+  // Today's Call condensed badge
+  const [todaysCall, setTodaysCall] = useState<{ color: 'GREEN' | 'YELLOW' | 'RED'; headline: string } | null>(null)
+  const callFetched = useRef(false)
+  useEffect(() => {
+    if (callFetched.current) return
+    callFetched.current = true
+    fetch('/api/home/todays-call', { method: 'POST' })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (j && !j.noData) setTodaysCall({ color: j.color, headline: j.headline }) })
+      .catch(() => {})
+  }, [])
+
   // Filter state
   const [filterGym, setFilterGym] = useState<string>(config.gyms[0]?.id ?? 'g_default')
   const [filterDay, setFilterDay] = useState<string>(() => {
@@ -794,25 +806,36 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   return (
     <div className="min-h-screen bg-black text-white pb-28">
       {/* Day Pill */}
-      <div className="sticky top-0 z-10 px-4 pt-4 pb-2 bg-black/80 backdrop-blur-sm flex items-center justify-between">
-        <button
-          onClick={openRotModal}
-          className="flex items-center gap-2 rounded-full bg-white/8 border border-white/10 px-4 py-2 active:opacity-70"
-        >
-          <span className="text-xs text-white/50 font-mono tracking-widest">{todayDateLabel()}</span>
-          <span className={`text-xs font-bold tracking-widest`} style={{ color: isRest(split.name) ? '#7DD3FC' : '#4ade80' }}>
-            {splitLabel(split.name)}
-          </span>
-        </button>
-        <button
-          onClick={openSettings}
-          className="w-9 h-9 rounded-full bg-white/8 border border-white/10 flex items-center justify-center text-white/50 active:opacity-70"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M8 10a2 2 0 100-4 2 2 0 000 4z" />
-            <path fillRule="evenodd" d="M8 1a.75.75 0 01.75.75v.823a5.002 5.002 0 013.177 3.177h.823a.75.75 0 010 1.5h-.823a5.002 5.002 0 01-3.177 3.177v.823a.75.75 0 01-1.5 0v-.823a5.002 5.002 0 01-3.177-3.177H2.25a.75.75 0 010-1.5h.823A5.002 5.002 0 016.25 2.573V1.75A.75.75 0 018 1z" />
-          </svg>
-        </button>
+      <div className="sticky top-0 z-10 px-4 pt-4 pb-2 bg-black/80 backdrop-blur-sm">
+        <div className="flex items-center justify-between">
+          <button
+            onClick={openRotModal}
+            className="flex items-center gap-2 rounded-full bg-white/8 border border-white/10 px-4 py-2 active:opacity-70"
+          >
+            <span className="text-xs text-white/50 font-mono tracking-widest">{todayDateLabel()}</span>
+            <span className={`text-xs font-bold tracking-widest`} style={{ color: isRest(split.name) ? '#7DD3FC' : '#4ade80' }}>
+              {splitLabel(split.name)}
+            </span>
+          </button>
+          <button
+            onClick={openSettings}
+            className="w-9 h-9 rounded-full bg-white/8 border border-white/10 flex items-center justify-center text-white/50 active:opacity-70"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8 10a2 2 0 100-4 2 2 0 000 4z" />
+              <path fillRule="evenodd" d="M8 1a.75.75 0 01.75.75v.823a5.002 5.002 0 013.177 3.177h.823a.75.75 0 010 1.5h-.823a5.002 5.002 0 01-3.177 3.177v.823a.75.75 0 01-1.5 0v-.823a5.002 5.002 0 01-3.177-3.177H2.25a.75.75 0 010-1.5h.823A5.002 5.002 0 016.25 2.573V1.75A.75.75 0 018 1z" />
+            </svg>
+          </button>
+        </div>
+        {todaysCall && (() => {
+          const clr = todaysCall.color === 'GREEN' ? '#4ade80' : todaysCall.color === 'YELLOW' ? '#fbbf24' : '#f87171'
+          return (
+            <div className="mt-2 flex items-center gap-2 px-1">
+              <span className="text-[10px] font-bold tracking-widest" style={{ color: clr }}>{todaysCall.color}</span>
+              <span className="text-[11px] text-white/50 truncate">{todaysCall.headline}</span>
+            </div>
+          )
+        })()}
       </div>
 
       <div className="px-4 space-y-4 pt-2">
