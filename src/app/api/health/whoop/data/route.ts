@@ -76,15 +76,15 @@ export async function GET(req: NextRequest) {
     fetch('https://api.prod.whoop.com/developer/v1/activity/sleep?limit=5', { headers }),
   ])
 
-  // If Whoop rejects the token, signal auth failure so the UI prompts reconnect
+  // Only 401 means bad token — 404 means no data for this user (e.g. no sleep tracking)
   if (recoveryRes.status === 401 || cycleRes.status === 401 || sleepRes.status === 401) {
     return NextResponse.json({ error: 'auth' }, { status: 401 })
   }
 
   const [recoveryJson, cycleJson, sleepJson] = await Promise.all([
-    recoveryRes.ok ? recoveryRes.json() : null,
-    cycleRes.ok ? cycleRes.json() : null,
-    sleepRes.ok ? sleepRes.json() : null,
+    recoveryRes.status === 200 ? recoveryRes.json() : null,
+    cycleRes.status === 200 ? cycleRes.json() : null,
+    sleepRes.status === 200 ? sleepRes.json() : null,
   ])
 
   // Pick the most recent record from each endpoint

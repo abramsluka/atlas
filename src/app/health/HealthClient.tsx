@@ -205,33 +205,37 @@ function WearablesSection({
             <p className="text-xs text-zinc-500">No data yet</p>
           ) : (
             <div className="space-y-4">
-              <div>
-                <p className="text-[10px] uppercase tracking-wide text-zinc-500">Recovery</p>
-                <p className={`text-3xl font-bold ${scoreColor(whoop.recovery?.score)}`}>
-                  {whoop.recovery?.score != null ? `${whoop.recovery.score}%` : '--'}
-                </p>
-              </div>
-              <div className="grid grid-cols-3 gap-3">
+              {whoop.recovery?.score != null && (
                 <div>
-                  <p className="text-[10px] uppercase tracking-wide text-zinc-500">Strain</p>
-                  <p className="text-sm font-semibold text-white">
-                    {whoop.cycle?.strain != null ? whoop.cycle.strain.toFixed(1) : '--'}
+                  <p className="text-[10px] uppercase tracking-wide text-zinc-500">Recovery</p>
+                  <p className={`text-3xl font-bold ${scoreColor(whoop.recovery.score)}`}>
+                    {whoop.recovery.score}%
                   </p>
                 </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wide text-zinc-500">Cals</p>
-                  <p className="text-sm font-semibold text-white">
-                    {whoop.cycle?.kilojoule != null
-                      ? Math.round(whoop.cycle.kilojoule * 0.239).toLocaleString()
-                      : '--'}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wide text-zinc-500">Sleep</p>
-                  <p className="text-sm font-semibold text-white">
-                    {formatDuration(whoop.sleep?.duration_seconds)}
-                  </p>
-                </div>
+              )}
+              <div className={`grid gap-3 ${[whoop.cycle?.strain, whoop.cycle?.kilojoule, whoop.sleep?.duration_seconds].filter(v => v != null).length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                {whoop.cycle?.strain != null && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wide text-zinc-500">Strain</p>
+                    <p className="text-sm font-semibold text-white">{whoop.cycle.strain.toFixed(1)}</p>
+                  </div>
+                )}
+                {whoop.cycle?.kilojoule != null && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wide text-zinc-500">Cals</p>
+                    <p className="text-sm font-semibold text-white">
+                      {Math.round(whoop.cycle.kilojoule * 0.239).toLocaleString()}
+                    </p>
+                  </div>
+                )}
+                {whoop.sleep?.duration_seconds != null && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wide text-zinc-500">Sleep</p>
+                    <p className="text-sm font-semibold text-white">
+                      {formatDuration(whoop.sleep.duration_seconds)}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           )}
