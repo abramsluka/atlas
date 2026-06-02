@@ -731,16 +731,16 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     const daySpan = Math.max(1, (new Date(recent[recent.length - 1].date_key).getTime() - new Date(recent[0].date_key).getTime()) / 86400000)
     const weeklyRate = ((recent[recent.length - 1].weight - recent[0].weight) / daySpan) * 7
     const verdict = Math.abs(weeklyRate) < 0.25 ? 'Maintaining' : weeklyRate < 0 ? 'Cutting' : 'Gaining'
-    // Deurenberg body fat % — optional, only when profile has height/age/sex
-    let bf: { fatPct: number; leanLbs: number; fatLbs: number } | null = null
+    // Deurenberg body fat % — uses profile when available, falls back to 15%
+    let fatPct = 15
     if (healthProfile?.height_cm && healthProfile.age && healthProfile.sex) {
       const heightM = healthProfile.height_cm / 100
       const weightKg = currentWeight * 0.453592
       const bmi = weightKg / (heightM * heightM)
       const sexFactor = healthProfile.sex === 'm' ? 1 : healthProfile.sex === 'f' ? 0 : 0.5
-      const fatPct = Math.max(5, Math.min(50, (1.20 * bmi) + (0.23 * healthProfile.age) - (10.8 * sexFactor) - 5.4))
-      bf = { fatPct, leanLbs: currentWeight * (1 - fatPct / 100), fatLbs: currentWeight * (fatPct / 100) }
+      fatPct = Math.max(5, Math.min(50, (1.20 * bmi) + (0.23 * healthProfile.age) - (10.8 * sexFactor) - 5.4))
     }
+    const bf = { fatPct, leanLbs: currentWeight * (1 - fatPct / 100), fatLbs: currentWeight * (fatPct / 100) }
     return { weeklyRate, verdict, bf }
   })()
   const goalIsLoss = targetWeight != null && currentWeight != null ? targetWeight < currentWeight : true
@@ -862,17 +862,13 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   {compEstimate.weeklyRate > 0 ? '+' : ''}{compEstimate.weeklyRate.toFixed(2)} lbs/wk
                 </span>
               </div>
-              {compEstimate.bf && (
-                <>
-                  <div className="flex rounded-full overflow-hidden h-2">
-                    <div className="bg-green-400/70" style={{ width: `${(100 - compEstimate.bf.fatPct).toFixed(1)}%` }} />
-                    <div className="bg-white/20" style={{ width: `${compEstimate.bf.fatPct.toFixed(1)}%` }} />
-                  </div>
-                  <p className="text-[10px] text-white/30">
-                    ~{compEstimate.bf.leanLbs.toFixed(1)} lbs lean · ~{compEstimate.bf.fatLbs.toFixed(1)} lbs fat · ~{compEstimate.bf.fatPct.toFixed(1)}% BF (est.)
-                  </p>
-                </>
-              )}
+              <div className="flex rounded-full overflow-hidden h-2">
+                <div className="bg-green-400/70" style={{ width: `${(100 - compEstimate.bf.fatPct).toFixed(1)}%` }} />
+                <div className="bg-white/20" style={{ width: `${compEstimate.bf.fatPct.toFixed(1)}%` }} />
+              </div>
+              <p className="text-[10px] text-white/30">
+                ~{compEstimate.bf.leanLbs.toFixed(1)} lbs lean · ~{compEstimate.bf.fatLbs.toFixed(1)} lbs fat · ~{compEstimate.bf.fatPct.toFixed(1)}% BF (est.)
+              </p>
             </div>
           )}
 
