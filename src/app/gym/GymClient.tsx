@@ -347,6 +347,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const [todayDone, setTodayDone] = useState(false)
   const [todayExpanded, setTodayExpanded] = useState(true)
   const [pastExpanded, setPastExpanded] = useState(false)
+  const [whoopWorkoutStrain, setWhoopWorkoutStrain] = useState<number | null>(null)
+  const whoopStrainFetched = useRef(false)
 
   // Coach (devil / angel)
   const [coachText, setCoachText] = useState('')
@@ -696,6 +698,22 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const todayAllLogs = allLogs.filter(l => logDatePST(l.logged_at) === today)
   const todayExIds = [...new Set(todayAllLogs.map(l => l.exercise_id))]
   const todayVolume = todayAllLogs.reduce((s, l) => s + l.weight * l.reps, 0)
+
+  // When the user marks today's workout done, fetch the matching Whoop workout strain
+  useEffect(() => {
+    if (!todayDone) return
+    if (whoopStrainFetched.current) return
+    if (todayAllLogs.length === 0) return
+    whoopStrainFetched.current = true
+
+    const sorted = todayAllLogs.slice().sort((a, b) => a.logged_at.localeCompare(b.logged_at))
+    const start = encodeURIComponent(sorted[0].logged_at)
+    const end = encodeURIComponent(sorted[sorted.length - 1].logged_at)
+    fetch(`/api/health/whoop/workout?start=${start}&end=${end}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.strain != null) setWhoopWorkoutStrain(data.strain) })
+      .catch(() => {})
+  }, [todayDone, todayAllLogs])
 
   // Past workouts (for history)
   const pastDates = [...new Set(
@@ -1100,6 +1118,14 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     <span className="text-sm text-white/40">sets</span>
                     <span className="text-white/20">·</span>
                     <span className="text-sm text-white/60">{Math.round(todayVolume).toLocaleString()} {config.units}</span>
+                    {whoopWorkoutStrain != null && (
+                      <>
+                        <span className="text-white/20">·</span>
+                        <span className="text-sm font-semibold" style={{ color: whoopWorkoutStrain >= 16 ? '#f87171' : whoopWorkoutStrain >= 10 ? '#fb923c' : '#4ade80' }}>
+                          {whoopWorkoutStrain.toFixed(1)} strain
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
                 <span className="text-white/30 text-xs ml-4 shrink-0">{todayExpanded ? '▲' : '▼'}</span>
@@ -1129,7 +1155,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                               </span>
                               <button
                                 onClick={() => deleteLog.mutate({ id: set.id, exerciseId: set.exercise_id })}
-                                className="text-white/20 hover:text-red-400 active:text-red-400 text-base leading-none transition-colors"
+                                className="text-white/40 hover:text-red-400 active:text-red-400 text-base leading-none transition-colors px-1"
                                 aria-label="Delete set"
                               >×</button>
                             </div>

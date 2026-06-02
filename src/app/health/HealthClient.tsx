@@ -985,18 +985,22 @@ function subExtraMl(s: SubstanceEntry): number {
   return Math.max(0, dose * (s.mlPerUnit ?? 0))
 }
 
-function computeTarget(p: WaterProfile) {
+function computeTarget(p: WaterProfile, whoopKcalToday?: number | null) {
   const wKg = p.weight_lbs != null
     ? (p.weight_unit === 'kg' ? p.weight_lbs : p.weight_lbs / 2.20462)
     : 0
   const base = wKg * 35
-  const exercise = (p.activity_hrs_per_week || 0) / 7 * 500
+  // If Whoop data is present, derive exercise water directly from calories burned.
+  // ~1.5 ml per kcal above a 2000 kcal sedentary baseline.
+  const exercise = whoopKcalToday != null
+    ? Math.max(0, (whoopKcalToday - 2000) * 1.5)
+    : (p.activity_hrs_per_week || 0) / 7 * 500
   const caffeine = Math.max(0, (p.caffeine_mg_per_day || 0) - 200) * 1.5
   const subs = (p.substances || []).reduce((acc, x) => acc + subExtraMl(x), 0)
   let adjust = 0
   if (p.sex === 'm') adjust += 200
   if ((p.age || 0) >= 50) adjust += 100
-  return { base, exercise, caffeine, subs, adjust, total: base + exercise + caffeine + subs + adjust }
+  return { base, exercise, caffeine, subs, adjust, total: base + exercise + caffeine + subs + adjust, whoopDriven: whoopKcalToday != null }
 }
 
 function unitVolOz(p: WaterProfile): number {
@@ -1140,7 +1144,7 @@ function WaterSection({
 
   const totalOz = waterLogs?.reduce((sum, l) => sum + l.amount_oz, 0) ?? 0
   const unitVol = unitVolOz(localProfile)
-  const calc = computeTarget(localProfile)
+  const calc = computeTarget(localProfile, whoopKcal)
   const targetOz = localProfile.daily_water_target_oz ?? calc.total / ML_PER_OZ
   const targetUnits = Math.max(1, Math.ceil(targetOz / unitVol))
   const count = totalOz / unitVol
@@ -1273,11 +1277,6 @@ function WaterSection({
           {helper.text}
         </p>
 
-        {whoopKcal != null && whoopKcal > 600 && (
-          <p className="mt-2 text-center text-[11px] text-sky-400/80 italic">
-            You burned {whoopKcal.toLocaleString()} kcal today per Whoop — consider bumping your water goal by 500ml.
-          </p>
-        )}
 
         {/* Why this target? */}
         <button
@@ -1296,7 +1295,7 @@ function WaterSection({
               return (
                 <>
                   <WhyRow label={`Base (${wDisp} ${localProfile.weight_unit} × 35 ml)`} val={fmtMl(calc.base)} />
-                  {calc.exercise > 0 && <WhyRow label={`+ Exercise (${localProfile.activity_hrs_per_week} h/wk)`} val={`+ ${fmtMl(calc.exercise)}`} />}
+                  {calc.exercise > 0 && <WhyRow label={calc.whoopDriven ? `+ Activity (Whoop: ${whoopKcal?.toLocaleString()} kcal)` : `+ Exercise (${localProfile.activity_hrs_per_week} h/wk)`} val={`+ ${fmtMl(calc.exercise)}`} />}
                   {calc.caffeine > 0 && <WhyRow label={`+ Caffeine (${localProfile.caffeine_mg_per_day} mg/day)`} val={`+ ${fmtMl(calc.caffeine)}`} />}
                   {localProfile.substances.map(s => (
                     <WhyRow key={s.id} label={`+ ${s.name} (${s.dose ?? s.defaultDose} ${s.unit})`} val={`+ ${fmtMl(subExtraMl(s))}`} />
@@ -1431,11 +1430,12 @@ function WaterSection({
                     className={INPUT_CLS} />
                 </WSettingField>
               </div>
-              <WSettingField label="Activity (training hours per week)">
+              <WSettingField label={whoopKcal != null ? 'Activity (auto from Whoop)' : 'Activity (training hours per week)'}>
                 <input type="number" inputMode="decimal" min="0" max="40" step="0.5"
-                  value={localProfile.activity_hrs_per_week}
-                  onChange={e => updateLocal({ activity_hrs_per_week: parseFloat(e.target.value) || 0 })}
-                  className={INPUT_CLS} />
+                  value={whoopKcal != null ? Math.round(Math.max(0, (whoopKcal - 2000) / 500 * 10) / 10) : localProfile.activity_hrs_per_week}
+                  readOnly={whoopKcal != null}
+                  onChange={e => { if (whoopKcal == null) updateLocal({ activity_hrs_per_week: parseFloat(e.target.value) || 0 }) }}
+                  className={`${INPUT_CLS} ${whoopKcal != null ? 'opacity-50 cursor-not-allowed' : ''}`} />
               </WSettingField>
             </WSettingSection>
 
