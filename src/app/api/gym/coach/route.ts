@@ -20,8 +20,9 @@ export async function POST(request: NextRequest) {
   const today = formatInTimeZone(now, TZ, 'yyyy-MM-dd')
   const sevenDaysAgo = formatInTimeZone(subDays(now, 7), TZ, 'yyyy-MM-dd')
   const fourteenDaysAgo = formatInTimeZone(subDays(now, 14), TZ, 'yyyy-MM-dd')
+  const fiftySevenDaysAgo = formatInTimeZone(subDays(now, 57), TZ, 'yyyy-MM-dd')
 
-  const [gymLogsResult, checkinsResult, whoopWearableRes] = await Promise.all([
+  const [gymLogsResult, checkinsResult, whoopWearableRes, bodyWeightsResult, volumeLogsResult] = await Promise.all([
     db
       .from('gym_logs')
       .select('logged_at')
@@ -35,11 +36,15 @@ export async function POST(request: NextRequest) {
       .gte('date', fourteenDaysAgo)
       .order('date', { ascending: false }),
     db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'whoop').eq('date', today).maybeSingle(),
+    db.from('body_weights').select('date_key, weight').eq('user_id', user.id).gte('date_key', fiftySevenDaysAgo).order('date_key', { ascending: true }),
+    db.from('gym_logs').select('logged_at, weight, reps').eq('user_id', user.id).gte('logged_at', new Date(Date.now() - 57 * 86400000).toISOString()).order('logged_at', { ascending: true }),
   ])
 
   const gymLogs = gymLogsResult.data ?? []
   const checkins = checkinsResult.data ?? []
   const whoopToday = whoopWearableRes.data?.data as WhoopData | null
+  const bodyWeights = bodyWeightsResult.data ?? []
+  const volumeLogs = volumeLogsResult.data ?? []
 
   const todayCheckin = checkins.find(c => c.date === today)
 
@@ -114,6 +119,44 @@ export async function POST(request: NextRequest) {
     if (whoopToday.cycle?.strain != null) whoopLines.push(`Strain: ${whoopToday.cycle.strain.toFixed(1)}/21`)
     if (whoopToday.cycle?.kilojoule != null) whoopLines.push(`Calories burned: ${Math.round(whoopToday.cycle.kilojoule * 0.239)} kcal`)
     if (whoopLines.length > 0) lines.push(`Whoop today — ${whoopLines.join(', ')}.`)
+  }
+
+  // Body composition context — gate on 4+ weight logs and 4+ training sessions
+  const distinctTrainingSessions = new Set(
+    volumeLogs
+      .filter(l => l.logged_at)
+      .map(l => new Date(l.logged_at!).toLocaleDateString('en-CA', { timeZone: TZ }))
+  ).size
+
+  if (bodyWeights.length >= 4 && distinctTrainingSessions >= 4) {
+    const firstBw = bodyWeights[0]
+    const lastBw = bodyWeights[bodyWeights.length - 1]
+    const daySpan = Math.max(1, (new Date(lastBw.date_key).getTime() - new Date(firstBw.date_key).getTime()) / 86400000)
+    const weeklyChange = ((lastBw.weight - firstBw.weight) / daySpan) * 7
+
+    // Volume per week (sum weight*reps grouped into 7-day buckets)
+    const volumeByWeek: Record<string, number> = {}
+    for (const log of volumeLogs) {
+      if (!log.logged_at || !log.weight || !log.reps) continue
+      const date = new Date(log.logged_at)
+      const weekStart = new Date(date)
+      weekStart.setDate(date.getDate() - date.getDay())
+      const key = weekStart.toISOString().slice(0, 10)
+      volumeByWeek[key] = (volumeByWeek[key] ?? 0) + (log.weight * log.reps)
+    }
+    const weekKeys = Object.keys(volumeByWeek).sort()
+    const recentVolume = weekKeys.slice(-2).map(k => `${k}: ${Math.round(volumeByWeek[k]).toLocaleString()} lbs lifted`)
+
+    const trendDesc = Math.abs(weeklyChange) < 0.3
+      ? 'stable (maintaining)'
+      : weeklyChange < 0
+        ? `losing ~${Math.abs(weeklyChange).toFixed(1)} lbs/week (cutting)`
+        : `gaining ~${weeklyChange.toFixed(1)} lbs/week (bulking)`
+
+    lines.push(
+      `\nBody weight trend (last ${bodyWeights.length} logs over ${Math.round(daySpan)} days): ${firstBw.weight} → ${lastBw.weight} lbs. Currently ${trendDesc}.`,
+      recentVolume.length ? `Recent weekly volume: ${recentVolume.join(', ')}.` : '',
+    )
   }
 
   const context = lines.join('\n')

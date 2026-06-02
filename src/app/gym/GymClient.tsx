@@ -181,34 +181,60 @@ function WtChart({ entries, units }: { entries: BodyWeight[]; units: string }) {
   }
   const fill = d + ` L ${pts[pts.length-1].x} ${H} L ${pts[0].x} ${H} Z`
 
-  // 7-day avg line
-  const avg7 = entries.length >= 7
-    ? entries.slice(-7).reduce((s, e) => s + e.weight, 0) / 7
-    : null
-  const avgY = avg7 != null
-    ? H - 10 - ((avg7 - padded.min) / totalRange) * (H - 20)
-    : null
+  // Rolling 7-day average line (follows the data, not flat)
+  const showAvg = entries.length >= 7
+  const avgPts = showAvg ? entries.map((_, i) => {
+    const slice = entries.slice(Math.max(0, i - 6), i + 1)
+    const avg = slice.reduce((s, e) => s + e.weight, 0) / slice.length
+    return {
+      x: pts[i].x,
+      y: H - 10 - ((avg - padded.min) / totalRange) * (H - 20),
+    }
+  }) : []
+
+  let avgPath = ''
+  if (avgPts.length >= 2) {
+    avgPath = `M ${avgPts[0].x.toFixed(1)} ${avgPts[0].y.toFixed(1)}`
+    for (let i = 1; i < avgPts.length; i++) {
+      const cx = (avgPts[i-1].x + avgPts[i].x) / 2
+      avgPath += ` C ${cx.toFixed(1)} ${avgPts[i-1].y.toFixed(1)}, ${cx.toFixed(1)} ${avgPts[i].y.toFixed(1)}, ${avgPts[i].x.toFixed(1)} ${avgPts[i].y.toFixed(1)}`
+    }
+  }
 
   const lastPt = pts[pts.length - 1]
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }}>
-      <defs>
-        <linearGradient id="wt-fill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#4ade80" stopOpacity="0.25" />
-          <stop offset="100%" stopColor="#4ade80" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      {[20, 50, 80].map(y => (
-        <line key={y} x1="0" y1={y} x2={W} y2={y} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
-      ))}
-      <path d={fill} fill="url(#wt-fill)" />
-      <path d={d} fill="none" stroke="#4ade80" strokeWidth="2" strokeLinecap="round" />
-      {avgY != null && (
-        <line x1="0" y1={avgY} x2={W} y2={avgY} stroke="#4ade80" strokeWidth="1" strokeDasharray="4 3" opacity="0.5" />
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }}>
+        <defs>
+          <linearGradient id="wt-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#4ade80" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="#4ade80" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {[20, 50, 80].map(y => (
+          <line key={y} x1="0" y1={y} x2={W} y2={y} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+        ))}
+        <path d={fill} fill="url(#wt-fill)" />
+        <path d={d} fill="none" stroke="#4ade80" strokeWidth="2" strokeLinecap="round" />
+        {avgPath && (
+          <path d={avgPath} fill="none" stroke="#4ade80" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.55" />
+        )}
+        <circle cx={lastPt.x} cy={lastPt.y} r="4" fill="#4ade80" />
+      </svg>
+      {showAvg && (
+        <div className="flex items-center gap-4 px-1 mt-1">
+          <div className="flex items-center gap-1.5">
+            <svg width="16" height="4" viewBox="0 0 16 4"><line x1="0" y1="2" x2="16" y2="2" stroke="#4ade80" strokeWidth="2" /></svg>
+            <span className="text-[9px] text-white/25 tracking-widest uppercase">Daily</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <svg width="16" height="4" viewBox="0 0 16 4"><line x1="0" y1="2" x2="16" y2="2" stroke="#4ade80" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.55" /></svg>
+            <span className="text-[9px] text-white/25 tracking-widest uppercase">7-Day Avg</span>
+          </div>
+        </div>
       )}
-      <circle cx={lastPt.x} cy={lastPt.y} r="4" fill="#4ade80" />
-    </svg>
+    </div>
   )
 }
 
@@ -697,6 +723,23 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   // Green if moving toward goal: losing = negative delta good, gaining = positive delta good
   const targetWeight = healthProfile?.target_weight_lbs ?? null
   const currentWeight = bodyWeights.length ? bodyWeights[bodyWeights.length - 1].weight : null
+
+  // Body composition estimate (Deurenberg formula: needs age, sex, height_cm)
+  const compEstimate = (() => {
+    if (!currentWeight || !healthProfile?.height_cm || !healthProfile.age || !healthProfile.sex) return null
+    const heightM = healthProfile.height_cm / 100
+    const weightKg = currentWeight * 0.453592
+    const bmi = weightKg / (heightM * heightM)
+    const sexFactor = healthProfile.sex === 'm' ? 1 : healthProfile.sex === 'f' ? 0 : 0.5
+    const fatPct = Math.max(5, Math.min(50, (1.20 * bmi) + (0.23 * healthProfile.age) - (10.8 * sexFactor) - 5.4))
+    const leanLbs = currentWeight * (1 - fatPct / 100)
+    const fatLbs = currentWeight * (fatPct / 100)
+    const recent = bodyWeights.length >= 2 ? bodyWeights.slice(-Math.min(bodyWeights.length, 30)) : bodyWeights
+    const daySpan = Math.max(1, (new Date(recent[recent.length - 1].date_key).getTime() - new Date(recent[0].date_key).getTime()) / 86400000)
+    const weeklyRate = ((recent[recent.length - 1].weight - recent[0].weight) / daySpan) * 7
+    const verdict = Math.abs(weeklyRate) < 0.25 ? 'Maintaining' : weeklyRate < 0 ? 'Cutting' : 'Gaining'
+    return { fatPct, leanLbs, fatLbs, weeklyRate, verdict }
+  })()
   const goalIsLoss = targetWeight != null && currentWeight != null ? targetWeight < currentWeight : true
   function bwDeltaColor(delta: number): string {
     if (delta === 0) return 'text-white/40'
@@ -805,6 +848,30 @@ export default function GymClient({ today, initialConfig, initialExercises, init
           {bodyWeights.length >= 2 && (
             <div className="px-2">
               <WtChart entries={bodyWeights} units={config.units} />
+            </div>
+          )}
+
+          {compEstimate && bodyWeights.length >= 4 && (
+            <div className="mx-5 mb-4 rounded-xl bg-white/[0.04] border border-white/[0.07] px-4 py-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-white/70">{compEstimate.verdict}</span>
+                <span className="text-[10px] text-white/30">
+                  {compEstimate.weeklyRate > 0 ? '+' : ''}{compEstimate.weeklyRate.toFixed(2)} lbs/wk
+                </span>
+              </div>
+              <div className="flex rounded-full overflow-hidden h-2">
+                <div
+                  className="bg-green-400/70"
+                  style={{ width: `${(100 - compEstimate.fatPct).toFixed(1)}%` }}
+                />
+                <div
+                  className="bg-white/20"
+                  style={{ width: `${compEstimate.fatPct.toFixed(1)}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-white/30">
+                ~{compEstimate.leanLbs.toFixed(1)} lbs lean · ~{compEstimate.fatLbs.toFixed(1)} lbs fat · ~{compEstimate.fatPct.toFixed(1)}% BF (est.)
+              </p>
             </div>
           )}
 

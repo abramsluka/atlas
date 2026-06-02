@@ -33,8 +33,8 @@ export async function POST(_request: NextRequest) {
       .eq('date', today)
       .maybeSingle(),
 
-    db.from('po_logs')
-      .select('logged_at, exercise_id, sets_data')
+    db.from('gym_logs')
+      .select('logged_at, exercise_id, weight, reps')
       .eq('user_id', user.id)
       .order('logged_at', { ascending: false })
       .limit(50),
@@ -58,7 +58,7 @@ export async function POST(_request: NextRequest) {
       .is('completed_at', null),
 
     db.from('water_logs')
-      .select('amount_ml')
+      .select('amount_oz')
       .eq('user_id', user.id)
       .eq('date', today),
 
@@ -85,10 +85,10 @@ export async function POST(_request: NextRequest) {
       .gte('date', new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10))
       .order('date', { ascending: false }),
 
-    db.from('body_weight_logs')
-      .select('weight_lbs, logged_at')
+    db.from('body_weights')
+      .select('weight, date_key')
       .eq('user_id', user.id)
-      .order('logged_at', { ascending: false })
+      .order('date_key', { ascending: false })
       .limit(14),
 
     db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'oura').eq('date', today).maybeSingle(),
@@ -98,15 +98,15 @@ export async function POST(_request: NextRequest) {
   const checkin = checkinRes.data
 
   const lastWorkout = recentWorkoutsRes.data?.[0]
-  const daysSinceWorkout = lastWorkout
+  const daysSinceWorkout = lastWorkout?.logged_at
     ? Math.floor((now.getTime() - new Date(lastWorkout.logged_at).getTime()) / 86400000)
     : null
 
   const sevenDaysAgo = new Date(Date.now() - 7 * 86400000)
   const workoutDaysThisWeek = new Set(
     (recentWorkoutsRes.data ?? [])
-      .filter(w => new Date(w.logged_at) >= sevenDaysAgo)
-      .map(w => new Date(w.logged_at).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' }))
+      .filter(w => w.logged_at && new Date(w.logged_at) >= sevenDaysAgo)
+      .map(w => new Date(w.logged_at!).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' }))
   ).size
 
   const habits = habitsRes.data ?? []
@@ -131,8 +131,7 @@ export async function POST(_request: NextRequest) {
 
   const goals = goalsRes.data ?? []
 
-  const totalWaterMl = (waterTodayRes.data ?? []).reduce((sum, w) => sum + (w.amount_ml ?? 0), 0)
-  const waterOz = Math.round(totalWaterMl / 29.574)
+  const waterOz = Math.round((waterTodayRes.data ?? []).reduce((sum, w) => sum + (w.amount_oz ?? 0), 0))
 
   const supplementsTaken = supplementLogsRes.data?.length ?? 0
 
@@ -149,7 +148,7 @@ export async function POST(_request: NextRequest) {
 
   const latestWeight = bodyweightRes.data?.[0]
   const weightTrend = bodyweightRes.data && bodyweightRes.data.length >= 5
-    ? ((bodyweightRes.data[0].weight_lbs - bodyweightRes.data[4].weight_lbs) > 0 ? 'up' : 'down')
+    ? ((bodyweightRes.data[0].weight - bodyweightRes.data[4].weight) > 0 ? 'up' : 'down')
     : null
 
   const ouraToday = ouraWearableRes.data?.data as OuraData | null
@@ -192,7 +191,7 @@ export async function POST(_request: NextRequest) {
         ? 'Worked out today.'
         : `Last workout: ${daysSinceWorkout} day${daysSinceWorkout === 1 ? '' : 's'} ago.`,
     `Workout days this week: ${workoutDaysThisWeek}`,
-    latestWeight ? `Latest body weight: ${latestWeight.weight_lbs} lbs${weightTrend ? ` (trending ${weightTrend} over last 5 entries)` : ''}` : 'No body weight logged.',
+    latestWeight ? `Latest body weight: ${latestWeight.weight} lbs${weightTrend ? ` (trending ${weightTrend} over last 5 entries)` : ''}` : 'No body weight logged.',
     '',
     '--- DAILY CHECK-IN ---',
     checkin?.morning_intent ? `Morning intent: "${checkin.morning_intent}"` : 'No morning intent set.',

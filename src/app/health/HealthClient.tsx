@@ -1849,8 +1849,8 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
   const [editingMeal, setEditingMeal] = useState<FoodLog | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [targetSheetOpen, setTargetSheetOpen] = useState(false)
-  const [pendingFile, setPendingFile] = useState<File | null>(null)
-  const [pendingPreview, setPendingPreview] = useState<string | null>(null)
+  const [pendingFiles, setPendingFiles] = useState<File[]>([])
+  const [pendingPreviews, setPendingPreviews] = useState<string[]>([])
   const [description, setDescription] = useState('')
   const updateProfile = useUpdateHealthProfile()
 
@@ -1879,20 +1879,42 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
-    setPendingFile(file)
-    setPendingPreview(URL.createObjectURL(file))
+    setPendingFiles(prev => {
+      if (prev.length >= 3) return prev
+      return [...prev, file]
+    })
+    setPendingPreviews(prev => {
+      if (prev.length >= 3) return prev
+      return [...prev, URL.createObjectURL(file)]
+    })
+    if (pendingFiles.length === 0) setDescription('')
+  }, [pendingFiles.length])
+
+  const removePendingPhoto = useCallback((index: number) => {
+    setPendingFiles(prev => prev.filter((_, i) => i !== index))
+    setPendingPreviews(prev => {
+      URL.revokeObjectURL(prev[index])
+      return prev.filter((_, i) => i !== index)
+    })
+  }, [])
+
+  const clearPending = useCallback(() => {
+    setPendingPreviews(prev => { prev.forEach(u => URL.revokeObjectURL(u)); return [] })
+    setPendingFiles([])
     setDescription('')
   }, [])
 
   const submitPendingPhoto = useCallback(async () => {
-    if (!pendingFile) return
+    if (pendingFiles.length === 0) return
     setUploading(true)
-    setPendingPreview(null)
-    setPendingFile(null)
+    const filesToSubmit = pendingFiles
+    clearPending()
     try {
-      const resized = await resizeImage(pendingFile, 1024)
       const fd = new FormData()
-      fd.append('photo', resized, 'meal.jpg')
+      for (const f of filesToSubmit) {
+        const resized = await resizeImage(f, 1024)
+        fd.append('photo', resized, 'meal.jpg')
+      }
       if (description.trim()) fd.append('description', description.trim())
       await logFood.mutateAsync(fd)
     } catch (err) {
@@ -1901,7 +1923,7 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
       setUploading(false)
       setDescription('')
     }
-  }, [pendingFile, description, logFood])
+  }, [pendingFiles, description, logFood, clearPending])
 
   return (
     <section>
@@ -2052,18 +2074,44 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
         />
       )}
 
-      {pendingPreview && (
+      {pendingPreviews.length > 0 && (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4"
           style={{ backdropFilter: 'blur(6px)' }}
-          onClick={() => { setPendingPreview(null); setPendingFile(null); setDescription('') }}
+          onClick={clearPending}
         >
           <div
             className="w-full max-w-md rounded-2xl bg-[#111113] border border-white/[0.14] p-5 space-y-4"
             onClick={e => e.stopPropagation()}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={pendingPreview} alt="Meal preview" className="w-full h-48 object-cover rounded-xl" />
+            {/* Photo thumbnails */}
+            <div className={`grid gap-2 ${pendingPreviews.length === 1 ? 'grid-cols-1' : 'grid-cols-3'}`}>
+              {pendingPreviews.map((src, i) => (
+                <div key={i} className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={src}
+                    alt={`Photo ${i + 1}`}
+                    className={`w-full object-cover rounded-xl ${pendingPreviews.length === 1 ? 'h-48' : 'h-24'}`}
+                  />
+                  <button
+                    onClick={() => removePendingPhoto(i)}
+                    className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center text-white/70 text-xs leading-none"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              {pendingPreviews.length < 3 && (
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="h-24 rounded-xl border border-white/[0.12] bg-white/[0.03] flex flex-col items-center justify-center gap-1 text-white/30 active:opacity-60"
+                >
+                  <span className="text-2xl leading-none">+</span>
+                  <span className="text-[10px]">{pendingPreviews.length}/3</span>
+                </button>
+              )}
+            </div>
             <div>
               <p className="text-xs text-zinc-500 mb-1.5">What is this? <span className="text-zinc-600">(optional)</span></p>
               <textarea
@@ -2084,13 +2132,7 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
                 Log it
               </button>
               <button
-                onClick={() => { setPendingPreview(null); setPendingFile(null); setDescription(''); fileInputRef.current?.click() }}
-                className="h-12 px-4 rounded-xl bg-white/[0.06] border border-white/[0.08] text-sm font-semibold text-white active:opacity-80"
-              >
-                Retake
-              </button>
-              <button
-                onClick={() => { setPendingPreview(null); setPendingFile(null); setDescription('') }}
+                onClick={clearPending}
                 className="h-12 px-4 rounded-xl bg-white/[0.06] border border-white/[0.08] text-sm font-semibold text-zinc-400 active:opacity-80"
               >
                 Cancel
