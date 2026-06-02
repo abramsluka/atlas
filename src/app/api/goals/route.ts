@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { CreateGoalSchema } from '@/features/goals/types'
-import { format, subDays } from 'date-fns'
+import { getUserTimezone } from '@/lib/getUserTimezone'
+import { daysAgoLocal } from '@/lib/date'
 
 export async function GET() {
   const authClient = await createClient()
@@ -9,6 +10,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const db = createServiceClient()
+  const tz = await getUserTimezone(user.id)
 
   const [goalsResult, logsResult] = await Promise.all([
     db
@@ -21,7 +23,7 @@ export async function GET() {
       .from('habit_logs')
       .select('*')
       .eq('user_id', user.id)
-      .gte('date', format(subDays(new Date(), 30), 'yyyy-MM-dd')),
+      .gte('date', daysAgoLocal(30, tz)),
   ])
 
   if (goalsResult.error) return NextResponse.json({ error: goalsResult.error.message }, { status: 500 })

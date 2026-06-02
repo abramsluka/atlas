@@ -155,11 +155,22 @@ src/
 │       │   ├── whoop/connect/route.ts # Whoop OAuth start
 │       │   ├── whoop/callback/route.ts
 │       │   └── whoop/data/route.ts
-│       └── journal/
-│           ├── route.ts               # GET/POST
-│           └── [id]/
-│               ├── route.ts           # GET/PATCH/DELETE
-│               └── reflect/route.ts   # POST — stream AI reflection
+│       ├── journal/
+│       │   ├── route.ts               # GET/POST
+│       │   └── [id]/
+│       │       ├── route.ts           # GET/PATCH/DELETE
+│       │       └── reflect/route.ts   # POST — stream AI reflection
+│       ├── goals/
+│       │   ├── route.ts               # GET — list goals+logs, POST — create goal
+│       │   ├── coach/route.ts         # POST — stream AI coach
+│       │   └── [id]/
+│       │       ├── route.ts           # PATCH/DELETE
+│       │       └── log/route.ts       # POST/DELETE — habit log for today
+│       ├── home/
+│       │   ├── coach/route.ts         # POST — stream daily briefing
+│       │   └── todays-call/route.ts   # POST — readiness verdict (cached)
+│       └── user/
+│           └── settings/route.ts      # POST — save timezone
 
 src/features/
 ├── workouts/
@@ -176,14 +187,21 @@ src/features/
 │   ├── types.ts                       # Supplement, SupplementLog, WaterLog, HealthProfile, CaffeineLog, WearableToken, OuraData, WhoopData
 │   ├── supplementDb.ts                # Local supplement name/dose database
 │   └── substanceDb.ts                 # Caffeine/stimulant substance database
-└── journal/
-    ├── queries.ts                      # useJournalEntries, useJournalEntry
-    ├── mutations.ts                    # useCreateEntry, useUpdateEntry, useDeleteEntry
-    └── types.ts                       # JournalEntry, CreateEntrySchema, UpdateEntrySchema
+├── journal/
+│   ├── queries.ts                      # useJournalEntries, useJournalEntry
+│   ├── mutations.ts                    # useCreateEntry, useUpdateEntry, useDeleteEntry
+│   └── types.ts                       # JournalEntry, CreateEntrySchema, UpdateEntrySchema
+└── goals/
+    ├── queries.ts                      # useGoalsData → { goals, habitLogs }
+    ├── mutations.ts                    # useCreateGoal, useUpdateGoal, useDeleteGoal, useLogHabit, useUnlogHabit
+    └── types.ts                       # Goal, HabitLog, GoalsData, CreateGoalSchema, UpdateGoalSchema
 
-src/lib/supabase/
-├── server.ts                           # createClient() + createServiceClient()
-└── browser.ts
+src/lib/
+├── date.ts                             # toLocalDate(tz), daysAgoLocal(n, tz) — ALWAYS use these for calendar date strings
+├── getUserTimezone.ts                  # getUserTimezone(userId) — reads from user_settings, falls back to 'UTC'
+└── supabase/
+    ├── server.ts                       # createClient() + createServiceClient()
+    └── browser.ts
 
 proxy.ts                                # Next.js 16 middleware (session refresh)
 reference/                             # HTML reference files Claude Code reads for UI design
@@ -232,9 +250,19 @@ reference/                             # HTML reference files Claude Code reads 
 
 **`wearable_tokens`** — user_id, provider ('oura' | 'whoop'), access_token, refresh_token, expires_at
 
+### Goals tables
+
+**`goals`** — id, user_id, type ('habit'|'oneoff'|'numeric'), title, description (nullable), target_value (float nullable), current_value (float, default 0), start_value (float nullable), direction ('ascending'|'descending', default 'ascending'), unit (nullable), due_date (date nullable), completed_at (timestamptz nullable), order_index (int, default 0), created_at, updated_at
+
+**`habit_logs`** — id, user_id, goal_id (FK → goals ON DELETE CASCADE), date (date, default CURRENT_DATE), created_at. Unique constraint on (goal_id, date).
+
 ### Journal tables
 
 **`journal_entries`** — id, user_id, date (date type), title (text nullable), body (text), mood (int 1-5 nullable), ai_reflection (text nullable), created_at, updated_at
+
+### Settings
+
+**`user_settings`** — user_id (PK), timezone (text, default 'UTC'), updated_at. RLS enabled, no user-facing policies — accessed only via service role.
 
 ### RLS
 RLS enabled on all tables. All server API routes use `createServiceClient()` which bypasses RLS. Migrations live in `supabase/migrations/` but must be manually run in the Supabase SQL editor. Use `CREATE TABLE IF NOT EXISTS` and a DO block to drop/recreate policies to avoid errors on re-run.
@@ -260,7 +288,7 @@ NEXT_PUBLIC_APP_URL=           # needed for OAuth callbacks, e.g. http://localho
 Login, session refresh via proxy.ts, redirect to /login if unauthenticated.
 
 ### ✅ Home (`/`)
-Day progress ring (time-of-day percent with gradient stroke color), GoalTicker (animated check-in status), morning/evening check-in cards, "Log a workout" and "Workout history" nav links.
+Day progress ring (time-of-day percent with gradient stroke color), GoalTicker (animated check-in status), morning/evening check-in cards, Today's Call card (wearable-based readiness verdict — GREEN/YELLOW/RED with headline + bullets, cached per day in `todays_call` table), streaming daily briefing coach button. Timezone detection via `Intl.DateTimeFormat().resolvedOptions().timeZone` saved to `user_settings` on mount.
 
 ### ✅ Workout logger (`/workouts/new`)
 Creates workout on mount with Strict Mode guard. Add exercises by name, add sets per exercise. Reps stepper (±1), weight stepper (±2.5 lbs), RPE chips (1-10, tap to select/deselect). All fields autosave with debounce. Finish workout → sets `completed_at` → redirects to detail page.
@@ -283,16 +311,14 @@ Supplement tracker — add supplements with name/dose/time slots, log each dose 
 ### ✅ Journal (`/journal`)
 Entry list grouped by month with mood color dots. Full-screen composer at `/journal/new` (optional title, body textarea, 5 mood emoji chips). Entry detail at `/journal/[id]` with inline editing (tap to edit, save/cancel), streaming AI reflection (2-3 sentences, ends with one open question), delete with confirm. Tab bar hidden during composition.
 
-### 🔲 Goals (`/goals`)
-Stub page only — "Coming soon".
+### ✅ Goals (`/goals`)
+Three goal types: **Habit** (daily checkbox, 🔥 streak counter, 7-day dot trail), **One-off** (tap to complete, optional due date), **Numeric target** (tap to edit current value inline, progress bar, ascending/descending direction). Completed goals collapsible section. Streaming AI coach via `/api/goals/coach` (uses last 90 days of habit logs for context). Add sheet with 2-step flow (pick type → fill details). Delete with confirm modal.
 
 ---
 
 ## What's Next
 
-1. **Goals module** — weekly/monthly goal setting, habit streaks, AI pushback
-2. **Finances tab** — subscriptions tracker (recurring charges only, not net worth)
-3. **Vercel deployment**
+1. **Vercel deployment** — connect repo, add env vars, deploy
 
 ---
 
@@ -352,7 +378,7 @@ psql $DATABASE_URL -f supabase/migrations/<filename>.sql
 
 7. **`completed_at = null` means in-progress** — only workouts with a non-null `completed_at` appear in history. The AI coach route returns 400 for unfinished workouts.
 
-8. **Date strings + timezone** — when parsing `YYYY-MM-DD` strings with `new Date()`, append `T12:00:00` to avoid UTC midnight shifting the date to the wrong local day.
+8. **Date strings + timezone** — when parsing `YYYY-MM-DD` strings with `new Date()`, append `T12:00:00` to avoid UTC midnight shifting the date to the wrong local day. For computing "today" server-side, always use `toLocalDate(tz)` from `src/lib/date.ts` — never `new Date().toISOString().split('T')[0]` (that's UTC). Get the user's timezone with `getUserTimezone(user.id)` from `src/lib/getUserTimezone.ts`, which reads from `user_settings`. The client detects and saves timezone on home screen mount.
 
 9. **Supabase Storage for progress photos** — private bucket `progress-photos`, path `{user_id}/{date}_{timestamp}.{ext}`. Metadata stored in `progress_photos` table with a `storage_path` column. Signed URLs (60-min expiry) generated at query time.
 
