@@ -699,21 +699,36 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const todayExIds = [...new Set(todayAllLogs.map(l => l.exercise_id))]
   const todayVolume = todayAllLogs.reduce((s, l) => s + l.weight * l.reps, 0)
 
-  // When the user marks today's workout done, fetch the matching Whoop workout strain
-  useEffect(() => {
-    if (!todayDone) return
-    if (whoopStrainFetched.current) return
+  // Fetch matching Whoop workout strain. Tries on load (logs present) and again when
+  // the user finishes — Whoop may not have synced until then. Expands window ±30 min
+  // to catch Whoop sessions that started before the first logged set.
+  function fetchWhoopStrain() {
     if (todayAllLogs.length === 0) return
-    whoopStrainFetched.current = true
-
     const sorted = todayAllLogs.slice().sort((a, b) => a.logged_at.localeCompare(b.logged_at))
-    const start = encodeURIComponent(sorted[0].logged_at)
-    const end = encodeURIComponent(sorted[sorted.length - 1].logged_at)
+    const startMs = new Date(sorted[0].logged_at).getTime() - 30 * 60 * 1000
+    const endMs = new Date(sorted[sorted.length - 1].logged_at).getTime() + 30 * 60 * 1000
+    const start = encodeURIComponent(new Date(startMs).toISOString())
+    const end = encodeURIComponent(new Date(endMs).toISOString())
     fetch(`/api/health/whoop/workout?start=${start}&end=${end}`)
       .then(r => r.ok ? r.json() : null)
       .then(data => { if (data?.strain != null) setWhoopWorkoutStrain(data.strain) })
       .catch(() => {})
-  }, [todayDone, todayAllLogs])
+  }
+
+  useEffect(() => {
+    if (whoopStrainFetched.current) return
+    if (todayAllLogs.length === 0) return
+    whoopStrainFetched.current = true
+    fetchWhoopStrain()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todayAllLogs])
+
+  useEffect(() => {
+    if (!todayDone) return
+    // Retry when finishing — Whoop likely synced by now
+    fetchWhoopStrain()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todayDone])
 
   // Past workouts (for history)
   const pastDates = [...new Set(
