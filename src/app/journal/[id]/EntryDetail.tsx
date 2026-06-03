@@ -62,6 +62,12 @@ export default function EntryDetail({ initialEntry }: Props) {
   const [streamError, setStreamError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
+  const [conversation, setConversation] = useState(entry.conversation ?? [])
+  const [replyText, setReplyText] = useState('')
+  const [isReplying, setIsReplying] = useState(false)
+  const [streamingReply, setStreamingReply] = useState('')
+  const [replyError, setReplyError] = useState<string | null>(null)
+
   const bodyTextareaRef = useRef<HTMLTextAreaElement>(null)
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -126,6 +132,86 @@ export default function EntryDetail({ initialEntry }: Props) {
   async function handleDelete() {
     await deleteEntry.mutateAsync(entry.id)
     router.replace('/journal')
+  }
+
+  async function handleReply() {
+    const userMsg = replyText.trim()
+    if (!userMsg || isReplying) return
+    setIsReplying(true)
+    setReplyText('')
+    setStreamingReply('')
+    setReplyError(null)
+
+    try {
+      const res = await fetch(`/api/journal/${entry.id}/reply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: userMsg }),
+      })
+      if (!res.ok || !res.body) throw new Error(await res.text() || 'Failed')
+
+      let assistantText = ''
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const chunk = decoder.decode(value, { stream: true })
+        assistantText += chunk
+        setStreamingReply(prev => prev + chunk)
+      }
+
+      setStreamingReply('')
+      setConversation(prev => [
+        ...prev,
+        { role: 'user' as const, content: userMsg },
+        { role: 'assistant' as const, content: assistantText },
+      ])
+    } catch (err) {
+      setReplyError(String(err))
+    } finally {
+      setIsReplying(false)
+    }
+  }
+
+  async function handleGoLonger(messageIndex: number) {
+    if (isReplying) return
+    setIsReplying(true)
+    setStreamingReply('')
+    setReplyError(null)
+
+    try {
+      const res = await fetch(`/api/journal/${entry.id}/reply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ makeLonger: true, messageIndex }),
+      })
+      if (!res.ok || !res.body) throw new Error(await res.text() || 'Failed')
+
+      let expandedText = ''
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const chunk = decoder.decode(value, { stream: true })
+        expandedText += chunk
+        setStreamingReply(prev => prev + chunk)
+      }
+
+      setStreamingReply('')
+      if (messageIndex === -1) {
+        setReflectionText(expandedText)
+      } else {
+        setConversation(prev => prev.map((m, i) =>
+          i === messageIndex ? { ...m, content: expandedText } : m
+        ))
+      }
+    } catch (err) {
+      setReplyError(String(err))
+    } finally {
+      setIsReplying(false)
+    }
   }
 
   const dateLabel = format(new Date(entry.date + 'T12:00:00'), 'EEE, MMM d')
@@ -227,15 +313,90 @@ export default function EntryDetail({ initialEntry }: Props) {
               <p className="text-base italic leading-relaxed text-zinc-300">
                 {displayReflection}
               </p>
-              {savedReflection && !streaming && (
-                <button
-                  onClick={handleGetReflection}
-                  disabled={streaming}
-                  className="mt-3 text-xs text-zinc-600 underline active:opacity-70"
-                >
-                  Regenerate
-                </button>
+              <div className="mt-2 flex gap-4">
+                {savedReflection && !streaming && (
+                  <button
+                    onClick={handleGetReflection}
+                    disabled={streaming || isReplying}
+                    className="text-xs text-zinc-600 underline active:opacity-70"
+                  >
+                    Regenerate
+                  </button>
+                )}
+                {displayReflection && !streaming && (
+                  <button
+                    onClick={() => handleGoLonger(-1)}
+                    disabled={isReplying}
+                    className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+                  >
+                    Go longer →
+                  </button>
+                )}
+              </div>
+
+              {/* Follow-up conversation thread */}
+              {conversation.length > 0 && (
+                <div className="mt-6 space-y-4">
+                  {conversation.map((msg, i) => (
+                    <div key={i} className={msg.role === 'user' ? 'text-right' : ''}>
+                      {msg.role === 'user' ? (
+                        <div className="inline-block bg-white/8 rounded-2xl px-4 py-3 text-sm text-white max-w-[85%] text-left">
+                          {msg.content}
+                        </div>
+                      ) : (
+                        <div>
+                          <p className="text-sm italic leading-relaxed text-zinc-300">{msg.content}</p>
+                          <button
+                            onClick={() => handleGoLonger(i)}
+                            disabled={isReplying}
+                            className="text-xs text-zinc-600 hover:text-zinc-400 mt-1 transition-colors"
+                          >
+                            Go longer →
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
+
+              {/* In-progress streaming reply */}
+              {streamingReply && (
+                <div className="mt-4">
+                  <p className="text-sm italic leading-relaxed text-zinc-300">
+                    {streamingReply}
+                    <span className="ml-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-zinc-400 align-middle" />
+                  </p>
+                </div>
+              )}
+
+              {replyError && (
+                <p className="mt-3 text-sm text-red-400">{replyError}</p>
+              )}
+
+              {/* Reply input */}
+              <div className="mt-6 flex gap-3 items-end">
+                <textarea
+                  value={replyText}
+                  onChange={e => setReplyText(e.target.value)}
+                  placeholder="Reply..."
+                  rows={2}
+                  className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-white/25 resize-none focus:outline-none focus:border-white/20"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      handleReply()
+                    }
+                  }}
+                />
+                <button
+                  onClick={handleReply}
+                  disabled={!replyText.trim() || isReplying}
+                  className="px-4 py-3 rounded-2xl bg-white/10 text-sm text-white disabled:opacity-30 transition-opacity"
+                >
+                  {isReplying ? '…' : 'Send'}
+                </button>
+              </div>
             </>
           ) : (
             <>

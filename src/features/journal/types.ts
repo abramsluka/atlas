@@ -1,5 +1,10 @@
 import { z } from 'zod'
 
+export interface ConversationMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
 export interface JournalEntry {
   id: string
   user_id: string
@@ -8,6 +13,7 @@ export interface JournalEntry {
   body: string
   mood: number | null
   ai_reflection: string | null
+  conversation: ConversationMessage[]
   created_at: string
   updated_at: string
 }
