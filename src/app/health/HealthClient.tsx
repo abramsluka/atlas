@@ -1874,6 +1874,81 @@ function CalorieTargetSheet({
   )
 }
 
+function NetCaloriesCard({
+  eaten,
+  burned,
+  target,
+}: {
+  eaten: number
+  burned: number | null
+  target: number | null
+}) {
+  const net = burned != null ? eaten - burned : null
+
+  function netColor(n: number): string {
+    if (n < -100) return 'text-green-400'
+    if (n > 100) return 'text-red-400'
+    return 'text-white'
+  }
+
+  return (
+    <section>
+      <div className="flex items-center gap-4 mb-3.5">
+        <div className="flex-1 h-px bg-white/[0.10]" />
+        <span className="text-[11px] font-semibold tracking-[0.22em] text-white/85">CALORIES</span>
+        <div className="flex-1 h-px bg-white/[0.10]" />
+      </div>
+
+      <div className="bg-[#111113] border border-white/[0.06] rounded-[18px] px-5 py-5 mb-3.5">
+        <div className="grid grid-cols-3 gap-4 text-center">
+          <div>
+            <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/40 mb-1">Eaten</p>
+            <p className="text-2xl font-bold tabular-nums">{eaten.toLocaleString()}</p>
+            <p className="text-[11px] text-white/30 mt-0.5">kcal</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/40 mb-1">Burned</p>
+            <p className="text-2xl font-bold tabular-nums text-white/70">
+              {burned != null ? burned.toLocaleString() : '--'}
+            </p>
+            <p className="text-[11px] text-white/30 mt-0.5">kcal</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/40 mb-1">Net</p>
+            <p className={`text-2xl font-bold tabular-nums ${net != null ? netColor(net) : 'text-white/30'}`}>
+              {net != null
+                ? (net > 0 ? '+' : '') + net.toLocaleString()
+                : '--'}
+            </p>
+            <p className="text-[11px] text-white/30 mt-0.5">kcal</p>
+          </div>
+        </div>
+
+        {target != null && (
+          <div className="mt-4 pt-4 border-t border-white/[0.06]">
+            <div className="flex justify-between text-[11px] text-white/40 mb-1.5">
+              <span>Eaten vs. target</span>
+              <span>{eaten.toLocaleString()} / {target.toLocaleString()} kcal</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+              <div
+                className="h-full rounded-full bg-green-400 transition-all"
+                style={{ width: `${Math.min(100, (eaten / target) * 100).toFixed(1)}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {burned == null && (
+          <p className="text-[11px] text-white/25 text-center mt-4">
+            Connect Whoop to see calories burned
+          </p>
+        )}
+      </div>
+    </section>
+  )
+}
+
 function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>['data'] }) {
   const { data: meals, isLoading } = useFoodLogs()
   const logFood = useLogFood()
@@ -2237,6 +2312,12 @@ export default function HealthClient({
 }: Props) {
   const { data: profileData } = useHealthProfile(profile)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const { data: foodLogs } = useFoodLogs()
+  const todayFoodCalories = (foodLogs ?? []).reduce((sum, m) => sum + (m.calories ?? 0), 0)
+  const { data: whoopTop } = useWhoopData(today, hasWhoop, whoopData)
+  const whoopKcalBurned = whoopTop?.cycle?.kilojoule != null
+    ? Math.round(whoopTop.cycle.kilojoule * 0.239)
+    : null
 
   return (
     <main className="min-h-screen space-y-5 px-4 pb-24 pt-14">
@@ -2261,6 +2342,11 @@ export default function HealthClient({
         initialOura={ouraData}
         initialWhoop={whoopData}
         today={today}
+      />
+      <NetCaloriesCard
+        eaten={todayFoodCalories}
+        burned={whoopKcalBurned}
+        target={profileData?.daily_calorie_target ?? null}
       />
       <FoodSection profile={profileData} />
       <StackTracker initialSupplements={supplements} initialLogs={todayLogs} />
