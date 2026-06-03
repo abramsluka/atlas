@@ -439,7 +439,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
 
   // Settings local state
   const [settingsGyms, setSettingsGyms] = useState(config.gyms)
-  const [settingsDays, setSettingsDays] = useState(config.days)
   const [settingsUnits, setSettingsUnits] = useState(config.units)
   const [settingsUpgradeAt, setSettingsUpgradeAt] = useState(config.upgrade_at_reps)
   const [coachRepRec, setCoachRepRec] = useState<{ reps: number; reason: string } | null>(null)
@@ -592,30 +591,9 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   }
 
   function saveSettings() {
-    // Sync split_rotation when days are renamed, added, or removed
-    const oldNameToId = new Map(config.days.map(d => [d.name.toLowerCase(), d.id]))
-    const idToNewName = new Map(settingsDays.map(d => [d.id, d.name]))
-    const oldDayIds = new Set(config.days.map(d => d.id))
-
-    // Update non-rest entries in existing rotation; drop removed days
-    const newRotation = config.split_rotation.flatMap(entry => {
-      if (isRest(entry)) return [entry]
-      const id = oldNameToId.get(entry.toLowerCase())
-      if (!id) return [] // entry wasn't a known day — drop
-      const newName = idToNewName.get(id)
-      return newName ? [newName] : [] // removed day → drop
-    })
-
-    // Append brand-new days (not in old config.days) to the rotation
-    for (const d of settingsDays) {
-      if (!oldDayIds.has(d.id)) newRotation.push(d.name)
-    }
-
     saveConfig.mutate({
       ...config,
       gyms: settingsGyms,
-      days: settingsDays,
-      split_rotation: newRotation,
       units: settingsUnits,
       upgrade_at_reps: settingsUpgradeAt,
     })
@@ -624,7 +602,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
 
   function openSettings() {
     setSettingsGyms(config.gyms.map(g => ({ ...g })))
-    setSettingsDays(config.days.map(d => ({ ...d })))
     setSettingsUnits(config.units)
     setSettingsUpgradeAt(config.upgrade_at_reps)
     setCoachRepRec(null)
@@ -1697,14 +1674,16 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs text-white/40 uppercase tracking-wider block mb-1.5">Rep min</label>
-                    <input type="number" inputMode="numeric" min="1" value={exModal.repMin}
-                      onFocus={e => e.target.select()} onChange={e => setExModal(m => ({ ...m, repMin: parseInt(e.target.value) || 1 }))}
+                    <input type="number" inputMode="numeric" value={exModal.repMin === 0 ? '' : exModal.repMin}
+                      placeholder="0" onFocus={e => e.target.select()}
+                      onChange={e => { const raw = e.target.value; setExModal(m => ({ ...m, repMin: raw === '' ? 0 : (parseInt(raw) ?? 0) })) }}
                       className="w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white focus:outline-none" />
                   </div>
                   <div>
                     <label className="text-xs text-white/40 uppercase tracking-wider block mb-1.5">Rep max</label>
-                    <input type="number" inputMode="numeric" min="1" value={exModal.repMax}
-                      onFocus={e => e.target.select()} onChange={e => setExModal(m => ({ ...m, repMax: parseInt(e.target.value) || 1 }))}
+                    <input type="number" inputMode="numeric" value={exModal.repMax === 0 ? '' : exModal.repMax}
+                      placeholder="0" onFocus={e => e.target.select()}
+                      onChange={e => { const raw = e.target.value; setExModal(m => ({ ...m, repMax: raw === '' ? 0 : (parseInt(raw) ?? 0) })) }}
                       className="w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white focus:outline-none" />
                   </div>
                 </div>
@@ -1851,8 +1830,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
               <div>
                 <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Upgrade at reps</label>
                 <input
-                  type="number" inputMode="numeric" min="1" max="30" value={settingsUpgradeAt}
-                  onFocus={e => e.target.select()} onChange={e => setSettingsUpgradeAt(parseInt(e.target.value) || 12)}
+                  type="number" inputMode="numeric" placeholder="12" value={settingsUpgradeAt === 0 ? '' : settingsUpgradeAt}
+                  onFocus={e => e.target.select()} onChange={e => { const raw = e.target.value; setSettingsUpgradeAt(raw === '' ? 0 : (parseInt(raw) ?? 0)) }}
                   className="w-full rounded-xl bg-white/8 border border-white/10 px-4 py-3 text-sm text-white focus:outline-none"
                 />
                 <p className="text-xs text-white/30 mt-1">Hit this rep count 2 sessions in a row → increase weight</p>
@@ -1897,35 +1876,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   className="text-xs text-white/40 underline active:opacity-60"
                 >
                   + Add gym
-                </button>
-              </div>
-
-              {/* Days */}
-              <div>
-                <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Training days</label>
-                <div className="space-y-2 mb-2">
-                  {settingsDays.map((d, i) => (
-                    <div key={d.id} className="flex gap-2">
-                      <input
-                        value={d.name}
-                        onChange={e => setSettingsDays(ds => ds.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
-                        className="flex-1 rounded-xl bg-white/8 border border-white/10 px-4 py-3 text-sm text-white focus:outline-none"
-                      />
-                      <button
-                        onClick={() => {
-                          if (settingsDays.length <= 1) return
-                          setSettingsDays(ds => ds.filter((_, j) => j !== i))
-                        }}
-                        className="rounded-xl bg-white/5 border border-white/10 px-3 py-3 text-white/40 active:opacity-70"
-                      >×</button>
-                    </div>
-                  ))}
-                </div>
-                <button
-                  onClick={() => setSettingsDays(ds => [...ds, { id: 'd_' + Date.now(), name: 'New Day' }])}
-                  className="text-xs text-white/40 underline active:opacity-60"
-                >
-                  + Add day
                 </button>
               </div>
 
