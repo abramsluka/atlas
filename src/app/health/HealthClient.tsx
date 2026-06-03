@@ -989,7 +989,7 @@ function subExtraMl(s: SubstanceEntry): number {
   return Math.max(0, dose * (s.mlPerUnit ?? 0))
 }
 
-function computeTarget(p: WaterProfile, whoopKcalToday?: number | null) {
+function computeTarget(p: WaterProfile, whoopKcalToday?: number | null, todayCaffeineMg?: number | null) {
   const wKg = p.weight_lbs != null
     ? (p.weight_unit === 'kg' ? p.weight_lbs : p.weight_lbs / 2.20462)
     : 0
@@ -999,7 +999,8 @@ function computeTarget(p: WaterProfile, whoopKcalToday?: number | null) {
   const exercise = whoopKcalToday != null
     ? Math.max(0, (whoopKcalToday - 2000) * 1.5)
     : (p.activity_hrs_per_week || 0) / 7 * 500
-  const caffeine = Math.max(0, (p.caffeine_mg_per_day || 0) - 200) * 1.5
+  const caffeineMg = todayCaffeineMg ?? p.caffeine_mg_per_day ?? 0
+  const caffeine = Math.max(0, caffeineMg - 200) * 1.5
   const subs = (p.substances || []).reduce((acc, x) => acc + subExtraMl(x), 0)
   let adjust = 0
   if (p.sex === 'm') adjust += 200
@@ -1113,34 +1114,41 @@ const INPUT_CLS = 'bg-black/[0.28] border border-white/[0.06] text-white text-[1
 
 function WaterSection({
   initialWater,
-  initialCaffeine: _initialCaffeine,
+  initialCaffeine,
   initialProfile,
   today,
   hasWhoop,
+  settingsOpen,
+  setSettingsOpen,
 }: {
   initialWater: WaterLog[]
   initialCaffeine: CaffeineLog[]
   initialProfile: HealthProfile | null
   today: string
   hasWhoop?: boolean
+  settingsOpen: boolean
+  setSettingsOpen: (open: boolean) => void
 }) {
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [whyOpen, setWhyOpen] = useState(false)
   const [subSearch, setSubSearch] = useState('')
   const [showSubResults, setShowSubResults] = useState(false)
   const [localProfile, setLocalProfile] = useState<WaterProfile>(() => mergeProfile(initialProfile))
   const [savingSettings, setSavingSettings] = useState(false)
+  const [caffeineMode, setCaffeineMode] = useState<'auto' | 'manual'>('auto')
+  const [activityManualOverride, setActivityManualOverride] = useState(false)
 
   const { data: waterLogs } = useWaterLogs(today, initialWater)
   const { data: profileData } = useHealthProfile(initialProfile)
   const { data: history } = useWaterHistory()
   const { data: whoopForWater } = useWhoopData(today, hasWhoop ?? false, undefined)
+  const { data: caffeineLogs } = useCaffeineLogs(today, initialCaffeine)
   const logWater = useLogWater(today)
   const deleteWater = useDeleteWaterLog(today)
   const updateProfile = useUpdateHealthProfile()
   const whoopKcal = whoopForWater?.cycle?.kilojoule != null
     ? Math.round(whoopForWater.cycle.kilojoule * 0.239)
     : null
+  const todayCaffeineMg = caffeineLogs?.reduce((sum, l) => sum + l.amount_mg, 0) ?? 0
 
   useEffect(() => {
     if (!settingsOpen) setLocalProfile(mergeProfile(profileData))
@@ -1148,7 +1156,11 @@ function WaterSection({
 
   const totalOz = waterLogs?.reduce((sum, l) => sum + l.amount_oz, 0) ?? 0
   const unitVol = unitVolOz(localProfile)
-  const calc = computeTarget(localProfile, whoopKcal)
+  const calc = computeTarget(
+    localProfile,
+    activityManualOverride ? null : whoopKcal,
+    caffeineMode === 'auto' ? todayCaffeineMg : null,
+  )
   const targetOz = localProfile.daily_water_target_oz ?? calc.total / ML_PER_OZ
   const targetUnits = Math.max(1, Math.ceil(targetOz / unitVol))
   const count = totalOz / unitVol
@@ -1300,7 +1312,7 @@ function WaterSection({
                 <>
                   <WhyRow label={`Base (${wDisp} ${localProfile.weight_unit} × 35 ml)`} val={fmtMl(calc.base)} />
                   {calc.exercise > 0 && <WhyRow label={calc.whoopDriven ? `+ Activity (Whoop: ${whoopKcal?.toLocaleString()} kcal)` : `+ Exercise (${localProfile.activity_hrs_per_week} h/wk)`} val={`+ ${fmtMl(calc.exercise)}`} />}
-                  {calc.caffeine > 0 && <WhyRow label={`+ Caffeine (${localProfile.caffeine_mg_per_day} mg/day)`} val={`+ ${fmtMl(calc.caffeine)}`} />}
+                  {calc.caffeine > 0 && <WhyRow label={caffeineMode === 'auto' ? `+ Caffeine (${todayCaffeineMg}mg today, auto)` : `+ Caffeine (${localProfile.caffeine_mg_per_day}mg/day, manual)`} val={`+ ${fmtMl(calc.caffeine)}`} />}
                   {localProfile.substances.map(s => (
                     <WhyRow key={s.id} label={`+ ${s.name} (${s.dose ?? s.defaultDose} ${s.unit})`} val={`+ ${fmtMl(subExtraMl(s))}`} />
                   ))}
@@ -1347,21 +1359,6 @@ function WaterSection({
               })
           }
         </div>
-      </div>
-
-      {/* Settings gear */}
-      <div className="flex justify-end mb-2">
-        <button
-          type="button"
-          onClick={() => setSettingsOpen(true)}
-          className="w-[38px] h-[38px] flex items-center justify-center bg-white/[0.04] border border-white/[0.06] rounded-[10px] text-white/60 cursor-pointer hover:bg-white/[0.08] hover:text-white transition-colors"
-          aria-label="Settings"
-        >
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-          </svg>
-        </button>
       </div>
 
       {/* Settings Modal */}
@@ -1434,12 +1431,23 @@ function WaterSection({
                     className={INPUT_CLS} />
                 </WSettingField>
               </div>
-              <WSettingField label={whoopKcal != null ? 'Activity (auto from Whoop)' : 'Activity (training hours per week)'}>
+              {whoopKcal != null && (
+                <WSettingField label="Activity source">
+                  <WSegControl
+                    value={activityManualOverride ? 'manual' : 'auto'}
+                    options={[{ label: `Auto (Whoop: ${whoopKcal} kcal)`, value: 'auto' }, { label: 'Manual', value: 'manual' }]}
+                    onChange={v => setActivityManualOverride(v === 'manual')}
+                  />
+                </WSettingField>
+              )}
+              <WSettingField label={whoopKcal != null && !activityManualOverride ? 'Activity (auto from Whoop)' : 'Activity (training hours per week)'}>
                 <input type="number" inputMode="decimal" min="0" max="40" step="0.5"
-                  value={whoopKcal != null ? Math.round(Math.max(0, (whoopKcal - 2000) / 500 * 10) / 10) : localProfile.activity_hrs_per_week}
-                  readOnly={whoopKcal != null}
-                  onChange={e => { if (whoopKcal == null) updateLocal({ activity_hrs_per_week: parseFloat(e.target.value) || 0 }) }}
-                  className={`${INPUT_CLS} ${whoopKcal != null ? 'opacity-50 cursor-not-allowed' : ''}`} />
+                  value={whoopKcal != null && !activityManualOverride
+                    ? Math.round(Math.max(0, (whoopKcal - 2000) / 500 * 10) / 10)
+                    : localProfile.activity_hrs_per_week}
+                  readOnly={whoopKcal != null && !activityManualOverride}
+                  onChange={e => { if (!(whoopKcal != null && !activityManualOverride)) updateLocal({ activity_hrs_per_week: parseFloat(e.target.value) || 0 }) }}
+                  className={`${INPUT_CLS} ${whoopKcal != null && !activityManualOverride ? 'opacity-50 cursor-not-allowed' : ''}`} />
               </WSettingField>
             </WSettingSection>
 
@@ -1457,31 +1465,58 @@ function WaterSection({
                 />
               </WSettingField>
               <div className="grid grid-cols-2 gap-2.5">
-                <WSettingField label="Bottle size (ml)">
-                  <input type="number" inputMode="numeric" min="100" max="2000" step="50"
-                    value={localProfile.bottle_ml}
-                    onChange={e => updateLocal({ bottle_ml: parseFloat(e.target.value) || 500 })}
+                <WSettingField label="Bottle size (oz)">
+                  <input type="number" inputMode="decimal" min="4" max="64" step="1"
+                    value={localProfile.bottle_ml != null ? Math.round((localProfile.bottle_ml / ML_PER_OZ) * 10) / 10 : ''}
+                    onChange={e => {
+                      const oz = parseFloat(e.target.value)
+                      updateLocal({ bottle_ml: Number.isFinite(oz) ? oz * ML_PER_OZ : 500 })
+                    }}
                     className={INPUT_CLS} />
                 </WSettingField>
-                <WSettingField label="Glass size (ml)">
-                  <input type="number" inputMode="numeric" min="100" max="500" step="10"
-                    value={localProfile.glass_ml}
-                    onChange={e => updateLocal({ glass_ml: parseFloat(e.target.value) || 250 })}
+                <WSettingField label="Glass size (oz)">
+                  <input type="number" inputMode="decimal" min="4" max="32" step="1"
+                    value={localProfile.glass_ml != null ? Math.round((localProfile.glass_ml / ML_PER_OZ) * 10) / 10 : ''}
+                    onChange={e => {
+                      const oz = parseFloat(e.target.value)
+                      updateLocal({ glass_ml: Number.isFinite(oz) ? oz * ML_PER_OZ : 250 })
+                    }}
                     className={INPUT_CLS} />
                 </WSettingField>
               </div>
             </WSettingSection>
 
             <WSettingSection title="Caffeine">
-              <WSettingField
-                label="Average caffeine per day (mg)"
-                hint="~1 cup of coffee = 95mg · espresso shot = 75mg · energy drink = 160mg. Above 200mg/day starts to add a small water requirement."
-              >
-                <input type="number" inputMode="numeric" min="0" max="1000" step="10"
-                  value={localProfile.caffeine_mg_per_day}
-                  onChange={e => updateLocal({ caffeine_mg_per_day: parseFloat(e.target.value) || 0 })}
-                  className={INPUT_CLS} />
+              <WSettingField label="Source">
+                <WSegControl
+                  value={caffeineMode}
+                  options={[{ label: 'Auto (today\'s logs)', value: 'auto' }, { label: 'Manual', value: 'manual' }]}
+                  onChange={v => setCaffeineMode(v as 'auto' | 'manual')}
+                />
               </WSettingField>
+              {caffeineMode === 'auto' ? (
+                <WSettingField
+                  label="Today's caffeine (mg)"
+                  hint="Auto-summed from your caffeine logs. Above 200mg/day adds a small water requirement."
+                >
+                  <input
+                    type="number"
+                    value={Math.round(todayCaffeineMg)}
+                    readOnly
+                    className={`${INPUT_CLS} opacity-50 cursor-not-allowed`}
+                  />
+                </WSettingField>
+              ) : (
+                <WSettingField
+                  label="Average caffeine per day (mg)"
+                  hint="~1 cup of coffee = 95mg · espresso shot = 75mg · energy drink = 160mg. Above 200mg/day starts to add a small water requirement."
+                >
+                  <input type="number" inputMode="numeric" min="0" max="1000" step="10"
+                    value={localProfile.caffeine_mg_per_day}
+                    onChange={e => updateLocal({ caffeine_mg_per_day: parseFloat(e.target.value) || 0 })}
+                    className={INPUT_CLS} />
+                </WSettingField>
+              )}
             </WSettingSection>
 
             <WSettingSection title="Stimulants & meds">
@@ -2201,10 +2236,24 @@ export default function HealthClient({
   today,
 }: Props) {
   const { data: profileData } = useHealthProfile(profile)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   return (
     <main className="min-h-screen space-y-5 px-4 pb-24 pt-14">
-      <h1 className="text-xl font-bold text-white">Health</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold text-white">Health</h1>
+        <button
+          type="button"
+          onClick={() => setSettingsOpen(true)}
+          className="w-[38px] h-[38px] flex items-center justify-center bg-white/[0.04] border border-white/[0.06] rounded-[10px] text-white/60 cursor-pointer hover:bg-white/[0.08] hover:text-white transition-colors"
+          aria-label="Settings"
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
+      </div>
       <HealthCoach />
       <WearablesSection
         hasOura={hasOura}
@@ -2221,6 +2270,8 @@ export default function HealthClient({
         initialProfile={profile}
         today={today}
         hasWhoop={hasWhoop}
+        settingsOpen={settingsOpen}
+        setSettingsOpen={setSettingsOpen}
       />
       <CaffeineSection initialCaffeine={todayCaffeine} today={today} />
       <DebloatSection today={today} />

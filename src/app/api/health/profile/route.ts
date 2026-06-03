@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 
 const ALLOWED_FIELDS = [
-  'weight_lbs', 'daily_water_target_oz', 'age', 'sex',
+  'weight_lbs', 'daily_water_target_oz', 'age', 'sex', 'height_cm',
   'activity_hrs_per_week', 'caffeine_mg_per_day',
   'water_unit', 'bottle_ml', 'glass_ml', 'weight_unit', 'substances',
   'target_weight_lbs', 'cut_pace',
