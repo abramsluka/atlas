@@ -938,6 +938,44 @@ export default function GymClient({ today, initialConfig, initialExercises, init
           <span style={{ color: '#6ee7b7', fontSize: 20 }}>→</span>
         </button>
 
+        {/* ── Coach ─────────────────────────────────────────────────── */}
+        <section className="rounded-2xl overflow-hidden border border-white/8">
+          <div className="flex">
+            <button
+              onClick={() => streamCoach('angel')}
+              disabled={coachStreaming}
+              className={`flex-1 flex flex-col items-center justify-center py-4 gap-1 transition-colors active:opacity-70 disabled:opacity-50 ${
+                coachMode === 'angel' ? 'bg-emerald-950/60' : 'bg-white/5'
+              }`}
+            >
+              <span className="text-2xl">😇</span>
+              <span className="text-xs font-semibold tracking-widest text-emerald-400 uppercase">
+                {coachStreaming && coachMode === 'angel' ? 'Talking…' : 'Hype me up'}
+              </span>
+            </button>
+            <div className="w-px bg-white/8" />
+            <button
+              onClick={() => streamCoach('devil')}
+              disabled={coachStreaming}
+              className={`flex-1 flex flex-col items-center justify-center py-4 gap-1 transition-colors active:opacity-70 disabled:opacity-50 ${
+                coachMode === 'devil' ? 'bg-red-950/60' : 'bg-white/5'
+              }`}
+            >
+              <span className="text-2xl">😈</span>
+              <span className="text-xs font-semibold tracking-widest text-red-400 uppercase">
+                {coachStreaming && coachMode === 'devil' ? 'Talking…' : 'Yell at me'}
+              </span>
+            </button>
+          </div>
+          {coachText && (
+            <div className={`px-5 py-4 border-t border-white/8 ${
+              coachMode === 'devil' ? 'bg-red-950/30' : 'bg-emerald-950/30'
+            }`}>
+              <p className="text-sm leading-relaxed text-white/90">{coachText}</p>
+            </div>
+          )}
+        </section>
+
         {/* ── Whoop Today ───────────────────────────────────────────── */}
         {whoopToday && (whoopToday.cycle?.strain != null || whoopToday.recovery?.score != null) && (
           <section className="rounded-2xl bg-white/5 border border-white/8 px-5 py-4">
@@ -1357,44 +1395,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
             )}
           </section>
         )}
-
-        {/* ── Coach ─────────────────────────────────────────────────── */}
-        <section className="rounded-2xl overflow-hidden border border-white/8">
-          <div className="flex">
-            <button
-              onClick={() => streamCoach('angel')}
-              disabled={coachStreaming}
-              className={`flex-1 flex flex-col items-center justify-center py-4 gap-1 transition-colors active:opacity-70 disabled:opacity-50 ${
-                coachMode === 'angel' ? 'bg-emerald-950/60' : 'bg-white/5'
-              }`}
-            >
-              <span className="text-2xl">😇</span>
-              <span className="text-xs font-semibold tracking-widest text-emerald-400 uppercase">
-                {coachStreaming && coachMode === 'angel' ? 'Talking…' : 'Hype me up'}
-              </span>
-            </button>
-            <div className="w-px bg-white/8" />
-            <button
-              onClick={() => streamCoach('devil')}
-              disabled={coachStreaming}
-              className={`flex-1 flex flex-col items-center justify-center py-4 gap-1 transition-colors active:opacity-70 disabled:opacity-50 ${
-                coachMode === 'devil' ? 'bg-red-950/60' : 'bg-white/5'
-              }`}
-            >
-              <span className="text-2xl">😈</span>
-              <span className="text-xs font-semibold tracking-widest text-red-400 uppercase">
-                {coachStreaming && coachMode === 'devil' ? 'Talking…' : 'Yell at me'}
-              </span>
-            </button>
-          </div>
-          {coachText && (
-            <div className={`px-5 py-4 border-t border-white/8 ${
-              coachMode === 'devil' ? 'bg-red-950/30' : 'bg-emerald-950/30'
-            }`}>
-              <p className="text-sm leading-relaxed text-white/90">{coachText}</p>
-            </div>
-          )}
-        </section>
 
       </div>
 

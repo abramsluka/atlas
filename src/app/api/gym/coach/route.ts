@@ -6,7 +6,10 @@ import { formatInTimeZone } from 'date-fns-tz'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import type { WhoopData } from '@/features/health/types'
 
+export const maxDuration = 30
+
 export async function POST(request: NextRequest) {
+  try {
   const authClient = await createClient()
   const { data: { user } } = await authClient.auth.getUser()
   if (!user) return new Response('Unauthorized', { status: 401 })
@@ -200,4 +203,11 @@ export async function POST(request: NextRequest) {
       'X-Accel-Buffering': 'no',
     },
   })
+  } catch (err) {
+    console.error('[gym/coach] unhandled error:', err)
+    return new Response(JSON.stringify({ error: String(err) }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
 }
