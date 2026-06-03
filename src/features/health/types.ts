@@ -118,6 +118,7 @@ export interface WhoopData {
   recovery?: {
     score: number | null
     hrv_rmssd_milli: number | null
+    resting_heart_rate: number | null
   }
   cycle?: {
     strain: number | null

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import type { WhoopData } from '@/features/health/types'
+import { getUserTimezone } from '@/lib/getUserTimezone'
+import { toLocalDate } from '@/lib/date'
 
 async function refreshWhoopToken(db: ReturnType<typeof import('@/lib/supabase/server').createServiceClient>, userId: string, refreshToken: string) {
   const res = await fetch('https://api.prod.whoop.com/oauth/oauth2/token', {
@@ -30,7 +32,8 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const db = createServiceClient()
-  const today = new Date().toISOString().split('T')[0]
+  const tz = await getUserTimezone(user.id)
+  const today = toLocalDate(tz)
 
   // Check cache first (fresh = within 15 min)
   const { data: cached } = await db
@@ -107,6 +110,7 @@ export async function GET(req: NextRequest) {
       ? {
           score: (rScore?.recovery_score as number | null) ?? null,
           hrv_rmssd_milli: (rScore?.hrv_rmssd_milli as number | null) ?? null,
+          resting_heart_rate: (rScore?.resting_heart_rate as number | null) ?? null,
         }
       : undefined,
     cycle: cycleRecord
