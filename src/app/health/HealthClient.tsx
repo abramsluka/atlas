@@ -1877,11 +1877,9 @@ function CalorieTargetSheet({
 function NetCaloriesCard({
   eaten,
   burned,
-  target,
 }: {
   eaten: number
   burned: number | null
-  target: number | null
 }) {
   const net = burned != null ? eaten - burned : null
 
@@ -1924,26 +1922,6 @@ function NetCaloriesCard({
           </div>
         </div>
 
-        {target != null && (
-          <div className="mt-4 pt-4 border-t border-white/[0.06]">
-            <div className="flex justify-between text-[11px] text-white/40 mb-1.5">
-              <span>Eaten vs. target</span>
-              <span>{eaten.toLocaleString()} / {target.toLocaleString()} kcal</span>
-            </div>
-            <div className="h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
-              <div
-                className="h-full rounded-full bg-green-400 transition-all"
-                style={{ width: `${Math.min(100, (eaten / target) * 100).toFixed(1)}%` }}
-              />
-            </div>
-          </div>
-        )}
-
-        {burned == null && (
-          <p className="text-[11px] text-white/25 text-center mt-4">
-            Connect Whoop to see calories burned
-          </p>
-        )}
       </div>
     </section>
   )
@@ -2346,7 +2324,6 @@ export default function HealthClient({
       <NetCaloriesCard
         eaten={todayFoodCalories}
         burned={whoopKcalBurned}
-        target={profileData?.daily_calorie_target ?? null}
       />
       <FoodSection profile={profileData} />
       <StackTracker initialSupplements={supplements} initialLogs={todayLogs} />
