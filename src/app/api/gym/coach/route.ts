@@ -6,6 +6,7 @@ import { formatInTimeZone } from 'date-fns-tz'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import type { WhoopData } from '@/features/health/types'
 
+export const runtime = 'edge'
 export const maxDuration = 30
 
 export async function POST(request: NextRequest) {
@@ -190,6 +191,9 @@ export async function POST(request: NextRequest) {
             controller.enqueue(new TextEncoder().encode(event.delta.text))
           }
         }
+      } catch (streamErr) {
+        console.error('[gym/coach] stream error:', streamErr)
+        controller.error(streamErr)
       } finally {
         controller.close()
       }

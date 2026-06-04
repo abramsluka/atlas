@@ -414,7 +414,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
         body: JSON.stringify({ mode }),
       })
       if (!res.ok || !res.body) {
-        setCoachText('Something went wrong. Try again.')
+        const errBody = await res.text().catch(() => '')
+        setCoachText(`Error ${res.status}${errBody ? ': ' + errBody.slice(0, 120) : ''}. Try again.`)
         return
       }
       const reader = res.body.getReader()
