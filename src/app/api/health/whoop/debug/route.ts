@@ -17,6 +17,14 @@ export async function GET() {
 
   if (!tokenRow) return NextResponse.json({ error: 'No token' })
 
+  let tokenScopes: string | null = null
+  try {
+    const payload = JSON.parse(Buffer.from(tokenRow.access_token.split('.')[1], 'base64url').toString())
+    tokenScopes = payload.scope ?? payload.scopes ?? null
+  } catch {
+    tokenScopes = 'could not decode JWT'
+  }
+
   // Refresh if expired
   let accessToken = tokenRow.access_token
   if (new Date(tokenRow.expires_at) <= new Date()) {
@@ -45,9 +53,15 @@ export async function GET() {
     db.from('wearable_data').select('data, fetched_at').eq('user_id', user.id).eq('provider', 'whoop').order('fetched_at', { ascending: false }).limit(1).maybeSingle(),
   ])
 
+  const likelyOAuthScopeIssue = recoveryRes.status === 404 && sleepRes.status === 404 && cycleRes.status === 200
+
   return NextResponse.json({
     token_expires_at: tokenRow.expires_at,
     token_expired: new Date(tokenRow.expires_at) <= new Date(),
+    token_scopes: tokenScopes,
+    diagnosis: likelyOAuthScopeIssue
+      ? 'SCOPE ISSUE: recovery+sleep are 404 but cycle is 200. Token is missing read:recovery and read:sleep scopes. Use Reconnect Whoop in settings.'
+      : 'OK',
     cached_data: cached.data,
     recovery: {
       status: recoveryRes.status,

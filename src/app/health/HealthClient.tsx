@@ -1601,6 +1601,21 @@ function WaterSection({
               </div>
             </WSettingSection>
 
+            {hasWhoop && (
+              <WSettingSection title="Whoop">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await fetch('/api/health/whoop/disconnect', { method: 'DELETE' })
+                    window.location.href = '/api/health/whoop/connect'
+                  }}
+                  className="text-xs text-white/40 hover:text-white/60 underline"
+                >
+                  Reconnect Whoop (fixes sync issues)
+                </button>
+              </WSettingSection>
+            )}
+
             <div className="flex gap-2 mt-4">
               <button
                 type="button"
