@@ -6,6 +6,7 @@ import { formatInTimeZone } from 'date-fns-tz'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
 import { getOuraContextRange } from '@/features/health/ouraContext'
+import { syncOuraToday } from '@/features/health/ouraSync'
 import type { OuraData, WhoopData } from '@/features/health/types'
 
 function avg(values: Array<number | null | undefined>): number | null {
@@ -42,6 +43,9 @@ export async function POST(_request: NextRequest) {
   const sevenDaysAgo = formatInTimeZone(subDays(now, 7), TZ, 'yyyy-MM-dd')
   const fourteenDaysAgo = formatInTimeZone(subDays(now, 14), TZ, 'yyyy-MM-dd')
   const thirtyDaysAgo = formatInTimeZone(subDays(now, 30), TZ, 'yyyy-MM-dd')
+
+  // Ensure today's Oura cache is fresh before building context
+  await syncOuraToday(db, user.id, today)
 
   const [
     ouraRows,
