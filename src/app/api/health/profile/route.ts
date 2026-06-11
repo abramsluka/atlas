@@ -5,7 +5,7 @@ const ALLOWED_FIELDS = [
   'weight_lbs', 'daily_water_target_oz', 'age', 'sex', 'height_cm',
   'activity_hrs_per_week', 'caffeine_mg_per_day',
   'water_unit', 'bottle_ml', 'glass_ml', 'weight_unit', 'substances',
-  'target_weight_lbs', 'cut_pace',
+  'target_weight_lbs', 'cut_pace', 'fitness_goal', 'activity_level',
   'daily_calorie_target', 'daily_protein_target_g', 'daily_carbs_target_g',
   'target_reasoning', 'target_calc_weight_lbs', 'target_calculated_at',
   'linked_target_goal_id',

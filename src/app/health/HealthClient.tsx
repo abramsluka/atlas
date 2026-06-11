@@ -1801,28 +1801,108 @@ function MealEditSheet({
   )
 }
 
+type FitnessGoal = 'cut' | 'recomp' | 'lean_bulk' | 'maintain'
+type ActivityLevel = 'sedentary' | 'light' | 'moderate' | 'very_active'
+type CutPace = 'slow' | 'moderate' | 'aggressive'
+
+const GOAL_META: Record<FitnessGoal, { label: string; sub: string }> = {
+  cut:       { label: 'Cut',       sub: 'Lose fat, preserve muscle' },
+  recomp:    { label: 'Recomp',    sub: 'Change composition, not scale weight' },
+  lean_bulk: { label: 'Lean Bulk', sub: 'Build muscle, minimize fat gain' },
+  maintain:  { label: 'Maintain',  sub: 'Stay where you are, stay fueled' },
+}
+
+const ACTIVITY_META: Record<ActivityLevel, { label: string; sub: string }> = {
+  sedentary:   { label: 'Sedentary',     sub: 'Desk job, little exercise' },
+  light:       { label: 'Lightly Active', sub: '1–3 workouts/week' },
+  moderate:    { label: 'Moderately Active', sub: '4–5 workouts/week' },
+  very_active: { label: 'Very Active',   sub: '6+ workouts/week or physical job' },
+}
+
+function SegmentedControl<T extends string>({
+  options,
+  value,
+  onChange,
+  getLabel,
+}: {
+  options: T[]
+  value: T
+  onChange: (v: T) => void
+  getLabel: (v: T) => string
+}) {
+  return (
+    <div className="flex gap-1 rounded-[10px] bg-white/[0.04] border border-white/[0.06] p-[3px]">
+      {options.map(opt => (
+        <button
+          key={opt}
+          onClick={() => onChange(opt)}
+          className={`flex-1 rounded-[7px] py-2.5 text-xs font-semibold transition-colors ${value === opt ? 'text-[#0a0a0b]' : 'text-white/40'}`}
+          style={value === opt ? { background: 'linear-gradient(180deg, #fff 0%, #e8e5dd 100%)' } : {}}
+        >
+          {getLabel(opt)}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function CalorieTargetSheet({
   profile,
   onSave,
   onClose,
 }: {
-  profile: { target_weight_lbs?: number | null; cut_pace?: string | null; target_reasoning?: string | null; daily_calorie_target?: number | null; daily_protein_target_g?: number | null; daily_carbs_target_g?: number | null }
+  profile: {
+    fitness_goal?: string | null
+    target_weight_lbs?: number | null
+    cut_pace?: string | null
+    activity_level?: string | null
+    target_reasoning?: string | null
+    daily_calorie_target?: number | null
+    daily_protein_target_g?: number | null
+    daily_carbs_target_g?: number | null
+  }
   onSave: () => void
   onClose: () => void
 }) {
+  const [goal, setGoal] = useState<FitnessGoal>((profile.fitness_goal as FitnessGoal) ?? 'cut')
+  const [activity, setActivity] = useState<ActivityLevel>((profile.activity_level as ActivityLevel) ?? 'moderate')
   const [targetWeight, setTargetWeight] = useState(String(profile.target_weight_lbs ?? ''))
-  const [pace, setPace] = useState<'slow' | 'moderate' | 'aggressive'>((profile.cut_pace as 'slow' | 'moderate' | 'aggressive') ?? 'moderate')
-  const updateProfile = useUpdateHealthProfile()
-  const calcTarget = useCalculateCalorieTarget()
+  const [cutPace, setCutPace] = useState<CutPace>((profile.cut_pace as CutPace) ?? 'moderate')
+  const [bulkPace, setBulkPace] = useState<'slow' | 'moderate'>('slow')
   const [result, setResult] = useState<{ daily_calories: number; protein_g: number; carbs_g: number; reasoning: string } | null>(null)
   const [saved, setSaved] = useState(false)
 
+  const updateProfile = useUpdateHealthProfile()
+  const calcTarget = useCalculateCalorieTarget()
+
+  const needsTargetWeight = goal === 'cut' || goal === 'lean_bulk'
+
+  const canCalculate = needsTargetWeight ? !!parseFloat(targetWeight) : true
+
   async function handleCalculate() {
-    const w = parseFloat(targetWeight)
-    if (!w || w <= 0) return
-    await updateProfile.mutateAsync({ target_weight_lbs: w, cut_pace: pace } as Parameters<typeof updateProfile.mutateAsync>[0])
+    const updates: Record<string, unknown> = {
+      fitness_goal: goal,
+      activity_level: activity,
+    }
+    if (goal === 'cut') {
+      updates.target_weight_lbs = parseFloat(targetWeight)
+      updates.cut_pace = cutPace
+    } else if (goal === 'lean_bulk') {
+      updates.target_weight_lbs = parseFloat(targetWeight)
+      updates.cut_pace = bulkPace   // slow=+200, moderate=+300
+    } else {
+      updates.cut_pace = null
+      if (goal !== 'recomp') updates.target_weight_lbs = null
+    }
+    await updateProfile.mutateAsync(updates as Parameters<typeof updateProfile.mutateAsync>[0])
     const res = await calcTarget.mutateAsync()
     setResult(res)
+  }
+
+  const cutPaceHint: Record<CutPace, string> = {
+    slow: '0.5 lb/week — gentle deficit',
+    moderate: '1 lb/week — standard cut',
+    aggressive: '1.5 lb/week — aggressive cut',
   }
 
   return (
@@ -1832,40 +1912,125 @@ function CalorieTargetSheet({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-2xl bg-[#111113] border border-white/[0.14] p-5 space-y-4"
+        className="w-full max-w-md rounded-2xl bg-[#111113] border border-white/[0.14] p-5 space-y-5 max-h-[90vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
-        <h3 className="text-base font-bold text-white">Set calorie target</h3>
+        <h3 className="text-base font-bold text-white">Set fitness goal</h3>
+
+        {/* Goal type */}
         <div>
-          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Target weight (lbs)</label>
-          <input
-            type="number" inputMode="decimal" min="80" max="500" step="0.5"
-            className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white placeholder-zinc-600 outline-none focus:border-white/40"
-            placeholder="e.g. 165"
-            value={targetWeight}
-            onChange={e => setTargetWeight(e.target.value)}
-          />
-        </div>
-        <div>
-          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Pace</label>
-          <div className="flex gap-1 rounded-[10px] bg-white/[0.04] border border-white/[0.06] p-[3px]">
-            {(['slow', 'moderate', 'aggressive'] as const).map(p => (
-              <button key={p} onClick={() => setPace(p)} className={`flex-1 rounded-[7px] py-2.5 text-xs font-semibold capitalize transition-colors ${pace === p ? 'text-[#0a0a0b]' : 'text-white/40'}`}
-                style={pace === p ? { background: 'linear-gradient(180deg, #fff 0%, #e8e5dd 100%)' } : {}}>
-                {p}
+          <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Goal</label>
+          <div className="grid grid-cols-2 gap-2">
+            {(['cut', 'recomp', 'lean_bulk', 'maintain'] as FitnessGoal[]).map(g => (
+              <button
+                key={g}
+                onClick={() => { setGoal(g); setResult(null) }}
+                className={`rounded-[10px] border px-3 py-3 text-left transition-colors ${goal === g ? 'border-white/40 bg-white/[0.07]' : 'border-white/[0.08] bg-white/[0.02]'}`}
+              >
+                <p className={`text-sm font-semibold ${goal === g ? 'text-white' : 'text-zinc-400'}`}>{GOAL_META[g].label}</p>
+                <p className="text-[10px] text-zinc-600 mt-0.5 leading-snug">{GOAL_META[g].sub}</p>
               </button>
             ))}
           </div>
-          <p className="mt-1.5 text-[10px] text-zinc-600">
-            {pace === 'slow' ? '0.5 lb/week — gentle deficit' : pace === 'moderate' ? '1 lb/week — standard cut' : '1.5 lb/week — aggressive cut'}
-          </p>
         </div>
+
+        {/* Activity level */}
+        <div>
+          <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Activity level</label>
+          <div className="grid grid-cols-2 gap-2">
+            {(['sedentary', 'light', 'moderate', 'very_active'] as ActivityLevel[]).map(a => (
+              <button
+                key={a}
+                onClick={() => setActivity(a)}
+                className={`rounded-[10px] border px-3 py-2.5 text-left transition-colors ${activity === a ? 'border-white/40 bg-white/[0.07]' : 'border-white/[0.08] bg-white/[0.02]'}`}
+              >
+                <p className={`text-xs font-semibold ${activity === a ? 'text-white' : 'text-zinc-400'}`}>{ACTIVITY_META[a].label}</p>
+                <p className="text-[10px] text-zinc-600 mt-0.5 leading-snug">{ACTIVITY_META[a].sub}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Goal-specific fields */}
+        {goal === 'cut' && (
+          <>
+            <div>
+              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Target weight (lbs)</label>
+              <input
+                type="number" inputMode="decimal" min="80" max="500" step="0.5"
+                className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white placeholder-zinc-600 outline-none focus:border-white/40"
+                placeholder="e.g. 165"
+                value={targetWeight}
+                onChange={e => { setTargetWeight(e.target.value); setResult(null) }}
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Pace</label>
+              <SegmentedControl
+                options={['slow', 'moderate', 'aggressive'] as CutPace[]}
+                value={cutPace}
+                onChange={v => { setCutPace(v); setResult(null) }}
+                getLabel={v => v.charAt(0).toUpperCase() + v.slice(1)}
+              />
+              <p className="mt-1.5 text-[10px] text-zinc-600">{cutPaceHint[cutPace]}</p>
+            </div>
+          </>
+        )}
+
+        {goal === 'recomp' && (
+          <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-3 space-y-1">
+            <p className="text-xs font-semibold text-white">Maintenance calories, high protein</p>
+            <p className="text-[11px] text-zinc-500 leading-relaxed">
+              The scale won&apos;t move much. Body fat drops while muscle increases — but only with consistent strength training. Protein target will be high: ~1g/lb bodyweight.
+            </p>
+          </div>
+        )}
+
+        {goal === 'lean_bulk' && (
+          <>
+            <div>
+              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Goal weight (lbs)</label>
+              <input
+                type="number" inputMode="decimal" min="80" max="500" step="0.5"
+                className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white placeholder-zinc-600 outline-none focus:border-white/40"
+                placeholder="e.g. 185"
+                value={targetWeight}
+                onChange={e => { setTargetWeight(e.target.value); setResult(null) }}
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Surplus</label>
+              <SegmentedControl
+                options={['slow', 'moderate'] as ('slow' | 'moderate')[]}
+                value={bulkPace}
+                onChange={v => { setBulkPace(v); setResult(null) }}
+                getLabel={v => v === 'slow' ? 'Conservative' : 'Moderate'}
+              />
+              <p className="mt-1.5 text-[10px] text-zinc-600">
+                {bulkPace === 'slow' ? '+200 cal/day — minimal fat gain, slow growth' : '+300 cal/day — faster growth, some fat gain acceptable'}
+              </p>
+            </div>
+          </>
+        )}
+
+        {goal === 'maintain' && (
+          <div className="rounded-[10px] border border-white/[0.06] bg-white/[0.02] px-3 py-3 space-y-1">
+            <p className="text-xs font-semibold text-white">Maintenance calories</p>
+            <p className="text-[11px] text-zinc-500 leading-relaxed">
+              Targets set to your TDEE at current activity level. Protein target keeps muscle. No deficit, no surplus.
+            </p>
+          </div>
+        )}
+
         {result && (
           <div className="rounded-xl bg-white/[0.04] border border-white/[0.06] p-4 space-y-2">
-            <p className="text-sm font-bold text-white">{result.daily_calories.toLocaleString()} cal · {result.protein_g}g P · {result.carbs_g}g C</p>
+            <p className="text-sm font-bold text-white">
+              {result.daily_calories.toLocaleString()} cal · {result.protein_g}g P · {result.carbs_g}g C
+            </p>
             <p className="text-xs text-zinc-400 leading-relaxed">{result.reasoning}</p>
           </div>
         )}
+
         <div className="flex gap-2">
           <button onClick={onClose} className="flex-1 rounded-xl border border-white/[0.12] py-3 text-sm font-semibold text-zinc-400">
             Cancel
@@ -1873,7 +2038,7 @@ function CalorieTargetSheet({
           {!result ? (
             <button
               onClick={handleCalculate}
-              disabled={!targetWeight || calcTarget.isPending || updateProfile.isPending}
+              disabled={!canCalculate || calcTarget.isPending || updateProfile.isPending}
               className="flex-1 rounded-xl py-3 text-sm font-bold text-[#0a0a0b] disabled:opacity-40"
               style={{ background: 'linear-gradient(180deg, #fff 0%, #e8e5dd 100%)' }}
             >
@@ -1881,10 +2046,7 @@ function CalorieTargetSheet({
             </button>
           ) : (
             <button
-              onClick={() => {
-                setSaved(true)
-                onSave()
-              }}
+              onClick={() => { setSaved(true); onSave() }}
               disabled={saved}
               className="flex-1 rounded-xl py-3 text-sm font-bold text-[#0a0a0b] disabled:opacity-40"
               style={{ background: 'linear-gradient(180deg, #fff 0%, #e8e5dd 100%)' }}

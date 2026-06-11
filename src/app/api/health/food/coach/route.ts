@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
 
   // Load health profile for targets
   const { data: profile } = await db
-    .from('health_profiles')
+    .from('health_profile')
     .select('daily_calorie_target, daily_protein_target_g, daily_carbs_target_g')
     .eq('user_id', user.id)
     .maybeSingle()
