@@ -1443,15 +1443,20 @@ function WaterSection({
                   />
                 </WSettingField>
               )}
-              <WSettingField label={whoopKcal != null && !activityManualOverride ? 'Activity (auto from Whoop)' : 'Activity (training hours per week)'}>
-                <input type="number" inputMode="decimal" min="0" max="40" step="0.5"
-                  value={whoopKcal != null && !activityManualOverride
-                    ? Math.round(Math.max(0, (whoopKcal - 2000) / 500 * 10) / 10)
-                    : localProfile.activity_hrs_per_week}
-                  readOnly={whoopKcal != null && !activityManualOverride}
-                  onChange={e => { if (!(whoopKcal != null && !activityManualOverride)) updateLocal({ activity_hrs_per_week: parseFloat(e.target.value) || 0 }) }}
-                  className={`${INPUT_CLS} ${whoopKcal != null && !activityManualOverride ? 'opacity-50 cursor-not-allowed' : ''}`} />
-              </WSettingField>
+              {whoopKcal != null && !activityManualOverride ? (
+                <WSettingField label="Activity">
+                  <span className={`${INPUT_CLS} flex items-center opacity-50 cursor-not-allowed select-none`}>
+                    Auto from Whoop
+                  </span>
+                </WSettingField>
+              ) : (
+                <WSettingField label="Activity (training hours per week)">
+                  <input type="number" inputMode="decimal" min="0" max="40" step="0.5"
+                    value={localProfile.activity_hrs_per_week}
+                    onChange={e => updateLocal({ activity_hrs_per_week: parseFloat(e.target.value) || 0 })}
+                    className={INPUT_CLS} />
+                </WSettingField>
+              )}
             </WSettingSection>
 
             <WSettingSection title="Display">
@@ -1802,21 +1807,20 @@ function MealEditSheet({
 }
 
 type FitnessGoal = 'cut' | 'recomp' | 'lean_bulk' | 'maintain'
-type ActivityLevel = 'sedentary' | 'light' | 'moderate' | 'very_active'
 type CutPace = 'slow' | 'moderate' | 'aggressive'
 
 const GOAL_META: Record<FitnessGoal, { label: string; sub: string }> = {
   cut:       { label: 'Cut',       sub: 'Lose fat, preserve muscle' },
-  recomp:    { label: 'Recomp',    sub: 'Change composition, not scale weight' },
+  recomp:    { label: 'Recomp',    sub: 'Lose fat + gain muscle simultaneously' },
   lean_bulk: { label: 'Lean Bulk', sub: 'Build muscle, minimize fat gain' },
   maintain:  { label: 'Maintain',  sub: 'Stay where you are, stay fueled' },
 }
 
-const ACTIVITY_META: Record<ActivityLevel, { label: string; sub: string }> = {
-  sedentary:   { label: 'Sedentary',     sub: 'Desk job, little exercise' },
-  light:       { label: 'Lightly Active', sub: '1–3 workouts/week' },
-  moderate:    { label: 'Moderately Active', sub: '4–5 workouts/week' },
-  very_active: { label: 'Very Active',   sub: '6+ workouts/week or physical job' },
+const ACTIVITY_LEVEL_LABELS: Record<string, string> = {
+  sedentary:   'Sedentary',
+  light:       'Lightly Active',
+  moderate:    'Moderately Active',
+  very_active: 'Very Active',
 }
 
 function SegmentedControl<T extends string>({
@@ -1865,7 +1869,6 @@ function CalorieTargetSheet({
   onClose: () => void
 }) {
   const [goal, setGoal] = useState<FitnessGoal>((profile.fitness_goal as FitnessGoal) ?? 'cut')
-  const [activity, setActivity] = useState<ActivityLevel>((profile.activity_level as ActivityLevel) ?? 'moderate')
   const [targetWeight, setTargetWeight] = useState(String(profile.target_weight_lbs ?? ''))
   const [cutPace, setCutPace] = useState<CutPace>((profile.cut_pace as CutPace) ?? 'moderate')
   const [bulkPace, setBulkPace] = useState<'slow' | 'moderate'>('slow')
@@ -1882,7 +1885,6 @@ function CalorieTargetSheet({
   async function handleCalculate() {
     const updates: Record<string, unknown> = {
       fitness_goal: goal,
-      activity_level: activity,
     }
     if (goal === 'cut') {
       updates.target_weight_lbs = parseFloat(targetWeight)
@@ -1934,21 +1936,15 @@ function CalorieTargetSheet({
           </div>
         </div>
 
-        {/* Activity level */}
-        <div>
-          <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Activity level</label>
-          <div className="grid grid-cols-2 gap-2">
-            {(['sedentary', 'light', 'moderate', 'very_active'] as ActivityLevel[]).map(a => (
-              <button
-                key={a}
-                onClick={() => setActivity(a)}
-                className={`rounded-[10px] border px-3 py-2.5 text-left transition-colors ${activity === a ? 'border-white/40 bg-white/[0.07]' : 'border-white/[0.08] bg-white/[0.02]'}`}
-              >
-                <p className={`text-xs font-semibold ${activity === a ? 'text-white' : 'text-zinc-400'}`}>{ACTIVITY_META[a].label}</p>
-                <p className="text-[10px] text-zinc-600 mt-0.5 leading-snug">{ACTIVITY_META[a].sub}</p>
-              </button>
-            ))}
-          </div>
+        {/* Activity level — read-only, pulled from profile/Whoop */}
+        <div className="flex items-center justify-between rounded-[10px] border border-white/[0.08] bg-white/[0.02] px-3 py-2.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Activity level</span>
+          <span className="text-xs text-zinc-400">
+            {profile.activity_level
+              ? ACTIVITY_LEVEL_LABELS[profile.activity_level] ?? profile.activity_level
+              : 'Not set'}{' '}
+            <span className="text-zinc-600">(from settings)</span>
+          </span>
         </div>
 
         {/* Goal-specific fields */}

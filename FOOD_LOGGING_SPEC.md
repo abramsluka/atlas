@@ -14,8 +14,9 @@ Add three more, matching this button row design (primary pill + secondary pills)
 [ 📷 Snap a meal ]  ( Add food )  ( Quick drink )  ( ▮▮ Scan )
 ```
 
-1. **Add food** — type what you ate → AI estimates → if quantity is ambiguous, AI asks ONE
-   follow-up question with tappable quick-pick amounts → save.
+1. **Add food** — type what you ate → AI estimates → if anything is ambiguous, a short **wizard**
+   asks up to 2–3 follow-up questions (Claude-style: tap option chips, **Other** for custom text,
+   **Next** to continue, **Skip** to let the AI guess and move on) → final macro card → save.
 2. **Quick drink** — same flow tuned for drinks, with instant presets. Hydrating drinks also
    log volume to the water tracker.
 3. **Scan** — live camera barcode scan → Open Food Facts lookup → serving picker (with optional
@@ -89,27 +90,72 @@ skip signed-URL generation when `storage_path` is null).
 
 ```ts
 {
-  description: string          // "glass of orange juice" / "chicken breast"
+  description: string              // original input, always sent
   kind: 'food' | 'drink'
-  answer?: string              // present on the second call, after user answers the follow-up
+  answers?: Array<{                 // grows each round; empty on first call
+    question: string
+    answer: string                  // chip label or custom text from "Other"
+    skipped?: boolean               // true when user tapped Skip
+  }>
 }
 ```
 
-Call gpt-4o-mini with `response_format: { type: 'json_object' }`. System prompt requirements:
+Call gpt-4o-mini with `response_format: { type: 'json_object' }`. Pass the model:
+`description`, `kind`, and the full `answers` history so each round has context.
 
-- If the description already pins down the quantity ("two eggs and toast", "12 oz OJ"),
-  return a **final estimate**: `{ status: 'final', item_name, calories, protein_g, carbs_g,
-  confidence, notes, portion_desc, volume_oz (drinks, null if not hydrating), is_hydrating }`.
-- If quantity is ambiguous, return **one** follow-up: `{ status: 'question', question: string,
-  options: string[] }` — `options` are 3–5 tappable amounts, realistic for the item
-  (e.g. OJ → ["Small glass (8 oz)", "Large glass (12 oz)", "Bottle (15.2 oz)"]). Never ask
-  more than one question: when `answer` is present in the request, you MUST return `final`.
-- `is_hydrating`: true for water/juice/milk/sports drinks/iced tea; false for coffee espresso
-  shots, alcohol, milkshakes-as-dessert. `volume_oz` only when hydrating.
+### Response shapes
+
+**Final** (enough info to estimate):
+
+```ts
+{
+  status: 'final'
+  item_name: string
+  calories: number
+  protein_g: number
+  carbs_g: number
+  confidence: 'low' | 'medium' | 'high'
+  notes: string
+  portion_desc: string              // e.g. "6 oz grilled chicken breast"
+  volume_oz: number | null        // drinks only, when hydrating
+  is_hydrating: boolean
+}
+```
+
+**Question** (need one more detail):
+
+```ts
+{
+  status: 'question'
+  question: string                  // one clear sentence, e.g. "How much chicken?"
+  options: string[]                 // 3–5 tappable chips, realistic for the item
+  step: number                      // 1-based; client shows "Question 1 of up to 3"
+}
+```
+
+### AI behavior rules
+
+- If the description is already specific ("two eggs and toast", "12 oz OJ", "grande latte"),
+  return **`final` immediately** — no questions.
+- Otherwise ask **one question at a time**, only about what's still ambiguous: portion size,
+  preparation, restaurant vs homemade, drink size, etc. Prioritize the highest-impact gap first.
+- **Hard cap: 3 questions.** After 3 answered/skipped rounds, the next response MUST be `final`
+  (use reasonable defaults for anything still unknown; set `confidence: 'low'` if guessing).
+- **`options`**: 3–5 chips, short labels. Examples:
+  - OJ → `["Small glass (8 oz)", "Regular glass (12 oz)", "Bottle (15.2 oz)"]`
+  - Chicken → `["4 oz", "6 oz", "8 oz", "1 breast (~5 oz)"]`
+  - Burrito → `["Homemade", "Chipotle", "Taco Bell", "Other restaurant"]`
+- The client always renders an **"Other"** chip separately (not in `options`) — opens a text
+  field; user's typed value becomes `answer` on **Next**.
+- **`skipped: true`**: user tapped Skip. Model should assume a sensible default for that
+  question (e.g. medium portion, grilled not fried) and either ask the next question or
+  return `final` if one skip filled the gap well enough.
+- `is_hydrating`: true for water/juice/milk/sports drinks/iced tea; false for espresso,
+  alcohol, milkshakes-as-dessert. `volume_oz` only when hydrating.
 - Drinks (`kind: 'drink'`): bias toward beverage interpretation of ambiguous names.
 
 The route does NOT insert — it only estimates. Saving goes through Phase 3's insert route.
-(Keeps the question round-trip stateless: client holds the estimate, posts it for saving.)
+Stateless on the server: the client accumulates `answers[]` and re-posts the full array each round.
 
 ## Phase 3 — Manual insert API
 
@@ -183,12 +229,23 @@ and "Type it instead" (routes into Add Food with the barcode digits discarded).
 - Replace the single "+ Add food" button with the four-button row from the design above:
   primary mint pill "📷 Snap a meal" (existing flow, unchanged) + three secondary pills.
   Keep all existing photo flow behavior (multi-photo, description, pending previews) intact.
-- **Add food / Quick drink sheet**: text input (autofocus) → "Estimate" → either final card
-  (name, macros, editable before save) or the one follow-up question with option chips +
-  free-text "Other amount". Answer → final card → Save. Show "Saving… / saved" states via the
-  existing mutation patterns. For Quick drink, show preset chips above the input *before* typing:
-  Water, Coffee, Orange juice, Protein shake, Soda, Beer — tapping a preset = submitting it as
-  the description.
+- **Add food / Quick drink sheet** — multi-step wizard UI:
+  1. **Input step**: text field (autofocus) + "Estimate" button. Quick drink also shows preset
+     chips above the input: Water, Coffee, Orange juice, Protein shake, Soda, Beer — tap =
+     submit as `description` and start estimation.
+  2. **Question step(s)** (0–3 rounds): Claude-style follow-up card:
+     - Question text at top, optional `Question 2 of 3` sublabel from `step`.
+     - **Option chips** in a wrap grid — tap to select (highlighted border). Only one selected.
+     - **"Other"** chip — expands inline text input below chips for custom answer.
+     - Footer buttons: **Skip** (left, muted) and **Next** (right, primary). Next disabled until
+       a chip is selected OR Other has text. Skip sends `skipped: true` with empty `answer`.
+     - On Next/Skip → POST estimate again with updated `answers[]` → either another question
+       step or jump to final card.
+  3. **Final card**: item name, calories / P / C, portion_desc, confidence badge. Editable
+     fields optional (at minimum allow editing calories before save). **Save** → Phase 3 route.
+  - Back button on question steps removes the last answer from `answers[]` and re-fetches
+    (or client-side pop — either is fine).
+  - Show "Estimating…" / "Saving…" states via existing mutation patterns.
 - When a drink also logged water, surface it: small "+12 oz water" confirmation line, and
   invalidate the water queries (`['health','water']` — check exact key in
   `src/features/health/queries.ts`) so the tracker updates.
@@ -202,7 +259,7 @@ and "Type it instead" (routes into Add Food with the barcode digits discarded).
 ## Phase 6 — Wiring & polish
 
 - New queries/mutations in `src/features/food/`: `useEstimateFood()`, `useLogManualFood()`,
-  `useBarcodeLoo kup()` (or plain fetch in-component for the lookup — fine either way),
+  `useBarcodeLookup()` (or plain fetch in-component for the lookup — fine either way),
   `useFoodItems()`. Invalidate `['food', date]`-style keys consistently with existing code.
 - All sheets close on backdrop tap; camera/mic-style permissions failures show inline copy,
   never alerts.
@@ -210,8 +267,12 @@ and "Type it instead" (routes into Add Food with the barcode digits discarded).
 
 ## Acceptance Checklist
 
-- [ ] "chicken breast" → asks "How much?" with gram/oz options → answer → saved with macros, no photo
-- [ ] "two eggs and toast" → no question, straight to final card → saved
+- [ ] "chicken breast" → Q1: how much? (chip options) → Next → final card → saved, no photo
+- [ ] "burrito" → Q1: homemade or restaurant? → Next → Q2: size? → Next → final card → saved
+- [ ] "two eggs and toast" → no questions, straight to final card → saved
+- [ ] Question step: tap chip → Next works; tap Other → type "about 5 oz" → Next works
+- [ ] Question step: Skip → AI returns final (or next question with defaults applied), no crash
+- [ ] After 3 questions, next API response is always `final` (never a 4th question)
 - [ ] Quick drink preset "Orange juice" → asks size → "Large glass (12 oz)" → saved as food AND +12 oz water, water tracker visibly updates
 - [ ] Coffee (black) → saved, NO water log
 - [ ] Scan a real EAN-13 (e.g. 3017620422003 = Nutella) on iPhone Safari → product sheet with serving chips → save
