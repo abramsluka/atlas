@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { useRouter } from 'next/navigation'
 import { useTodayCheckin } from '@/features/workouts/queries'
 import { useSaveEveningCheckin } from '@/features/workouts/mutations'
 import type { DailyCheckin } from '@/features/workouts/types'
+import type { ActivitySnapshot } from '@/features/mentor/types'
 
 // ─── Day Ring ────────────────────────────────────────────────────────────────
 
@@ -417,6 +419,240 @@ function TodaysCallCard() {
   )
 }
 
+// ─── Cosmic Map ──────────────────────────────────────────────────────────────
+
+interface MapNode {
+  id: string
+  label: string
+  href: string
+  color: string
+  glowColor: string
+  radius: number
+  size: number
+  period: number
+  angle: number
+}
+
+const MAP_NODES: MapNode[] = [
+  { id: 'gym',    label: 'Gym',    href: '/gym',    color: '#4ade80', glowColor: '#4ade80', radius: 90,  size: 36, period: 25, angle: 0   },
+  { id: 'health', label: 'Health', href: '/health', color: '#22d3ee', glowColor: '#22d3ee', radius: 120, size: 32, period: 32, angle: 72  },
+  { id: 'journal',label: 'Journal',href: '/journal',color: '#fbbf24', glowColor: '#fbbf24', radius: 80,  size: 30, period: 20, angle: 144 },
+  { id: 'mentor', label: 'Mentor', href: '/mentor', color: '#a3e635', glowColor: '#a3e635', radius: 140, size: 40, period: 38, angle: 216 },
+  { id: 'home',   label: 'Today',  href: '/',       color: '#f4f4f5', glowColor: '#ffffff', radius: 65,  size: 28, period: 15, angle: 288 },
+]
+
+function CosmicMap({ activity }: { activity: ActivitySnapshot | null }) {
+  const router = useRouter()
+  const [hovered, setHovered] = useState<string | null>(null)
+  const [entered, setEntered] = useState(false)
+
+  useEffect(() => {
+    const t = setTimeout(() => setEntered(true), 50)
+    return () => clearTimeout(t)
+  }, [])
+
+  function glowIntensity(nodeId: string): number {
+    if (!activity) return 0.3
+    const count = activity[nodeId as keyof ActivitySnapshot] ?? 0
+    if (count === 0) return 0.15
+    if (count >= 5) return 0.9
+    return 0.3 + count * 0.12
+  }
+
+  // Star field — stable positions
+  const stars = useRef(
+    Array.from({ length: 40 }, (_, i) => ({
+      x: ((i * 137.508) % 100),
+      y: ((i * 79.379) % 100),
+      size: i % 3 === 0 ? 2 : 1,
+      opacity: 0.1 + (i % 5) * 0.06,
+    }))
+  ).current
+
+  return (
+    <div className="relative w-full" style={{ height: '100svh', marginTop: -56, background: '#000' }}>
+      {/* Stars */}
+      {stars.map((s, i) => (
+        <div
+          key={i}
+          className="absolute rounded-full bg-white"
+          style={{ left: `${s.x}%`, top: `${s.y}%`, width: s.size, height: s.size, opacity: s.opacity }}
+        />
+      ))}
+
+      {/* Orbital system centered */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="relative" style={{ width: 320, height: 320 }}>
+          {/* Orbital rings */}
+          {MAP_NODES.map(node => (
+            <div
+              key={`ring-${node.id}`}
+              className="absolute rounded-full border"
+              style={{
+                width: node.radius * 2,
+                height: node.radius * 2,
+                top: 160 - node.radius,
+                left: 160 - node.radius,
+                borderColor: 'rgba(255,255,255,0.08)',
+              }}
+            />
+          ))}
+
+          {/* Center node */}
+          <div
+            className="absolute flex items-center justify-center rounded-full"
+            style={{
+              width: 52,
+              height: 52,
+              top: 134,
+              left: 134,
+              background: 'radial-gradient(circle, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.03) 70%)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              boxShadow: '0 0 20px rgba(255,255,255,0.1), 0 0 40px rgba(255,255,255,0.05)',
+              animation: 'atlasGlow 8s ease-in-out infinite',
+            }}
+          >
+            <span className="text-[9px] font-bold tracking-[0.2em] text-white/80">ATLAS</span>
+          </div>
+
+          {/* Orbiting nodes */}
+          {MAP_NODES.map((node, idx) => {
+            const intensity = glowIntensity(node.id)
+            const isHovered = hovered === node.id
+            return (
+              <div
+                key={node.id}
+                className="absolute"
+                style={{
+                  width: node.radius * 2,
+                  height: node.radius * 2,
+                  top: 160 - node.radius,
+                  left: 160 - node.radius,
+                  animation: isHovered ? 'none' : `orbit${idx} ${node.period}s linear infinite`,
+                  opacity: entered ? 1 : 0,
+                  transform: entered ? 'scale(1)' : 'scale(0.5)',
+                  transition: `opacity 600ms ease ${idx * 150}ms, transform 600ms ease ${idx * 150}ms`,
+                }}
+              >
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: -node.size / 2,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                  }}
+                >
+                  <button
+                    onMouseEnter={() => setHovered(node.id)}
+                    onMouseLeave={() => setHovered(null)}
+                    onClick={() => router.push(node.href)}
+                    className="flex flex-col items-center gap-1.5 group"
+                    style={{ transform: isHovered ? 'scale(1.1)' : 'scale(1)', transition: 'transform 200ms' }}
+                  >
+                    <div
+                      className="rounded-full"
+                      style={{
+                        width: node.size,
+                        height: node.size,
+                        background: `radial-gradient(circle, ${node.color}40 0%, ${node.color}10 70%)`,
+                        border: `1px solid ${node.color}${Math.round(intensity * 255).toString(16).padStart(2, '0')}`,
+                        boxShadow: `0 0 ${Math.round(intensity * 24)}px ${node.glowColor}${Math.round(intensity * 180).toString(16).padStart(2, '0')}`,
+                      }}
+                    />
+                    <span
+                      className="text-[8px] font-bold tracking-widest uppercase"
+                      style={{ color: node.color, opacity: isHovered ? 1 : 0.6 }}
+                    >
+                      {node.label}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes atlasGlow {
+          0%, 100% { box-shadow: 0 0 20px rgba(255,255,255,0.1), 0 0 40px rgba(255,255,255,0.05); }
+          50% { box-shadow: 0 0 30px rgba(255,255,255,0.2), 0 0 60px rgba(255,255,255,0.1); }
+        }
+        @keyframes orbit0 { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes orbit1 { from { transform: rotate(72deg); } to { transform: rotate(432deg); } }
+        @keyframes orbit2 { from { transform: rotate(144deg); } to { transform: rotate(504deg); } }
+        @keyframes orbit3 { from { transform: rotate(216deg); } to { transform: rotate(576deg); } }
+        @keyframes orbit4 { from { transform: rotate(288deg); } to { transform: rotate(648deg); } }
+      `}</style>
+    </div>
+  )
+}
+
+// ─── Sunday Weekly Report Modal ───────────────────────────────────────────────
+
+function getMostRecentSunday(): string {
+  const d = new Date()
+  d.setDate(d.getDate() - d.getDay())
+  return d.toISOString().slice(0, 10)
+}
+
+function SundayModal({ onDismiss }: { onDismiss: () => void }) {
+  const router = useRouter()
+  const [report, setReport] = useState<{ report_text: string; week_of: string } | null>(null)
+
+  useEffect(() => {
+    fetch('/api/mentor/weekly-reports')
+      .then(r => r.json())
+      .then((reports: Array<{ report_text: string; week_of: string }>) => {
+        const weekOf = getMostRecentSunday()
+        const current = reports.find(r => r.week_of === weekOf)
+        if (current) setReport(current)
+      })
+      .catch(() => {})
+  }, [])
+
+  if (!report) return null
+
+  const preview = report.report_text.split(/[.!?]/).slice(0, 3).join('. ').trim() + '.'
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-6"
+      style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(4px)' }}
+    >
+      <div
+        className="w-full max-w-sm rounded-2xl p-6"
+        style={{
+          background: 'rgba(8,16,8,0.98)',
+          border: '1px solid rgba(74,222,128,0.25)',
+          boxShadow: '0 0 40px rgba(74,222,128,0.08)',
+        }}
+      >
+        <p className="text-[9px] font-bold tracking-[0.2em] uppercase text-green-700 mb-3">
+          WEEK OF {new Date(report.week_of + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+        </p>
+        <p className="text-sm text-zinc-300 leading-relaxed mb-6">{preview}</p>
+        <div className="flex gap-3">
+          <button
+            onClick={() => { router.push('/mentor?tab=reports'); onDismiss() }}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-black"
+            style={{ background: 'linear-gradient(180deg,#ffffff 0%,#e8e5dd 100%)' }}
+          >
+            Read Full Report
+          </button>
+          <button
+            onClick={onDismiss}
+            className="px-4 py-2.5 rounded-xl text-sm font-semibold text-zinc-500"
+            style={{ background: 'rgba(255,255,255,0.06)' }}
+          >
+            Later
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
 export default function HomeClient({ today, timezone, initialCheckin }: { today: string; timezone: string; initialCheckin: DailyCheckin | null }) {
@@ -436,6 +672,40 @@ export default function HomeClient({ today, timezone, initialCheckin }: { today:
 
   const [coachText, setCoachText] = useState('')
   const [coachStreaming, setCoachStreaming] = useState(false)
+  const [mapView, setMapView] = useState(false)
+  const [activity, setActivity] = useState<ActivitySnapshot | null>(null)
+  const [showSundayModal, setShowSundayModal] = useState(false)
+
+  // Load map view preference
+  useEffect(() => {
+    const saved = localStorage.getItem('atlas_view_mode')
+    if (saved === 'map') setMapView(true)
+  }, [])
+
+  // Fetch activity snapshot for map glow
+  useEffect(() => {
+    fetch('/api/home/activity-snapshot')
+      .then(r => r.json())
+      .then(setActivity)
+      .catch(() => {})
+  }, [])
+
+  // Sunday modal check
+  useEffect(() => {
+    const isSunday = new Date().getDay() === 0
+    if (!isSunday) return
+    const weekOf = getMostRecentSunday()
+    const key = `atlas_weekly_report_shown_${weekOf}`
+    if (localStorage.getItem(key)) return
+    const t = setTimeout(() => setShowSundayModal(true), 1000)
+    return () => clearTimeout(t)
+  }, [])
+
+  function toggleMapView() {
+    const next = !mapView
+    setMapView(next)
+    localStorage.setItem('atlas_view_mode', next ? 'map' : 'list')
+  }
 
   async function streamBriefing() {
     if (coachStreaming) return
@@ -460,73 +730,131 @@ export default function HomeClient({ today, timezone, initialCheckin }: { today:
     }
   }
 
+  if (mapView) {
+    return (
+      <>
+        {/* Map view toggle button */}
+        <button
+          onClick={toggleMapView}
+          className="fixed top-4 right-4 z-50 w-9 h-9 rounded-full flex items-center justify-center"
+          style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' }}
+          aria-label="Switch to list view"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+            <line x1="8" y1="6" x2="21" y2="6" />
+            <line x1="8" y1="12" x2="21" y2="12" />
+            <line x1="8" y1="18" x2="21" y2="18" />
+            <line x1="3" y1="6" x2="3.01" y2="6" />
+            <line x1="3" y1="12" x2="3.01" y2="12" />
+            <line x1="3" y1="18" x2="3.01" y2="18" />
+          </svg>
+        </button>
+        <CosmicMap activity={activity} />
+        {showSundayModal && (
+          <SundayModal onDismiss={() => {
+            setShowSundayModal(false)
+            localStorage.setItem(`atlas_weekly_report_shown_${getMostRecentSunday()}`, 'true')
+          }} />
+        )}
+      </>
+    )
+  }
+
   return (
-    <main className="min-h-screen px-4 pb-24 pt-14">
-      <h1
-        className="mb-4 text-5xl font-bold tracking-tight"
-        style={{
-          background: 'linear-gradient(180deg, #FFFFFF 0%, #C7C4BC 120%)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          backgroundClip: 'text',
-        }}
-      >
-        Luka's Dashboard
-      </h1>
-      <GoalTicker checkin={checkin} />
-      <DayRing />
-      <TodaysCallCard />
-
-      <section>
-        <SectionTitle label="Check-in" />
-        <DailyCheckinCard today={today} checkin={checkin ?? null} />
-
-        <div className="mt-4 rounded-2xl bg-white/[0.04] backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.45)] p-5">
-          <p className="text-lg font-semibold text-white mb-2">Your briefing</p>
-          {!coachText && !coachStreaming && (
-            <p className="text-sm text-zinc-500 mb-4 leading-relaxed">
-              Get a read on where you stand across everything — gym, habits, health, journal.
-            </p>
-          )}
-
-          {coachText && (
-            <p className="text-sm text-zinc-300 leading-relaxed mb-4 whitespace-pre-wrap">
-              {coachText}
-              {coachStreaming && (
-                <span className="inline-block w-[2px] h-[14px] bg-zinc-400 ml-0.5 align-middle animate-pulse" />
-              )}
-            </p>
-          )}
-
-          {!coachText && coachStreaming && (
-            <p className="text-sm text-zinc-500 mb-4 leading-relaxed">
-              Reading your data
-              <span className="inline-block w-[2px] h-[14px] bg-zinc-400 ml-0.5 align-middle animate-pulse" />
-            </p>
-          )}
-
-          <button
-            onClick={streamBriefing}
-            disabled={coachStreaming}
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold disabled:opacity-50 active:opacity-80"
+    <>
+      <main className="min-h-screen px-4 pb-24 pt-14">
+        <div className="flex items-start justify-between mb-4">
+          <h1
+            className="text-5xl font-bold tracking-tight"
             style={{
-              background: coachStreaming
-                ? 'rgba(255,255,255,0.08)'
-                : 'linear-gradient(180deg,#ffffff 0%,#e8e5dd 100%)',
-              boxShadow: coachStreaming ? 'none' : 'inset 0 1px 0 rgba(255,255,255,0.55),0 4px 14px rgba(0,0,0,0.40)',
-              color: coachStreaming ? '#71717a' : '#000',
+              background: 'linear-gradient(180deg, #FFFFFF 0%, #C7C4BC 120%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
             }}
           >
-            {coachStreaming ? 'Reading your data…' : coachText ? 'Refresh briefing' : 'Get my briefing'}
+            Luka&apos;s Dashboard
+          </h1>
+          {/* Map view toggle */}
+          <button
+            onClick={toggleMapView}
+            className="w-9 h-9 flex-shrink-0 rounded-full flex items-center justify-center mt-1"
+            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+            aria-label="Switch to map view"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+              <circle cx="12" cy="12" r="10" />
+              <circle cx="12" cy="12" r="4" />
+              <line x1="12" y1="2" x2="12" y2="8" />
+              <line x1="12" y1="16" x2="12" y2="22" />
+              <line x1="2" y1="12" x2="8" y2="12" />
+              <line x1="16" y1="12" x2="22" y2="12" />
+            </svg>
           </button>
         </div>
-      </section>
 
-      <div className="px-4 pb-6 flex justify-center">
-        <a href="/subscriptions" className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors">
-          Bills &amp; subscriptions →
-        </a>
-      </div>
-    </main>
+        <GoalTicker checkin={checkin} />
+        <DayRing />
+        <TodaysCallCard />
+
+        <section>
+          <SectionTitle label="Check-in" />
+          <DailyCheckinCard today={today} checkin={checkin ?? null} />
+
+          <div className="mt-4 rounded-2xl bg-white/[0.04] backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.45)] p-5">
+            <p className="text-lg font-semibold text-white mb-2">Your briefing</p>
+            {!coachText && !coachStreaming && (
+              <p className="text-sm text-zinc-500 mb-4 leading-relaxed">
+                Get a read on where you stand across everything — gym, habits, health, journal.
+              </p>
+            )}
+
+            {coachText && (
+              <p className="text-sm text-zinc-300 leading-relaxed mb-4 whitespace-pre-wrap">
+                {coachText}
+                {coachStreaming && (
+                  <span className="inline-block w-[2px] h-[14px] bg-zinc-400 ml-0.5 align-middle animate-pulse" />
+                )}
+              </p>
+            )}
+
+            {!coachText && coachStreaming && (
+              <p className="text-sm text-zinc-500 mb-4 leading-relaxed">
+                Reading your data
+                <span className="inline-block w-[2px] h-[14px] bg-zinc-400 ml-0.5 align-middle animate-pulse" />
+              </p>
+            )}
+
+            <button
+              onClick={streamBriefing}
+              disabled={coachStreaming}
+              className="flex h-12 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold disabled:opacity-50 active:opacity-80"
+              style={{
+                background: coachStreaming
+                  ? 'rgba(255,255,255,0.08)'
+                  : 'linear-gradient(180deg,#ffffff 0%,#e8e5dd 100%)',
+                boxShadow: coachStreaming ? 'none' : 'inset 0 1px 0 rgba(255,255,255,0.55),0 4px 14px rgba(0,0,0,0.40)',
+                color: coachStreaming ? '#71717a' : '#000',
+              }}
+            >
+              {coachStreaming ? 'Reading your data…' : coachText ? 'Refresh briefing' : 'Get my briefing'}
+            </button>
+          </div>
+        </section>
+
+        <div className="px-4 pb-6 flex justify-center">
+          <a href="/subscriptions" className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors">
+            Bills &amp; subscriptions →
+          </a>
+        </div>
+      </main>
+
+      {showSundayModal && (
+        <SundayModal onDismiss={() => {
+          setShowSundayModal(false)
+          localStorage.setItem(`atlas_weekly_report_shown_${getMostRecentSunday()}`, 'true')
+        }} />
+      )}
+    </>
   )
 }

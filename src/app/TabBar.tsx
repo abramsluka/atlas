@@ -54,14 +54,13 @@ const tabs = [
     ),
   },
   {
-    label: 'Goals',
-    href: '/goals',
-    active: (p: string) => p.startsWith('/goals'),
+    label: 'Mentor',
+    href: '/mentor',
+    active: (p: string) => p.startsWith('/mentor'),
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
-        <circle cx="12" cy="12" r="10" />
-        <circle cx="12" cy="12" r="6" />
-        <circle cx="12" cy="12" r="2" />
+        <path d="M12 2a8 8 0 0 1 8 8c0 5.25-8 13-8 13S4 15.25 4 10a8 8 0 0 1 8-8z" />
+        <circle cx="12" cy="10" r="2.5" />
       </svg>
     ),
   },
