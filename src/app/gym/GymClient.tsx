@@ -2,13 +2,13 @@
 
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useGymConfig, useGymExercises, useAllGymLogs, useBodyWeights, useProgressPhotos } from '@/features/gym/queries'
-import { useHealthProfile, useWhoopData } from '@/features/health/queries'
+import { useGymConfig, useGymExercises, useAllGymLogs, useBodyWeights, useBodyMeasurements, useProgressPhotos } from '@/features/gym/queries'
+import { useHealthProfile } from '@/features/health/queries'
 import {
   useSaveGymConfig,
   useCreateExercise, useUpdateExercise, useDeleteExercise,
   useLogSet, useDeleteLog,
-  useLogBodyWeight, useUploadPhoto, useDeletePhoto,
+  useLogBodyWeight, useLogBodyMeasurement, useUploadPhoto, useDeletePhoto,
 } from '@/features/gym/mutations'
 import type { GymConfig, GymExercise, GymLog, BodyWeight, Prescription, ProgressPhoto } from '@/features/gym/types'
 
@@ -34,6 +34,20 @@ function todayDateLabel(): string {
 
 function logDatePST(utcStr: string): string {
   return new Date(utcStr).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
+}
+
+// US Navy body fat formula — circumferences in inches
+function navyBfPct(heightCm: number, sex: 'm' | 'f' | 'o', neckIn: number, waistIn: number, hipIn?: number | null): number | null {
+  const heightIn = heightCm / 2.54
+  let bf: number
+  if (sex === 'f') {
+    if (!hipIn || waistIn + hipIn - neckIn <= 0) return null
+    bf = 163.205 * Math.log10(waistIn + hipIn - neckIn) - 97.684 * Math.log10(heightIn) - 78.387
+  } else {
+    if (waistIn - neckIn <= 0) return null
+    bf = 86.010 * Math.log10(waistIn - neckIn) - 70.041 * Math.log10(heightIn) + 36.76
+  }
+  return Math.max(2, Math.min(60, bf))
 }
 
 function computeSplit(config: GymConfig): { name: string; index: number } {
@@ -279,9 +293,9 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const { data: exercises = [] } = useGymExercises()
   const { data: allLogs = [] } = useAllGymLogs()
   const { data: bodyWeights = [] } = useBodyWeights()
+  const { data: bodyMeasurements = [] } = useBodyMeasurements()
   const { data: photos = [] } = useProgressPhotos()
   const { data: healthProfile } = useHealthProfile()
-  const { data: whoopToday } = useWhoopData(today, true, null)
 
   const saveConfig = useSaveGymConfig()
   const createEx = useCreateExercise()
@@ -290,6 +304,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const logSet = useLogSet()
   const deleteLog = useDeleteLog()
   const logBw = useLogBodyWeight()
+  const logMeasurement = useLogBodyMeasurement()
   const uploadPhoto = useUploadPhoto()
   const deletePhotoMut = useDeletePhoto()
 
@@ -379,6 +394,20 @@ export default function GymClient({ today, initialConfig, initialExercises, init
 
   // Body weight input
   const [bwInput, setBwInput] = useState<string>('')
+  const [showMeasureModal, setShowMeasureModal] = useState(false)
+  const [nudgeDismissed, setNudgeDismissed] = useState(false)
+  const [neckIn, setNeckIn] = useState('')
+  const [waistIn, setWaistIn] = useState('')
+  const [hipIn, setHipIn] = useState('')
+  function openMeasureModal() {
+    const last = bodyMeasurements[bodyMeasurements.length - 1]
+    if (last) {
+      setNeckIn(String(last.neck_in))
+      setWaistIn(String(last.waist_in))
+      if (last.hip_in != null) setHipIn(String(last.hip_in))
+    }
+    setShowMeasureModal(true)
+  }
   const todayBw = bodyWeights.find(w => w.date_key === today)
 
   // Today done + history collapse — persisted to localStorage keyed by date
@@ -720,19 +749,65 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     const recent = bodyWeights.slice(-Math.min(bodyWeights.length, 30))
     const daySpan = Math.max(1, (new Date(recent[recent.length - 1].date_key).getTime() - new Date(recent[0].date_key).getTime()) / 86400000)
     const weeklyRate = ((recent[recent.length - 1].weight - recent[0].weight) / daySpan) * 7
-    const verdict = Math.abs(weeklyRate) < 0.25 ? 'Maintaining' : weeklyRate < 0 ? 'Cutting' : 'Gaining'
-    // Deurenberg body fat % — only when profile has height/age/sex
-    let bf: { fatPct: number; leanLbs: number; fatLbs: number } | null = null
-    if (healthProfile?.height_cm && healthProfile.age && healthProfile.sex) {
+
+    // Strength trend over the same window — proxy for whether weight change is fat or muscle.
+    // Compares best e1RM per exercise in the first vs second half of the window.
+    const windowStart = new Date(recent[0].date_key).getTime()
+    const midpoint = windowStart + (Date.now() - windowStart) / 2
+    const e1rm = (l: GymLog) => l.weight * (1 + l.reps / 30)
+    const bestByExercise = (logs: GymLog[]) => {
+      const best = new Map<string, number>()
+      for (const l of logs) best.set(l.exercise_id, Math.max(best.get(l.exercise_id) ?? 0, e1rm(l)))
+      return best
+    }
+    const windowLogs = allLogs.filter(l => new Date(l.logged_at).getTime() >= windowStart)
+    const firstHalf = bestByExercise(windowLogs.filter(l => new Date(l.logged_at).getTime() < midpoint))
+    const secondHalf = bestByExercise(windowLogs.filter(l => new Date(l.logged_at).getTime() >= midpoint))
+    const commonChanges = [...firstHalf.entries()]
+      .filter(([id, v]) => v > 0 && secondHalf.has(id))
+      .map(([id, v]) => (secondHalf.get(id)! - v) / v)
+    const strengthTrend = commonChanges.length >= 2
+      ? commonChanges.reduce((s, v) => s + v, 0) / commonChanges.length
+      : null
+
+    const strUp = strengthTrend != null && strengthTrend > 0.02
+    const strDown = strengthTrend != null && strengthTrend < -0.02
+    let verdict: string
+    if (Math.abs(weeklyRate) < 0.25) {
+      verdict = strUp ? 'Recomp — gaining muscle' : strDown ? 'Maintaining — strength dipping' : 'Maintaining weight'
+    } else if (weeklyRate < 0) {
+      verdict = strengthTrend == null ? 'Losing weight' : strDown ? 'Losing fat + some muscle' : 'Losing fat'
+    } else {
+      verdict = strengthTrend == null ? 'Gaining weight' : strUp ? 'Gaining muscle' : 'Gaining mostly fat'
+    }
+    // BF%: prefer a tape measurement (US Navy) from the last 30 days, else Deurenberg BMI estimate
+    let bf: { fatPct: number; leanLbs: number; fatLbs: number; source: string } | null = null
+    const latestTape = bodyMeasurements.length ? bodyMeasurements[bodyMeasurements.length - 1] : null
+    const tapeFresh = latestTape && (Date.now() - new Date(latestTape.date_key).getTime()) < 30 * 86400000
+    if (tapeFresh && latestTape) {
+      const fatPct = latestTape.bf_pct
+      const [, m, d] = latestTape.date_key.split('-')
+      bf = { fatPct, leanLbs: currentWeight * (1 - fatPct / 100), fatLbs: currentWeight * (fatPct / 100), source: `taped ${MONS[parseInt(m) - 1]} ${parseInt(d)}` }
+    } else if (healthProfile?.height_cm && healthProfile.age && healthProfile.sex) {
       const heightM = healthProfile.height_cm / 100
       const weightKg = currentWeight * 0.453592
       const bmi = weightKg / (heightM * heightM)
       const sexFactor = healthProfile.sex === 'm' ? 1 : healthProfile.sex === 'f' ? 0 : 0.5
       const fatPct = Math.max(5, Math.min(50, (1.20 * bmi) + (0.23 * healthProfile.age) - (10.8 * sexFactor) - 5.4))
-      bf = { fatPct, leanLbs: currentWeight * (1 - fatPct / 100), fatLbs: currentWeight * (fatPct / 100) }
+      bf = { fatPct, leanLbs: currentWeight * (1 - fatPct / 100), fatLbs: currentWeight * (fatPct / 100), source: 'est.' }
     }
-    return { weeklyRate, verdict, bf }
+    return { weeklyRate, verdict, strengthTrend, bf }
   })()
+
+  // Nudge to re-tape when weight has drifted ≥2 lbs since the last tape measurement
+  const lastTape = bodyMeasurements.length ? bodyMeasurements[bodyMeasurements.length - 1] : null
+  const weightAtLastTape = lastTape
+    ? bodyWeights.filter(w => w.date_key <= lastTape.date_key).slice(-1)[0]?.weight ?? null
+    : null
+  const sinceTapeDelta = lastTape && weightAtLastTape != null && currentWeight != null
+    ? currentWeight - weightAtLastTape
+    : null
+  const measureNudge = !nudgeDismissed && sinceTapeDelta != null && Math.abs(sinceTapeDelta) >= 2
   const goalIsLoss = targetWeight != null && currentWeight != null ? targetWeight < currentWeight : true
   function bwDeltaColor(delta: number): string {
     if (delta === 0) return 'text-white/40'
@@ -856,23 +931,61 @@ export default function GymClient({ today, initialConfig, initialExercises, init
           )}
 
           {compEstimate && (
-            <div className="mx-5 mb-4 rounded-xl bg-white/[0.04] border border-white/[0.07] px-4 py-3 space-y-2">
+            <div className="mx-5 mt-3 mb-4 rounded-xl bg-white/[0.04] border border-white/[0.07] px-4 py-3 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-white/70">{compEstimate.verdict}</span>
                 <span className="text-[10px] text-white/30">
                   {compEstimate.weeklyRate > 0 ? '+' : ''}{compEstimate.weeklyRate.toFixed(2)} lbs/wk
+                  {compEstimate.strengthTrend != null && (
+                    <> · str {compEstimate.strengthTrend >= 0 ? '↑' : '↓'}{Math.abs(compEstimate.strengthTrend * 100).toFixed(1)}%</>
+                  )}
                 </span>
               </div>
               {compEstimate.bf && (
                 <>
                   <div className="flex rounded-full overflow-hidden h-2">
-                    <div className="bg-green-400/70" style={{ width: `${(100 - compEstimate.bf.fatPct).toFixed(1)}%` }} />
-                    <div className="bg-white/20" style={{ width: `${compEstimate.bf.fatPct.toFixed(1)}%` }} />
+                    <div className="bg-blue-400/80" style={{ width: `${(100 - compEstimate.bf.fatPct).toFixed(1)}%` }} />
+                    <div className="bg-yellow-400/80" style={{ width: `${compEstimate.bf.fatPct.toFixed(1)}%` }} />
                   </div>
-                  <p className="text-[10px] text-white/30">
-                    ~{compEstimate.bf.leanLbs.toFixed(1)} lbs lean · ~{compEstimate.bf.fatLbs.toFixed(1)} lbs fat · ~{compEstimate.bf.fatPct.toFixed(1)}% BF (est.)
-                  </p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[10px] text-white/30">
+                      <span className="text-blue-300/70">~{compEstimate.bf.leanLbs.toFixed(1)} lbs lean</span>
+                      {' · '}
+                      <span className="text-yellow-300/70">~{compEstimate.bf.fatLbs.toFixed(1)} lbs fat</span>
+                      {' · '}~{compEstimate.bf.fatPct.toFixed(1)}% BF ({compEstimate.bf.source})
+                    </p>
+                    <button
+                      onClick={openMeasureModal}
+                      className="text-[10px] text-white/40 active:opacity-60 shrink-0"
+                    >
+                      tape BF%
+                    </button>
+                  </div>
                 </>
+              )}
+              {!compEstimate.bf && (
+                <button
+                  onClick={openMeasureModal}
+                  className="text-[10px] text-white/40 active:opacity-60"
+                >
+                  measure body fat % with a tape
+                </button>
+              )}
+              {measureNudge && sinceTapeDelta != null && (
+                <div className="flex items-center justify-between gap-2 rounded-lg bg-blue-400/10 border border-blue-400/20 px-3 py-2">
+                  <span className="text-[11px] text-blue-200/80">
+                    {sinceTapeDelta < 0 ? 'Down' : 'Up'} {Math.abs(sinceTapeDelta).toFixed(1)} lbs since your last tape — update your BF%?
+                  </span>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <button
+                      onClick={openMeasureModal}
+                      className="text-[11px] font-semibold text-blue-300 active:opacity-60"
+                    >
+                      Measure
+                    </button>
+                    <button onClick={() => setNudgeDismissed(true)} className="text-[11px] text-white/30 active:opacity-60">✕</button>
+                  </div>
+                </div>
               )}
             </div>
           )}
@@ -976,37 +1089,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
             </div>
           )}
         </section>
-
-        {/* ── Whoop Today ───────────────────────────────────────────── */}
-        {whoopToday && (whoopToday.cycle?.strain != null || whoopToday.recovery?.score != null) && (
-          <section className="rounded-2xl bg-white/5 border border-white/8 px-5 py-4">
-            <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30 mb-3">Whoop Today</p>
-            <div className="flex gap-6">
-              {whoopToday.recovery?.score != null && (
-                <div>
-                  <p className="text-[10px] uppercase tracking-wide text-white/30">Recovery</p>
-                  <p className={`text-2xl font-bold ${whoopToday.recovery.score >= 67 ? 'text-green-400' : whoopToday.recovery.score >= 34 ? 'text-yellow-400' : 'text-red-400'}`}>
-                    {whoopToday.recovery.score}%
-                  </p>
-                </div>
-              )}
-              {whoopToday.cycle?.strain != null && (
-                <div>
-                  <p className="text-[10px] uppercase tracking-wide text-white/30">Strain</p>
-                  <p className="text-2xl font-bold text-white">{whoopToday.cycle.strain.toFixed(1)}</p>
-                  <p className="text-[10px] text-white/20">/21</p>
-                </div>
-              )}
-              {whoopToday.cycle?.kilojoule != null && (
-                <div>
-                  <p className="text-[10px] uppercase tracking-wide text-white/30">Cals Burned</p>
-                  <p className="text-2xl font-bold text-white">{Math.round(whoopToday.cycle.kilojoule * 0.239).toLocaleString()}</p>
-                  <p className="text-[10px] text-white/20">kcal</p>
-                </div>
-              )}
-            </div>
-          </section>
-        )}
 
         {/* ── PO Coach ──────────────────────────────────────────────── */}
         <section className="rounded-2xl bg-white/5 border border-white/8 overflow-hidden">
@@ -1565,6 +1647,113 @@ export default function GymClient({ today, initialConfig, initialExercises, init
           )}
         </div>
       )}
+
+      {/* ── Tape Measurement Modal (US Navy BF%) ────────────────────── */}
+      {showMeasureModal && (() => {
+        const neck = parseFloat(neckIn)
+        const waist = parseFloat(waistIn)
+        const hip = parseFloat(hipIn)
+        const needsHip = healthProfile?.sex === 'f'
+        const hasProfile = !!healthProfile?.height_cm && !!healthProfile?.sex
+        const inputsValid = neck > 0 && waist > 0 && (!needsHip || hip > 0)
+        const bfPct = hasProfile && inputsValid
+          ? navyBfPct(healthProfile!.height_cm!, healthProfile!.sex!, neck, waist, needsHip ? hip : null)
+          : null
+        const w = currentWeight
+        const bmi = hasProfile && w ? (w * 0.453592) / Math.pow(healthProfile!.height_cm! / 100, 2) : null
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-end bg-black/60 backdrop-blur-sm"
+            onClick={e => { if (e.target === e.currentTarget) setShowMeasureModal(false) }}
+          >
+            <div className="w-full rounded-t-3xl bg-[#111] border-t border-white/10 px-5 pt-5 pb-10 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-base font-bold">Body fat — tape measure</h2>
+                <button onClick={() => setShowMeasureModal(false)} className="text-white/40 text-sm active:opacity-60">✕</button>
+              </div>
+              <p className="text-[11px] text-white/35 mb-5">
+                US Navy method. Measure at the narrowest point of your neck and at your navel, tape level and snug but not tight.
+              </p>
+              {!hasProfile ? (
+                <p className="text-sm text-white/50">
+                  Add your height and sex in the Health page profile first — the formula needs them.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  <div className={`grid gap-3 ${needsHip ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide text-white/40 mb-1.5">Neck (in)</p>
+                      <input
+                        type="number" inputMode="decimal" step="0.25" value={neckIn}
+                        onFocus={e => e.target.select()} onChange={e => setNeckIn(e.target.value)}
+                        placeholder="15"
+                        className="w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white placeholder:text-white/20 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide text-white/40 mb-1.5">Waist (in)</p>
+                      <input
+                        type="number" inputMode="decimal" step="0.25" value={waistIn}
+                        onFocus={e => e.target.select()} onChange={e => setWaistIn(e.target.value)}
+                        placeholder="32"
+                        className="w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white placeholder:text-white/20 focus:outline-none"
+                      />
+                    </div>
+                    {needsHip && (
+                      <div>
+                        <p className="text-[10px] uppercase tracking-wide text-white/40 mb-1.5">Hip (in)</p>
+                        <input
+                          type="number" inputMode="decimal" step="0.25" value={hipIn}
+                          onFocus={e => e.target.select()} onChange={e => setHipIn(e.target.value)}
+                          placeholder="38"
+                          className="w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white placeholder:text-white/20 focus:outline-none"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {bfPct != null && (
+                    <div className="rounded-xl bg-white/[0.04] border border-white/[0.07] px-4 py-3 space-y-2">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-3xl font-bold tabular-nums">{bfPct.toFixed(1)}%</span>
+                        <span className="text-xs text-white/40">body fat</span>
+                      </div>
+                      <div className="flex rounded-full overflow-hidden h-2">
+                        <div className="bg-blue-400/80" style={{ width: `${(100 - bfPct).toFixed(1)}%` }} />
+                        <div className="bg-yellow-400/80" style={{ width: `${bfPct.toFixed(1)}%` }} />
+                      </div>
+                      <p className="text-[10px] text-white/30">
+                        {w != null && (
+                          <>
+                            <span className="text-blue-300/70">~{(w * (1 - bfPct / 100)).toFixed(1)} lbs lean</span>
+                            {' · '}
+                            <span className="text-yellow-300/70">~{(w * (bfPct / 100)).toFixed(1)} lbs fat</span>
+                          </>
+                        )}
+                        {bmi != null && <>{w != null ? ' · ' : ''}BMI {bmi.toFixed(1)}</>}
+                      </p>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      if (bfPct == null) return
+                      logMeasurement.mutate(
+                        { date_key: today, neck_in: neck, waist_in: waist, hip_in: needsHip ? hip : null, bf_pct: bfPct },
+                        { onSuccess: () => setShowMeasureModal(false) }
+                      )
+                    }}
+                    disabled={bfPct == null || logMeasurement.isPending}
+                    className="w-full rounded-xl bg-white text-black font-semibold py-3 text-sm disabled:opacity-30 active:opacity-80"
+                  >
+                    {logMeasurement.isPending ? 'Saving…' : 'Save measurement'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ── Exercise Modal ──────────────────────────────────────────── */}
       {exModal.open && (
