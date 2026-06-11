@@ -2,6 +2,9 @@ import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 import type { ConversationMessage } from '@/features/journal/types'
+import { transcribeAudio, ensureEntryTranscript, entryContentForAI } from '@/lib/journalAudio'
+
+export const maxDuration = 60
 
 export async function POST(
   request: NextRequest,
@@ -23,11 +26,43 @@ export async function POST(
 
   if (error || !entry) return new Response('Not found', { status: 404 })
 
-  const body = await request.json()
-  const { message, makeLonger, messageIndex } = body as {
-    message?: string
-    makeLonger?: boolean
-    messageIndex?: number
+  // Voice replies come in as multipart form data; text replies as JSON
+  let message: string | undefined
+  let makeLonger: boolean | undefined
+  let messageIndex: number | undefined
+  let replyAudioPath: string | null = null
+
+  const contentType = request.headers.get('content-type') ?? ''
+  if (contentType.includes('multipart/form-data')) {
+    const formData = await request.formData()
+    const file = formData.get('file') as File | null
+    if (!file) return new Response('No audio file', { status: 400 })
+
+    const ext = file.name.split('.').pop() ?? 'webm'
+    replyAudioPath = `${user.id}/${id}_reply_${Date.now()}.${ext}`
+    const { error: uploadError } = await db.storage
+      .from('journal-audio')
+      .upload(replyAudioPath, file, { contentType: file.type, upsert: false })
+    if (uploadError) return new Response(`Upload failed: ${uploadError.message}`, { status: 500 })
+
+    try {
+      message = await transcribeAudio(file, file.name)
+    } catch (err) {
+      console.error('[journal/reply] transcription failed:', err)
+      await db.storage.from('journal-audio').remove([replyAudioPath])
+      return new Response(`Could not transcribe recording: ${err}`, { status: 500 })
+    }
+    if (!message) {
+      await db.storage.from('journal-audio').remove([replyAudioPath])
+      return new Response('Recording was empty or unintelligible', { status: 400 })
+    }
+  } else {
+    const body = await request.json()
+    ;({ message, makeLonger, messageIndex } = body as {
+      message?: string
+      makeLonger?: boolean
+      messageIndex?: number
+    })
   }
 
   const existingConversation: ConversationMessage[] = entry.conversation ?? []
@@ -101,10 +136,19 @@ export async function POST(
   // Normal reply — build full conversation history for context
   if (!message?.trim()) return new Response('Missing message', { status: 400 })
 
+  // Include voice note transcript in the entry context (transcribes if needed)
+  let entryTranscript: string | null = null
+  try {
+    entryTranscript = await ensureEntryTranscript(db, entry)
+  } catch (err) {
+    console.error('[journal/reply] entry transcription failed:', err)
+  }
+  const entryContent = entryContentForAI(entry.body, entryTranscript)
+
   const historyMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [
     {
       role: 'user',
-      content: `Here is my journal entry for ${entry.date}:\n\n${entry.title ? `Title: ${entry.title}\n\n` : ''}${entry.body}`,
+      content: `Here is my journal entry for ${entry.date}:\n\n${entry.title ? `Title: ${entry.title}\n\n` : ''}${entryContent}`,
     },
     {
       role: 'assistant',
@@ -142,7 +186,7 @@ export async function POST(
       if (fullText) {
         const updatedConversation: ConversationMessage[] = [
           ...existingConversation,
-          { role: 'user', content: message.trim() },
+          { role: 'user', content: message!.trim(), ...(replyAudioPath ? { audio_path: replyAudioPath } : {}) },
           { role: 'assistant', content: fullText },
         ]
         await db

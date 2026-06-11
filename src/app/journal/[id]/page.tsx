@@ -4,6 +4,7 @@ import { notFound, redirect } from 'next/navigation'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import EntryDetail from './EntryDetail'
 import type { JournalEntry } from '@/features/journal/types'
+import { withAudioUrls } from '@/lib/journalAudio'
 
 export default async function JournalEntryPage({
   params,
@@ -25,5 +26,6 @@ export default async function JournalEntryPage({
 
   if (!data || data.user_id !== user.id) notFound()
 
-  return <EntryDetail initialEntry={data as JournalEntry} />
+  const entry = await withAudioUrls(db, data)
+  return <EntryDetail initialEntry={entry as JournalEntry} />
 }

@@ -2,6 +2,9 @@ import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { getOuraForDate, summarizeOuraForDate } from '@/features/health/ouraContext'
+import { ensureEntryTranscript, entryContentForAI } from '@/lib/journalAudio'
+
+export const maxDuration = 60
 
 export async function POST(
   _request: NextRequest,
@@ -23,11 +26,23 @@ export async function POST(
 
   if (error || !entry) return new Response('Not found', { status: 404 })
 
+  // Voice entries: transcribe before reflecting (no-op if already transcribed or no audio)
+  let transcript: string | null = null
+  try {
+    transcript = await ensureEntryTranscript(db, entry)
+  } catch (err) {
+    console.error('[journal/reflect] transcription failed:', err)
+    if (!entry.body?.trim()) return new Response(`Could not transcribe recording: ${err}`, { status: 500 })
+  }
+
+  const content = entryContentForAI(entry.body, transcript)
+  if (!content) return new Response('Entry has no content', { status: 400 })
+
   // Pull Oura data for the entry's date (if any)
   const ouraForDay = await getOuraForDate(db, user.id, entry.date)
   const bodySummary = summarizeOuraForDate(ouraForDay)
 
-  const userMessage = `Here is my journal entry for ${entry.date}:\n\n${entry.title ? `Title: ${entry.title}\n\n` : ''}${entry.body}${bodySummary ? `\n\n[Body data for this day: ${bodySummary}]` : ''}`
+  const userMessage = `Here is my journal entry for ${entry.date}:\n\n${entry.title ? `Title: ${entry.title}\n\n` : ''}${content}${bodySummary ? `\n\n[Body data for this day: ${bodySummary}]` : ''}`
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 

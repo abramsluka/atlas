@@ -7,6 +7,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useJournalEntry } from '@/features/journal/queries'
 import { useUpdateEntry, useDeleteEntry } from '@/features/journal/mutations'
 import type { JournalEntry } from '@/features/journal/types'
+import { useVoiceRecorder, formatElapsed } from '@/features/journal/useVoiceRecorder'
 
 interface Props {
   initialEntry: JournalEntry
@@ -68,6 +69,12 @@ export default function EntryDetail({ initialEntry }: Props) {
   const [streamingReply, setStreamingReply] = useState('')
   const [replyError, setReplyError] = useState<string | null>(null)
 
+  const [transcript, setTranscript] = useState(entry.audio_transcript)
+  const [showTranscript, setShowTranscript] = useState(false)
+  const [transcribing, setTranscribing] = useState(false)
+  const [transcribeError, setTranscribeError] = useState<string | null>(null)
+  const rec = useVoiceRecorder()
+
   const bodyTextareaRef = useRef<HTMLTextAreaElement>(null)
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -79,7 +86,7 @@ export default function EntryDetail({ initialEntry }: Props) {
   function scheduleAutoSave(title: string, body: string, mood: number | null) {
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     autoSaveTimer.current = setTimeout(() => {
-      if (!body.trim()) return
+      if (!body.trim() && !entry.audio_path) return
       updateEntry.mutate({
         id: entry.id,
         title: title.trim() || undefined,
@@ -132,6 +139,65 @@ export default function EntryDetail({ initialEntry }: Props) {
   async function handleDelete() {
     await deleteEntry.mutateAsync(entry.id)
     router.replace('/journal')
+  }
+
+  async function handleTranscribe() {
+    setTranscribing(true)
+    setTranscribeError(null)
+    try {
+      const res = await fetch(`/api/journal/${entry.id}/transcribe`, { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Transcription failed')
+      setTranscript(json.transcript)
+      setShowTranscript(true)
+      queryClient.invalidateQueries({ queryKey: ['journal', entry.id] })
+    } catch (err) {
+      setTranscribeError(String(err))
+    } finally {
+      setTranscribing(false)
+    }
+  }
+
+  async function refreshConversation() {
+    try {
+      const res = await fetch(`/api/journal/${entry.id}`)
+      if (!res.ok) return
+      const fresh: JournalEntry = await res.json()
+      setConversation(fresh.conversation ?? [])
+      queryClient.setQueryData(['journal', entry.id], fresh)
+    } catch { /* keep local state */ }
+  }
+
+  async function handleVoiceReply() {
+    const file = rec.toFile()
+    if (!file || isReplying) return
+    setIsReplying(true)
+    setStreamingReply('')
+    setReplyError(null)
+
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch(`/api/journal/${entry.id}/reply`, { method: 'POST', body: fd })
+      if (!res.ok || !res.body) throw new Error(await res.text() || 'Failed')
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        setStreamingReply(prev => prev + decoder.decode(value, { stream: true }))
+      }
+
+      setStreamingReply('')
+      rec.reset()
+      // Server holds the transcript + signed audio URL for the new messages
+      await refreshConversation()
+    } catch (err) {
+      setReplyError(String(err))
+    } finally {
+      setIsReplying(false)
+    }
   }
 
   async function handleReply() {
@@ -243,7 +309,7 @@ export default function EntryDetail({ initialEntry }: Props) {
             </button>
             <button
               onClick={handleSave}
-              disabled={updateEntry.isPending || !editBody.trim()}
+              disabled={updateEntry.isPending || (!editBody.trim() && !entry.audio_path)}
               className="px-1 py-2 text-sm font-semibold text-white disabled:text-zinc-600 active:opacity-70"
             >
               {updateEntry.isPending ? 'Saving…' : 'Save'}
@@ -265,6 +331,37 @@ export default function EntryDetail({ initialEntry }: Props) {
         />
 
         <div className="mt-3 mb-4 border-b border-zinc-800" />
+
+        {entry.audio_url && (
+          <div className="mb-5 rounded-2xl bg-zinc-900 px-4 py-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-zinc-500">🎙️ Voice note</p>
+            <audio controls src={entry.audio_url} className="w-full" />
+            {transcribeError && <p className="mt-2 text-xs text-red-400">{transcribeError}</p>}
+            <div className="mt-2">
+              {transcript ? (
+                <>
+                  <button
+                    onClick={() => setShowTranscript(v => !v)}
+                    className="text-xs text-zinc-500 underline active:opacity-70"
+                  >
+                    {showTranscript ? 'Hide transcript' : 'Show transcript'}
+                  </button>
+                  {showTranscript && (
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-zinc-400">{transcript}</p>
+                  )}
+                </>
+              ) : (
+                <button
+                  onClick={handleTranscribe}
+                  disabled={transcribing}
+                  className="text-xs text-zinc-500 underline active:opacity-70 disabled:opacity-50"
+                >
+                  {transcribing ? 'Transcribing…' : 'Generate transcript'}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         <textarea
           ref={bodyTextareaRef}
@@ -341,7 +438,14 @@ export default function EntryDetail({ initialEntry }: Props) {
                     <div key={i} className={msg.role === 'user' ? 'text-right' : ''}>
                       {msg.role === 'user' ? (
                         <div className="inline-block bg-white/8 rounded-2xl px-4 py-3 text-sm text-white max-w-[85%] text-left">
-                          {msg.content}
+                          {msg.audio_url && (
+                            <audio controls src={msg.audio_url} className="mb-2 w-full min-w-[220px]" />
+                          )}
+                          {msg.audio_url ? (
+                            <span className="text-xs italic text-white/60">{msg.content}</span>
+                          ) : (
+                            msg.content
+                          )}
                         </div>
                       ) : (
                         <div>
@@ -375,28 +479,69 @@ export default function EntryDetail({ initialEntry }: Props) {
               )}
 
               {/* Reply input */}
-              <div className="mt-6 flex gap-3 items-end">
-                <textarea
-                  value={replyText}
-                  onChange={e => setReplyText(e.target.value)}
-                  placeholder="Reply..."
-                  rows={2}
-                  className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-white/25 resize-none focus:outline-none focus:border-white/20"
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      handleReply()
-                    }
-                  }}
-                />
-                <button
-                  onClick={handleReply}
-                  disabled={!replyText.trim() || isReplying}
-                  className="px-4 py-3 rounded-2xl bg-white/10 text-sm text-white disabled:opacity-30 transition-opacity"
-                >
-                  {isReplying ? '…' : 'Send'}
-                </button>
-              </div>
+              {rec.error && <p className="mt-3 text-xs text-red-400">{rec.error}</p>}
+              {rec.recording ? (
+                <div className="mt-6 flex items-center justify-between rounded-2xl bg-white/5 border border-white/10 px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
+                    <span className="text-sm tabular-nums text-white">{formatElapsed(rec.elapsed)}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button onClick={rec.reset} className="text-xs text-zinc-500 underline active:opacity-70">Cancel</button>
+                    <button
+                      onClick={rec.stop}
+                      className="rounded-full bg-white px-4 py-1.5 text-xs font-semibold text-black active:opacity-80"
+                    >
+                      Stop
+                    </button>
+                  </div>
+                </div>
+              ) : rec.previewUrl ? (
+                <div className="mt-6 space-y-2 rounded-2xl bg-white/5 border border-white/10 px-4 py-3">
+                  <audio controls src={rec.previewUrl} className="w-full" />
+                  <div className="flex items-center justify-end gap-4">
+                    <button onClick={rec.reset} className="text-xs text-zinc-500 underline active:opacity-70">Discard</button>
+                    <button
+                      onClick={handleVoiceReply}
+                      disabled={isReplying}
+                      className="rounded-full bg-white px-4 py-1.5 text-xs font-semibold text-black disabled:opacity-50 active:opacity-80"
+                    >
+                      {isReplying ? 'Sending…' : 'Send voice reply'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-6 flex gap-3 items-end">
+                  <textarea
+                    value={replyText}
+                    onChange={e => setReplyText(e.target.value)}
+                    placeholder="Reply..."
+                    rows={2}
+                    className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-white/25 resize-none focus:outline-none focus:border-white/20"
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        handleReply()
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={rec.start}
+                    disabled={isReplying}
+                    className="px-3 py-3 rounded-2xl bg-white/10 text-base disabled:opacity-30"
+                    title="Record a voice reply"
+                  >
+                    🎙️
+                  </button>
+                  <button
+                    onClick={handleReply}
+                    disabled={!replyText.trim() || isReplying}
+                    className="px-4 py-3 rounded-2xl bg-white/10 text-sm text-white disabled:opacity-30 transition-opacity"
+                  >
+                    {isReplying ? '…' : 'Send'}
+                  </button>
+                </div>
+              )}
             </>
           ) : (
             <>

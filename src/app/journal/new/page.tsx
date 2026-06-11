@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { useCreateEntry } from '@/features/journal/mutations'
+import { useVoiceRecorder, formatElapsed } from '@/features/journal/useVoiceRecorder'
 
 const MOOD_EMOJIS: Record<number, string> = {
   1: '😔',
@@ -22,7 +23,10 @@ export default function NewJournalEntryPage() {
   const [mood, setMood] = useState<number | null>(null)
   const [today, setToday] = useState('')
   const [todayDisplay, setTodayDisplay] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
+  const rec = useVoiceRecorder()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -37,21 +41,34 @@ export default function NewJournalEntryPage() {
   }
 
   async function handleSave() {
-    if (!body.trim() || !today) return
+    if ((!body.trim() && !rec.blob) || !today) return
+    setSaveError(null)
     try {
       const entry = await createEntry.mutateAsync({
         date: today,
         body: body.trim(),
         mood,
       })
+      const file = rec.toFile()
+      if (file) {
+        setUploading(true)
+        const fd = new FormData()
+        fd.append('file', file)
+        const res = await fetch(`/api/journal/${entry.id}/audio`, { method: 'POST', body: fd })
+        if (!res.ok) {
+          setSaveError('Entry saved, but the recording failed to upload. You can re-record from the entry later.')
+        }
+      }
       router.replace(`/journal/${entry.id}`)
     } catch (err) {
       console.error('Save failed:', err)
-      // error shown via createEntry.isError
+      setSaveError(String(err))
+    } finally {
+      setUploading(false)
     }
   }
 
-  const canSave = body.trim().length > 0 && !createEntry.isPending
+  const canSave = (body.trim().length > 0 || !!rec.blob) && !createEntry.isPending && !uploading && !rec.recording
 
   return (
     <div className="flex min-h-screen flex-col bg-black">
@@ -68,7 +85,7 @@ export default function NewJournalEntryPage() {
             disabled={!canSave}
             className={`px-1 py-2 text-sm font-semibold ${canSave ? 'text-white active:opacity-70' : 'text-zinc-600'}`}
           >
-            {createEntry.isPending ? 'Saving…' : 'Save'}
+            {createEntry.isPending || uploading ? 'Saving…' : 'Save'}
           </button>
         </div>
       </div>
@@ -81,6 +98,48 @@ export default function NewJournalEntryPage() {
 
       <div className="flex-1 overflow-y-auto px-6 pt-5 pb-36" style={{ marginTop: 'calc(env(safe-area-inset-top) + 56px)' }}>
         <p className="mb-4 text-xl font-semibold text-white">{todayDisplay}</p>
+
+        {/* Voice note */}
+        <div className="mb-5 rounded-2xl bg-zinc-900 px-4 py-3">
+          {rec.error && <p className="mb-2 text-xs text-red-400">{rec.error}</p>}
+          {saveError && <p className="mb-2 text-xs text-red-400">{saveError}</p>}
+          {!rec.recording && !rec.blob && (
+            <button
+              onClick={rec.start}
+              className="flex w-full items-center gap-3 py-1 text-sm text-zinc-400 active:opacity-70"
+            >
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800 text-base">🎙️</span>
+              Record a voice note
+            </button>
+          )}
+          {rec.recording && (
+            <div className="flex items-center justify-between py-1">
+              <div className="flex items-center gap-3">
+                <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
+                <span className="text-sm tabular-nums text-white">{formatElapsed(rec.elapsed)}</span>
+              </div>
+              <button
+                onClick={rec.stop}
+                className="rounded-full bg-white px-4 py-1.5 text-xs font-semibold text-black active:opacity-80"
+              >
+                Stop
+              </button>
+            </div>
+          )}
+          {!rec.recording && rec.previewUrl && (
+            <div className="space-y-2">
+              <audio controls src={rec.previewUrl} className="w-full" />
+              <div className="flex gap-4">
+                <button onClick={() => { rec.reset(); rec.start() }} className="text-xs text-zinc-500 underline active:opacity-70">
+                  Re-record
+                </button>
+                <button onClick={rec.reset} className="text-xs text-zinc-500 underline active:opacity-70">
+                  Remove
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         <textarea
           ref={textareaRef}

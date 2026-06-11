@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { CreateEntrySchema } from '@/features/journal/types'
+import { generateTitle } from '@/lib/journalTitle'
+
+export const maxDuration = 30
 
 export async function GET() {
   const authClient = await createClient()
@@ -31,13 +34,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
 
+  // Untitled text entries get a short generated title (voice-only entries get one after transcription)
+  let title = parsed.data.title ?? null
+  if (!title && parsed.data.body.trim()) {
+    title = await generateTitle(parsed.data.body)
+  }
+
   const db = createServiceClient()
   const { data, error } = await db
     .from('journal_entries')
     .insert({
       user_id: user.id,
       date: parsed.data.date,
-      title: parsed.data.title ?? null,
+      title,
       body: parsed.data.body,
       mood: parsed.data.mood ?? null,
     })
