@@ -15,7 +15,11 @@ async function refreshWhoopToken(db: ReturnType<typeof import('@/lib/supabase/se
       client_secret: process.env.WHOOP_CLIENT_SECRET!,
     }),
   })
-  if (!res.ok) return null
+  if (!res.ok) {
+    const body = await res.text().catch(() => res.statusText)
+    console.error('[whoop] refresh token failed:', res.status, body)
+    return null
+  }
   const tokens = await res.json()
   const expiresAt = new Date(Date.now() + (tokens.expires_in ?? 3600) * 1000).toISOString()
   await db.from('wearable_tokens').update({

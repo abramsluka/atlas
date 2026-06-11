@@ -25,8 +25,9 @@ export async function GET() {
     tokenScopes = 'could not decode JWT'
   }
 
-  // Refresh if expired
+  // Refresh if expired — save back to DB so the data route benefits too
   let accessToken = tokenRow.access_token
+  let refreshError: string | null = null
   if (new Date(tokenRow.expires_at) <= new Date()) {
     const res = await fetch('https://api.prod.whoop.com/oauth/oauth2/token', {
       method: 'POST',
@@ -41,6 +42,22 @@ export async function GET() {
     if (res.ok) {
       const tokens = await res.json()
       accessToken = tokens.access_token
+      const expiresAt = new Date(Date.now() + (tokens.expires_in ?? 3600) * 1000).toISOString()
+      await db.from('wearable_tokens').update({
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        expires_at: expiresAt,
+      }).eq('user_id', user.id).eq('provider', 'whoop')
+    } else {
+      refreshError = await res.text().catch(() => res.statusText)
+      console.error('[whoop/debug] refresh failed:', res.status, refreshError)
+      return NextResponse.json({
+        token_expires_at: tokenRow.expires_at,
+        token_expired: true,
+        refresh_failed: true,
+        refresh_error: refreshError,
+        diagnosis: 'Token expired and refresh_token is invalid. Use Reconnect Whoop in settings.',
+      })
     }
   }
 

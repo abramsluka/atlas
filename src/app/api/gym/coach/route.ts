@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
   )
   const checkinTrainingDays = new Set(
     checkins
-      .filter(c => c.evening_actual_training && c.evening_actual_training.trim())
+      .filter(c => c.evening_actual_training === true)
       .map(c => c.date)
   )
   const allTrainingDays = new Set([...gymDays, ...checkinTrainingDays])
@@ -83,7 +83,8 @@ export async function POST(request: NextRequest) {
     const label = i === 0 ? 'Today' : i === 1 ? 'Yesterday' : formatInTimeZone(subDays(now, i), TZ, 'EEE MMM d')
     const checkin = checkins.find(c => c.date === d)
     const hadGym = gymDays.has(d)
-    const evening = checkin?.evening_actual_training?.trim()
+    const evening = checkin?.evening_reflection?.trim() || null
+    const didCheckinTrain = checkin?.evening_actual_training === true
 
     if (hadGym && evening) {
       recentActivity.push(`${label}: lifted + ${evening}`)
@@ -91,6 +92,8 @@ export async function POST(request: NextRequest) {
       recentActivity.push(`${label}: lifted weights`)
     } else if (evening) {
       recentActivity.push(`${label}: ${evening}`)
+    } else if (didCheckinTrain) {
+      recentActivity.push(`${label}: trained (no details logged)`)
     } else if (i < 5) {
       recentActivity.push(`${label}: nothing logged`)
     }
