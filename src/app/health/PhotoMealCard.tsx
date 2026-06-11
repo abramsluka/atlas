@@ -1,0 +1,352 @@
+'use client'
+
+import { useState, useCallback } from 'react'
+import { useRefinePhotoMeal, useFavoriteFoodLog, useDeleteFoodLog, useUpdateFoodLog } from '@/features/food/mutations'
+import type { FoodLog, PhotoRefineQuestion, PhotoRefineAnswer } from '@/features/food/types'
+
+type AiRaw = {
+  refine?: {
+    questions: PhotoRefineQuestion[]
+    answers: PhotoRefineAnswer[]
+  }
+}
+
+function getRefineData(meal: FoodLog) {
+  const raw = (meal.ai_raw ?? {}) as AiRaw
+  return raw.refine ?? { questions: [], answers: [] }
+}
+
+const chipBase = 'rounded-xl border px-3 py-2.5 text-sm text-left transition-colors'
+const chipActive = 'border-emerald-300/60 bg-emerald-300/10 text-white'
+const chipIdle = 'border-white/[0.12] bg-white/[0.03] text-zinc-300 active:opacity-70'
+const chipAnswered = 'border-white/[0.06] bg-white/[0.02] text-zinc-600 cursor-default'
+const chipAnsweredSelected = 'border-emerald-300/30 bg-emerald-300/[0.06] text-zinc-400 cursor-default'
+
+export function PhotoMealCard({
+  meal: initialMeal,
+  today,
+  onEdit,
+}: {
+  meal: FoodLog
+  today: string
+  onEdit: () => void
+}) {
+  const [meal, setMeal] = useState(initialMeal)
+  const refineData = getRefineData(meal)
+  const isOpen = meal.refine_status === 'open'
+
+  const [expanded, setExpanded] = useState(isOpen)
+  const [questions, setQuestions] = useState<PhotoRefineQuestion[]>(refineData.questions)
+  const [answers, setAnswers] = useState<PhotoRefineAnswer[]>(refineData.answers)
+  const [submitting, setSubmitting] = useState(false)
+  const [otherOpen, setOtherOpen] = useState(false)
+  const [otherText, setOtherText] = useState('')
+  const [done, setDone] = useState(!isOpen)
+  const [noteOpen, setNoteOpen] = useState(false)
+  const [noteText, setNoteText] = useState(meal.notes ?? '')
+  const [favorited, setFavorited] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
+  const refine = useRefinePhotoMeal()
+  const favorite = useFavoriteFoodLog()
+  const deleteMeal = useDeleteFoodLog()
+  const updateMeal = useUpdateFoodLog()
+
+  const currentQuestionIndex = answers.length
+  const currentQuestion = !done && questions[currentQuestionIndex]
+
+  const handleAnswer = useCallback(async (answer: string) => {
+    if (submitting || !currentQuestion) return
+    setSubmitting(true)
+    setOtherOpen(false)
+    setOtherText('')
+
+    try {
+      const result = await refine.mutateAsync({
+        id: meal.id,
+        date: today,
+        question: currentQuestion.question,
+        answer,
+      })
+
+      if (result.status === 'question') {
+        setAnswers(prev => [...prev, { question: currentQuestion.question, answer }])
+        setQuestions(prev => [...prev, result.question])
+      } else {
+        setAnswers(prev => [...prev, { question: currentQuestion.question, answer }])
+        setMeal(prev => ({
+          ...prev,
+          calories: result.calories,
+          protein_g: result.protein_g,
+          carbs_g: result.carbs_g,
+          fat_g: result.fat_g,
+          confidence: result.confidence as FoodLog['confidence'],
+          notes: result.notes,
+          refine_status: 'done',
+        }))
+        setDone(true)
+      }
+    } catch {
+      // silent — the mutation logs to console
+    } finally {
+      setSubmitting(false)
+    }
+  }, [submitting, currentQuestion, refine, meal.id, today])
+
+  const handleSkip = useCallback(async () => {
+    await handleAnswer('[skipped]')
+  }, [handleAnswer])
+
+  const handleFavorite = async () => {
+    if (favorited) return
+    try {
+      await favorite.mutateAsync({ id: meal.id })
+      setFavorited(true)
+    } catch {
+      // silent
+    }
+  }
+
+  const handleSaveNote = async () => {
+    try {
+      await updateMeal.mutateAsync({
+        id: meal.id,
+        date: today,
+        updates: { notes: noteText.trim() || null },
+      })
+      setMeal(prev => ({ ...prev, notes: noteText.trim() || null }))
+      setNoteOpen(false)
+    } catch {
+      // silent
+    }
+  }
+
+  const handleDelete = async () => {
+    try {
+      await deleteMeal.mutateAsync({ id: meal.id, date: today })
+    } catch {
+      setConfirmDelete(false)
+    }
+  }
+
+  const showEstimateBadge = !done || meal.confidence !== 'high'
+
+  return (
+    <div className="rounded-[10px] bg-white/[0.035] overflow-hidden">
+      {/* Header row */}
+      <div
+        className="flex items-center gap-3 px-3 py-2.5 cursor-pointer"
+        onClick={() => setExpanded(e => !e)}
+      >
+        {meal.photo_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={meal.photo_url} alt="" className="h-10 w-10 shrink-0 rounded-lg object-cover" />
+        ) : (
+          <div className="h-10 w-10 shrink-0 rounded-lg bg-white/[0.05] flex items-center justify-center text-sm text-zinc-500">
+            📷
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="truncate text-sm font-semibold text-white">{meal.item_name}</p>
+            {showEstimateBadge && !done && (
+              <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-300 border border-emerald-300/30">
+                ESTIMATE
+              </span>
+            )}
+          </div>
+          <p className="text-[10px] text-zinc-500">
+            {Math.round(Number(meal.protein_g))}g P
+            {' · '}
+            {Math.round(Number(meal.carbs_g))}g C
+            {meal.fat_g != null ? ` · ${Math.round(Number(meal.fat_g))}g F` : ''}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-sm font-bold text-[#6ee7b7]">{meal.calories?.toLocaleString()} cal</span>
+          <svg
+            className={`h-4 w-4 text-zinc-600 transition-transform ${expanded ? 'rotate-180' : ''}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </div>
+
+      {/* Expanded body */}
+      {expanded && (
+        <div className="px-3 pb-3 space-y-3">
+          {/* Refine questions */}
+          {(questions.length > 0 || !done) && (
+            <div className="border-l-2 border-[#6ee7b7] pl-3 space-y-4">
+              {questions.map((q, i) => {
+                const isAnswered = i < answers.length
+                const isActive = i === currentQuestionIndex && !done
+                const selectedAnswer = answers[i]?.answer
+
+                if (i > currentQuestionIndex) return null
+
+                return (
+                  <div key={i} className="space-y-2">
+                    <p className="text-xs italic text-zinc-400 leading-relaxed">
+                      {q.reasoning}
+                      {q.calorie_delta != null ? ` (±${q.calorie_delta} kcal)` : ''}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {q.options.map(opt => {
+                        if (isAnswered) {
+                          const isSelected = selectedAnswer === opt
+                          return (
+                            <span key={opt} className={`${chipBase} ${isSelected ? chipAnsweredSelected : chipAnswered}`}>
+                              {opt}
+                            </span>
+                          )
+                        }
+                        return (
+                          <button
+                            key={opt}
+                            disabled={submitting}
+                            onClick={() => handleAnswer(opt)}
+                            className={`${chipBase} ${chipIdle} disabled:opacity-50`}
+                          >
+                            {opt}
+                          </button>
+                        )
+                      })}
+                      {isActive && !otherOpen && (
+                        <button
+                          disabled={submitting}
+                          onClick={() => setOtherOpen(true)}
+                          className={`${chipBase} ${chipIdle} disabled:opacity-50`}
+                        >
+                          Something else
+                        </button>
+                      )}
+                    </div>
+                    {isActive && otherOpen && (
+                      <div className="flex gap-2">
+                        <input
+                          autoFocus
+                          value={otherText}
+                          onChange={e => setOtherText(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' && otherText.trim()) handleAnswer(otherText.trim())
+                          }}
+                          placeholder="Describe it…"
+                          className="flex-1 rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2 text-sm text-white placeholder-zinc-600 outline-none focus:border-white/40"
+                        />
+                        <button
+                          disabled={!otherText.trim() || submitting}
+                          onClick={() => otherText.trim() && handleAnswer(otherText.trim())}
+                          className="rounded-[10px] border border-white/[0.12] bg-white/[0.04] px-3 py-2 text-xs font-semibold text-zinc-300 disabled:opacity-40"
+                        >
+                          OK
+                        </button>
+                      </div>
+                    )}
+                    {isActive && (
+                      <button
+                        onClick={handleSkip}
+                        disabled={submitting}
+                        className="text-xs text-zinc-600 disabled:opacity-40"
+                      >
+                        Don't know · skip
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+              {submitting && (
+                <p className="text-xs text-zinc-500">Refining estimate…</p>
+              )}
+              {done && (
+                <p className="text-xs text-zinc-500">Estimate refined ✓</p>
+              )}
+            </div>
+          )}
+
+          {/* Footer actions */}
+          {confirmDelete ? (
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs text-zinc-400">Delete this meal?</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setConfirmDelete(false)}
+                  className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDelete}
+                  className="rounded-lg bg-red-500/20 px-3 py-1.5 text-xs font-medium text-red-400"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-4 pt-0.5">
+              <button
+                onClick={e => { e.stopPropagation(); setNoteOpen(n => !n) }}
+                className="text-xs text-zinc-500 active:opacity-70"
+              >
+                + {meal.notes && !noteOpen ? 'edit note' : 'add a note'}
+              </button>
+              <button
+                onClick={handleFavorite}
+                disabled={favorite.isPending}
+                className={`text-xs transition-colors disabled:opacity-40 ${favorited ? 'text-yellow-400' : 'text-zinc-500'}`}
+              >
+                {favorited ? '⭐ saved' : '☆ favorite'}
+              </button>
+              <button
+                onClick={onEdit}
+                className="text-xs text-zinc-500 active:opacity-70"
+              >
+                edit
+              </button>
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="ml-auto text-xs text-zinc-600 hover:text-red-400 transition-colors"
+              >
+                ×
+              </button>
+            </div>
+          )}
+
+          {noteOpen && (
+            <div className="space-y-2">
+              <textarea
+                autoFocus
+                value={noteText}
+                onChange={e => setNoteText(e.target.value)}
+                placeholder="Add a note about this meal…"
+                rows={2}
+                className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white placeholder-zinc-600 outline-none focus:border-white/40 resize-none"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setNoteOpen(false)}
+                  className="flex-1 rounded-xl border border-white/[0.12] py-2 text-xs font-semibold text-zinc-400"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveNote}
+                  disabled={updateMeal.isPending}
+                  className="flex-1 rounded-xl py-2 text-xs font-bold text-[#0a0a0b] disabled:opacity-40"
+                  style={{ background: 'linear-gradient(180deg, #fff 0%, #e8e5dd 100%)' }}
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}

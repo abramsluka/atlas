@@ -7,7 +7,10 @@ const UpdateSchema = z.object({
   calories: z.number().int().min(0).optional(),
   protein_g: z.number().min(0).optional(),
   carbs_g: z.number().min(0).optional(),
+  fat_g: z.number().min(0).nullable().optional(),
   notes: z.string().max(500).nullable().optional(),
+  refine_status: z.enum(['open', 'done']).optional(),
+  user_description: z.string().max(500).nullable().optional(),
 })
 
 export async function PATCH(

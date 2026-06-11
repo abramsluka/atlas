@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getOpenAI } from '@/lib/openai'
-import { format, subHours } from 'date-fns'
-import type { FoodEstimate } from '@/features/food/types'
-
-function rolledDate(now: Date): string {
-  const adjusted = now.getHours() < 6 ? subHours(now, 6) : now
-  return format(adjusted, 'yyyy-MM-dd')
-}
+import { rolledDate } from '@/features/food/date'
+import type { FoodEstimate, PhotoRefineQuestion } from '@/features/food/types'
 
 export async function GET(request: NextRequest) {
   const authClient = await createClient()
@@ -28,6 +23,7 @@ export async function GET(request: NextRequest) {
 
   const withUrls = await Promise.all(
     (logs ?? []).map(async (log) => {
+      if (!log.storage_path) return { ...log, photo_url: null }
       const { data } = await db.storage
         .from('food-photos')
         .createSignedUrl(log.storage_path, 3600)
@@ -79,7 +75,7 @@ export async function POST(request: NextRequest) {
         {
           role: 'system',
           content:
-            'You are a food calorie estimator. Look at the photo(s) and return your best estimate of calories, protein in grams, and carbs in grams for the food shown. Multiple photos may show the same meal from different angles — combine them for a better estimate. Be honest about confidence — "high" for clearly visible single items with known portions, "medium" for typical restaurant meals, "low" for ambiguous or partially visible food. Keep item_name short (under 80 chars). Return JSON only, no prose. Required fields: item_name, calories (integer), protein_g (number), carbs_g (number), confidence ("low"|"medium"|"high"), notes (string).',
+            'You are a food calorie estimator. Look at the photo(s) and return your best estimate for the food shown. Multiple photos may show the same meal from different angles — combine them for a better estimate.\n\nBe honest about confidence — "high" for clearly visible single items with unambiguous portions, "medium" for typical restaurant meals, "low" for ambiguous or partially visible food.\n\nReturn JSON only, no prose. Required fields:\n- item_name (string, max 80 chars)\n- calories (integer)\n- protein_g (number)\n- carbs_g (number)\n- fat_g (number)\n- confidence ("low"|"medium"|"high")\n- notes (string, one sentence on what drove the estimate)\n- refine_question (object or null):\n  - question (string): one follow-up question to sharpen accuracy\n  - reasoning (string): why this matters, e.g. "Portion size could shift this by ±80 kcal"\n  - options (array of 3-5 short, realistic tappable choices for this specific food)\n  - calorie_delta (number): rough kcal range the answer could change\n\nSet refine_question to null only when confidence is already "high" and the portion is completely unambiguous. Otherwise always provide one.',
         },
         {
           role: 'user',
@@ -99,14 +95,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'AI returned invalid estimate' }, { status: 422 })
     }
 
+    const confidence: 'low' | 'medium' | 'high' = ['low', 'medium', 'high'].includes(parsed.confidence)
+      ? parsed.confidence
+      : 'medium'
+
+    let refineQuestion: PhotoRefineQuestion | null = null
+    if (parsed.refine_question && typeof parsed.refine_question === 'object') {
+      const rq = parsed.refine_question
+      const options = Array.isArray(rq.options)
+        ? rq.options.map((o: unknown) => String(o)).slice(0, 5)
+        : []
+      if (rq.question && options.length >= 2) {
+        refineQuestion = {
+          question: String(rq.question),
+          reasoning: String(rq.reasoning ?? ''),
+          options,
+          calorie_delta: rq.calorie_delta != null ? Number(rq.calorie_delta) : undefined,
+        }
+      }
+    }
+
     estimate = {
       item_name: String(parsed.item_name).slice(0, 80),
       calories: Math.round(Number(parsed.calories)),
       protein_g: Number(parsed.protein_g) || 0,
       carbs_g: Number(parsed.carbs_g) || 0,
-      confidence: ['low', 'medium', 'high'].includes(parsed.confidence)
-        ? parsed.confidence
-        : 'medium',
+      fat_g: parsed.fat_g != null ? Number(parsed.fat_g) : null,
+      confidence,
       notes: String(parsed.notes ?? ''),
     }
 
@@ -124,6 +139,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `Upload failed: ${uploadError.message}` }, { status: 500 })
     }
 
+    const aiRaw = {
+      initial: parsed,
+      refine: {
+        questions: refineQuestion ? [refineQuestion] : [],
+        answers: [],
+      },
+    }
+
     const { data: inserted, error: insertError } = await db
       .from('food_logs')
       .insert({
@@ -134,9 +157,11 @@ export async function POST(request: NextRequest) {
         calories: estimate.calories,
         protein_g: estimate.protein_g,
         carbs_g: estimate.carbs_g,
+        fat_g: estimate.fat_g,
         confidence: estimate.confidence,
-        ai_raw: JSON.parse(raw),
+        ai_raw: aiRaw,
         notes: estimate.notes || null,
+        refine_status: refineQuestion ? 'open' : 'done',
         taken_at: now.toISOString(),
       })
       .select()

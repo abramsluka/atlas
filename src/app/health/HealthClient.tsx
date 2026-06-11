@@ -26,6 +26,8 @@ import {
 import { useFoodLogs } from '@/features/food/queries'
 import { useLogFood, useUpdateFoodLog, useDeleteFoodLog, useCalculateCalorieTarget } from '@/features/food/mutations'
 import { resizeImage } from '@/features/food/resize'
+import { FoodWizardSheet, BarcodeFlow, FrequentsRow } from './FoodEntry'
+import { PhotoMealCard } from './PhotoMealCard'
 import type { FoodLog } from '@/features/food/types'
 import type {
   Supplement,
@@ -1724,6 +1726,7 @@ function MealEditSheet({
   const [calories, setCalories] = useState(String(meal.calories ?? ''))
   const [protein, setProtein] = useState(String(meal.protein_g ?? ''))
   const [carbs, setCarbs] = useState(String(meal.carbs_g ?? ''))
+  const [fat, setFat] = useState(String(meal.fat_g ?? ''))
   const [notes, setNotes] = useState(meal.notes ?? '')
 
   return (
@@ -1746,18 +1749,22 @@ function MealEditSheet({
           value={name}
           onChange={e => setName(e.target.value)}
         />
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-4 gap-2">
           <div>
             <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Cal</label>
             <input type="number" inputMode="numeric" min="0" placeholder="0" onFocus={e => e.target.select()} className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white outline-none focus:border-white/40" value={calories} onChange={e => setCalories(e.target.value)} />
           </div>
           <div>
-            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Protein (g)</label>
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">P (g)</label>
             <input type="number" inputMode="decimal" min="0" placeholder="0" onFocus={e => e.target.select()} className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white outline-none focus:border-white/40" value={protein} onChange={e => setProtein(e.target.value)} />
           </div>
           <div>
-            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Carbs (g)</label>
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">C (g)</label>
             <input type="number" inputMode="decimal" min="0" placeholder="0" onFocus={e => e.target.select()} className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white outline-none focus:border-white/40" value={carbs} onChange={e => setCarbs(e.target.value)} />
+          </div>
+          <div>
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">F (g)</label>
+            <input type="number" inputMode="decimal" min="0" placeholder="0" onFocus={e => e.target.select()} className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white outline-none focus:border-white/40" value={fat} onChange={e => setFat(e.target.value)} />
           </div>
         </div>
         <textarea
@@ -1778,6 +1785,7 @@ function MealEditSheet({
                 calories: calories ? parseInt(calories) : meal.calories,
                 protein_g: protein ? parseFloat(protein) : meal.protein_g,
                 carbs_g: carbs ? parseFloat(carbs) : meal.carbs_g,
+                fat_g: fat ? parseFloat(fat) : meal.fat_g,
                 notes: notes.trim() || null,
               })
             }}
@@ -1955,6 +1963,10 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [pendingPreviews, setPendingPreviews] = useState<string[]>([])
   const [description, setDescription] = useState('')
+  const [wizardKind, setWizardKind] = useState<'food' | 'drink' | null>(null)
+  const [scanOpen, setScanOpen] = useState(false)
+  const [waterNote, setWaterNote] = useState<number | null>(null)
+  const labelHintRef = useRef(false)
   const updateProfile = useUpdateHealthProfile()
 
   const today = (() => {
@@ -1990,8 +2002,19 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
       if (prev.length >= 3) return prev
       return [...prev, URL.createObjectURL(file)]
     })
-    if (pendingFiles.length === 0) setDescription('')
+    if (pendingFiles.length === 0) {
+      // Barcode fallback "snap the label" pre-fills a hint for the vision model
+      setDescription(labelHintRef.current ? 'This photo shows a nutrition facts label — read the values on it exactly.' : '')
+    }
+    labelHintRef.current = false
   }, [pendingFiles.length])
+
+  const handleManualSaved = useCallback((res: { water_logged: boolean; volume_oz: number | null }) => {
+    if (res.water_logged && res.volume_oz) {
+      setWaterNote(res.volume_oz)
+      setTimeout(() => setWaterNote(null), 4000)
+    }
+  }, [])
 
   const removePendingPhoto = useCallback((index: number) => {
     setPendingFiles(prev => prev.filter((_, i) => i !== index))
@@ -2074,8 +2097,8 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
           </div>
         )}
 
-        {/* Add food button */}
-        <div>
+        {/* Entry buttons */}
+        <div className="space-y-2">
           <input
             ref={fileInputRef}
             type="file"
@@ -2089,16 +2112,49 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
             disabled={uploading}
             className="w-full rounded-xl border border-white/[0.12] py-2.5 text-sm font-semibold text-white disabled:opacity-50 hover:bg-white/[0.04] transition-colors"
           >
-            {uploading ? 'Estimating…' : '+ Add food'}
+            {uploading ? 'Estimating…' : '📷 Snap a meal'}
           </button>
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              onClick={() => setWizardKind('food')}
+              className="rounded-xl bg-white/[0.04] border border-white/[0.08] py-2 text-xs font-semibold text-zinc-300 hover:bg-white/[0.07] transition-colors"
+            >
+              Add food
+            </button>
+            <button
+              onClick={() => setWizardKind('drink')}
+              className="rounded-xl bg-white/[0.04] border border-white/[0.08] py-2 text-xs font-semibold text-zinc-300 hover:bg-white/[0.07] transition-colors"
+            >
+              Quick drink
+            </button>
+            <button
+              onClick={() => setScanOpen(true)}
+              className="rounded-xl bg-white/[0.04] border border-white/[0.08] py-2 text-xs font-semibold text-zinc-300 hover:bg-white/[0.07] transition-colors"
+            >
+              ▮▮ Scan
+            </button>
+          </div>
         </div>
+
+        {waterNote != null && (
+          <p className="text-xs text-sky-300">+{waterNote} oz added to water tracker</p>
+        )}
+
+        {/* Frequents */}
+        <FrequentsRow onSaved={handleManualSaved} />
 
         {/* Meal list */}
         {!isLoading && (meals ?? []).length > 0 && (
           <div className="space-y-2 pt-1">
             {(meals ?? []).map(meal => (
               <div key={meal.id}>
-                {confirmDeleteId === meal.id ? (
+                {meal.source === 'photo' ? (
+                  <PhotoMealCard
+                    meal={meal}
+                    today={today}
+                    onEdit={() => setEditingMeal(meal)}
+                  />
+                ) : confirmDeleteId === meal.id ? (
                   <div className="flex items-center justify-between gap-3 rounded-[10px] bg-white/[0.035] px-3 py-2.5">
                     <span className="text-xs text-zinc-400">Delete this meal?</span>
                     <div className="flex gap-2">
@@ -2119,10 +2175,9 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
                     className="flex w-full items-center gap-3 rounded-[10px] bg-white/[0.035] px-3 py-2.5 cursor-pointer hover:bg-white/[0.05] transition-colors"
                     onClick={() => setEditingMeal(meal)}
                   >
-                    {meal.photo_url && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={meal.photo_url} alt="" className="h-10 w-10 shrink-0 rounded-lg object-cover" />
-                    )}
+                    <div className="h-10 w-10 shrink-0 rounded-lg bg-white/[0.05] flex items-center justify-center text-sm text-zinc-500">
+                      {meal.source === 'drink' ? '🥤' : meal.source === 'barcode' ? '▮▮' : '⌨'}
+                    </div>
                     <div className="flex-1 min-w-0">
                       <p className="truncate text-sm font-semibold text-white">{meal.item_name}</p>
                       <p className="text-[10px] text-zinc-500">
@@ -2174,6 +2229,27 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
           profile={profile ?? {}}
           onSave={() => setTargetSheetOpen(false)}
           onClose={() => setTargetSheetOpen(false)}
+        />
+      )}
+
+      {wizardKind && (
+        <FoodWizardSheet
+          kind={wizardKind}
+          onClose={() => setWizardKind(null)}
+          onSaved={handleManualSaved}
+        />
+      )}
+
+      {scanOpen && (
+        <BarcodeFlow
+          onClose={() => setScanOpen(false)}
+          onTypeInstead={() => { setScanOpen(false); setWizardKind('food') }}
+          onSnapLabel={() => {
+            setScanOpen(false)
+            labelHintRef.current = true
+            fileInputRef.current?.click()
+          }}
+          onSaved={handleManualSaved}
         />
       )}
 
