@@ -28,6 +28,7 @@ import { useLogFood, useUpdateFoodLog, useDeleteFoodLog, useCalculateCalorieTarg
 import { resizeImage } from '@/features/food/resize'
 import { FoodWizardSheet, BarcodeFlow, FrequentsRow } from './FoodEntry'
 import { PhotoMealCard } from './PhotoMealCard'
+import { FoodCoachSection } from './FoodCoachSection'
 import type { FoodLog } from '@/features/food/types'
 import type {
   Supplement,
@@ -1959,6 +1960,8 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
   const [uploading, setUploading] = useState(false)
   const [editingMeal, setEditingMeal] = useState<FoodLog | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [newlyLoggedId, setNewlyLoggedId] = useState<string | null>(null)
+  const [mealFeedback, setMealFeedback] = useState<Record<string, string>>({})
   const [targetSheetOpen, setTargetSheetOpen] = useState(false)
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [pendingPreviews, setPendingPreviews] = useState<string[]>([])
@@ -2009,12 +2012,31 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
     labelHintRef.current = false
   }, [pendingFiles.length])
 
-  const handleManualSaved = useCallback((res: { water_logged: boolean; volume_oz: number | null }) => {
+  const streamNonPhotoFeedback = useCallback(async (mealId: string) => {
+    try {
+      const res = await fetch(`/api/health/food/${mealId}/coach`, { method: 'POST' })
+      if (!res.ok || !res.body) return
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        setMealFeedback(prev => ({ ...prev, [mealId]: (prev[mealId] ?? '') + decoder.decode(value) }))
+      }
+    } catch (err) {
+      console.error('[FoodSection] non-photo coach error:', err)
+    }
+  }, [])
+
+  const handleManualSaved = useCallback((res: { water_logged: boolean; volume_oz: number | null; id?: string }) => {
     if (res.water_logged && res.volume_oz) {
       setWaterNote(res.volume_oz)
       setTimeout(() => setWaterNote(null), 4000)
     }
-  }, [])
+    if (res.id) {
+      streamNonPhotoFeedback(res.id)
+    }
+  }, [streamNonPhotoFeedback])
 
   const removePendingPhoto = useCallback((index: number) => {
     setPendingFiles(prev => prev.filter((_, i) => i !== index))
@@ -2042,7 +2064,8 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
         fd.append('photo', resized, 'meal.jpg')
       }
       if (description.trim()) fd.append('description', description.trim())
-      await logFood.mutateAsync(fd)
+      const newMeal = await logFood.mutateAsync(fd)
+      setNewlyLoggedId(newMeal.id)
     } catch (err) {
       console.error('Food log error:', err)
     } finally {
@@ -2153,6 +2176,7 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
                     meal={meal}
                     today={today}
                     onEdit={() => setEditingMeal(meal)}
+                    isNew={newlyLoggedId === meal.id}
                   />
                 ) : confirmDeleteId === meal.id ? (
                   <div className="flex items-center justify-between gap-3 rounded-[10px] bg-white/[0.035] px-3 py-2.5">
@@ -2171,34 +2195,48 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
                     </div>
                   </div>
                 ) : (
-                  <div
-                    className="flex w-full items-center gap-3 rounded-[10px] bg-white/[0.035] px-3 py-2.5 cursor-pointer hover:bg-white/[0.05] transition-colors"
-                    onClick={() => setEditingMeal(meal)}
-                  >
-                    <div className="h-10 w-10 shrink-0 rounded-lg bg-white/[0.05] flex items-center justify-center text-sm text-zinc-500">
-                      {meal.source === 'drink' ? '🥤' : meal.source === 'barcode' ? '▮▮' : '⌨'}
+                  <div className="rounded-[10px] bg-white/[0.035] overflow-hidden">
+                    <div
+                      className="flex w-full items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-white/[0.05] transition-colors"
+                      onClick={() => setEditingMeal(meal)}
+                    >
+                      <div className="h-10 w-10 shrink-0 rounded-lg bg-white/[0.05] flex items-center justify-center text-sm text-zinc-500">
+                        {meal.source === 'drink' ? '🥤' : meal.source === 'barcode' ? '▮▮' : '⌨'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="truncate text-sm font-semibold text-white">{meal.item_name}</p>
+                        <p className="text-[10px] text-zinc-500">
+                          {Math.round(Number(meal.protein_g))}g P · {Math.round(Number(meal.carbs_g))}g C · {new Date(meal.taken_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-sm font-bold text-white">{meal.calories?.toLocaleString()} cal</span>
+                        <button
+                          onClick={e => { e.stopPropagation(); setConfirmDeleteId(meal.id) }}
+                          className="text-sm text-zinc-600 hover:text-red-400 transition-colors px-1"
+                        >
+                          ×
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="truncate text-sm font-semibold text-white">{meal.item_name}</p>
-                      <p className="text-[10px] text-zinc-500">
-                        {Math.round(Number(meal.protein_g))}g P · {Math.round(Number(meal.carbs_g))}g C · {new Date(meal.taken_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                    {(mealFeedback[meal.id] || meal.coach_feedback) && (
+                      <p className="px-3 pb-2.5 text-xs italic text-zinc-400 leading-relaxed border-t border-white/[0.05] pt-2">
+                        {mealFeedback[meal.id] || meal.coach_feedback}
                       </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-sm font-bold text-white">{meal.calories?.toLocaleString()} cal</span>
-                      <button
-                        onClick={e => { e.stopPropagation(); setConfirmDeleteId(meal.id) }}
-                        className="text-sm text-zinc-600 hover:text-red-400 transition-colors px-1"
-                      >
-                        ×
-                      </button>
-                    </div>
+                    )}
                   </div>
                 )}
               </div>
             ))}
           </div>
         )}
+
+        {/* Food coach: Today's Fuel + Ask your coach */}
+        <FoodCoachSection
+          today={today}
+          meals={meals ?? []}
+          profile={profile}
+        />
 
         {/* View history */}
         <div className="flex justify-between items-center pt-1">

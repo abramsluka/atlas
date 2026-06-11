@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useRefinePhotoMeal, useFavoriteFoodLog, useDeleteFoodLog, useUpdateFoodLog } from '@/features/food/mutations'
 import type { FoodLog, PhotoRefineQuestion, PhotoRefineAnswer } from '@/features/food/types'
 
@@ -17,7 +17,6 @@ function getRefineData(meal: FoodLog) {
 }
 
 const chipBase = 'rounded-xl border px-3 py-2.5 text-sm text-left transition-colors'
-const chipActive = 'border-emerald-300/60 bg-emerald-300/10 text-white'
 const chipIdle = 'border-white/[0.12] bg-white/[0.03] text-zinc-300 active:opacity-70'
 const chipAnswered = 'border-white/[0.06] bg-white/[0.02] text-zinc-600 cursor-default'
 const chipAnsweredSelected = 'border-emerald-300/30 bg-emerald-300/[0.06] text-zinc-400 cursor-default'
@@ -26,16 +25,18 @@ export function PhotoMealCard({
   meal: initialMeal,
   today,
   onEdit,
+  isNew = false,
 }: {
   meal: FoodLog
   today: string
   onEdit: () => void
+  isNew?: boolean
 }) {
   const [meal, setMeal] = useState(initialMeal)
   const refineData = getRefineData(meal)
   const isOpen = meal.refine_status === 'open'
 
-  const [expanded, setExpanded] = useState(isOpen)
+  const [expanded, setExpanded] = useState(isOpen || isNew)
   const [questions, setQuestions] = useState<PhotoRefineQuestion[]>(refineData.questions)
   const [answers, setAnswers] = useState<PhotoRefineAnswer[]>(refineData.answers)
   const [submitting, setSubmitting] = useState(false)
@@ -46,11 +47,44 @@ export function PhotoMealCard({
   const [noteText, setNoteText] = useState(meal.notes ?? '')
   const [favorited, setFavorited] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [coachFeedback, setCoachFeedback] = useState(meal.coach_feedback ?? '')
+  const [coachStreaming, setCoachStreaming] = useState(false)
+  const coachFired = useRef(false)
 
   const refine = useRefinePhotoMeal()
   const favorite = useFavoriteFoodLog()
   const deleteMeal = useDeleteFoodLog()
   const updateMeal = useUpdateFoodLog()
+
+  const streamCoachFeedback = useCallback(async (mealId: string) => {
+    if (coachFired.current) return
+    coachFired.current = true
+    setCoachStreaming(true)
+    setCoachFeedback('')
+    try {
+      const res = await fetch(`/api/health/food/${mealId}/coach`, { method: 'POST' })
+      if (!res.ok || !res.body) return
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      while (true) {
+        const { done: rdone, value } = await reader.read()
+        if (rdone) break
+        setCoachFeedback(prev => prev + decoder.decode(value))
+      }
+    } catch (err) {
+      console.error('[PhotoMealCard] coach error:', err)
+    } finally {
+      setCoachStreaming(false)
+    }
+  }, [])
+
+  // Auto-fire coach feedback if this is a new meal and already done (no refine questions)
+  useEffect(() => {
+    if (isNew && !isOpen && !meal.coach_feedback && !coachFired.current) {
+      streamCoachFeedback(meal.id)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const currentQuestionIndex = answers.length
   const currentQuestion = !done && questions[currentQuestionIndex]
@@ -85,13 +119,15 @@ export function PhotoMealCard({
           refine_status: 'done',
         }))
         setDone(true)
+        // Fire coach feedback now that refine is complete
+        streamCoachFeedback(meal.id)
       }
     } catch {
-      // silent — the mutation logs to console
+      // silent
     } finally {
       setSubmitting(false)
     }
-  }, [submitting, currentQuestion, refine, meal.id, today])
+  }, [submitting, currentQuestion, refine, meal.id, today, streamCoachFeedback])
 
   const handleSkip = useCallback(async () => {
     await handleAnswer('[skipped]')
@@ -129,7 +165,7 @@ export function PhotoMealCard({
     }
   }
 
-  const showEstimateBadge = !done || meal.confidence !== 'high'
+  const showEstimateBadge = !done
 
   return (
     <div className="rounded-[10px] bg-white/[0.035] overflow-hidden">
@@ -149,7 +185,7 @@ export function PhotoMealCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <p className="truncate text-sm font-semibold text-white">{meal.item_name}</p>
-            {showEstimateBadge && !done && (
+            {showEstimateBadge && (
               <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-300 border border-emerald-300/30">
                 ESTIMATE
               </span>
@@ -175,6 +211,13 @@ export function PhotoMealCard({
           </svg>
         </div>
       </div>
+
+      {/* Coach feedback (always visible when present, even collapsed) */}
+      {(coachFeedback || coachStreaming) && (
+        <p className="px-3 pb-2.5 text-xs italic text-zinc-400 leading-relaxed border-t border-white/[0.05] pt-2">
+          {coachFeedback || '…'}
+        </p>
+      )}
 
       {/* Expanded body */}
       {expanded && (
@@ -253,7 +296,7 @@ export function PhotoMealCard({
                         disabled={submitting}
                         className="text-xs text-zinc-600 disabled:opacity-40"
                       >
-                        Don't know · skip
+                        Don&apos;t know · skip
                       </button>
                     )}
                   </div>
@@ -262,7 +305,7 @@ export function PhotoMealCard({
               {submitting && (
                 <p className="text-xs text-zinc-500">Refining estimate…</p>
               )}
-              {done && (
+              {done && questions.length > 0 && (
                 <p className="text-xs text-zinc-500">Estimate refined ✓</p>
               )}
             </div>

@@ -1,12 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import type { FoodLog, DailyFoodSummary } from './types'
-import { format, subHours } from 'date-fns'
-
-function rolledDate(): string {
-  const now = new Date()
-  const adjusted = now.getHours() < 6 ? subHours(now, 6) : now
-  return format(adjusted, 'yyyy-MM-dd')
-}
+import type { FoodLog, FoodItem, DailyFoodSummary, FoodCoachMessage } from './types'
+import { rolledDate } from './date'
 
 export function useFoodLogs(date?: string) {
   const d = date ?? rolledDate()
@@ -17,6 +11,30 @@ export function useFoodLogs(date?: string) {
       if (!res.ok) throw new Error('Failed to fetch food logs')
       return res.json()
     },
+  })
+}
+
+export function useFoodItems() {
+  return useQuery<FoodItem[]>({
+    queryKey: ['food-items'],
+    queryFn: async () => {
+      const res = await fetch('/api/health/food/items')
+      if (!res.ok) throw new Error('Failed to fetch food items')
+      return res.json()
+    },
+    staleTime: 60_000,
+  })
+}
+
+export function useFoodCoachMessages(date: string) {
+  return useQuery<FoodCoachMessage[]>({
+    queryKey: ['food-coach', date],
+    queryFn: async () => {
+      const res = await fetch(`/api/health/food/coach?date=${date}`)
+      if (!res.ok) throw new Error('Failed to fetch coach messages')
+      return res.json()
+    },
+    staleTime: 30_000,
   })
 }
 

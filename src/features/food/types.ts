@@ -13,6 +13,7 @@ export interface FoodLog {
   confidence: 'low' | 'medium' | 'high' | null
   ai_raw: unknown
   notes: string | null
+  coach_feedback: string | null
   source: FoodSource
   barcode: string | null
   volume_oz: number | null
@@ -22,6 +23,17 @@ export interface FoodLog {
   created_at: string
   updated_at: string
   photo_url?: string | null
+}
+
+export interface FoodCoachMessage {
+  id: string
+  user_id: string
+  date: string
+  role: 'user' | 'assistant'
+  content: string
+  chip_label: string | null
+  is_summary: boolean
+  created_at: string
 }
 
 export interface FoodEstimate {
