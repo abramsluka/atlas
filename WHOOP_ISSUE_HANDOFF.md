@@ -1,5 +1,13 @@
 # Whoop Recovery & Sleep API — Handoff Document
 
+> ## ✅ RESOLVED (2026-06-10)
+>
+> **Root cause: Hypothesis C.** Whoop fully deprecated the v1 API ([migration guide](https://developer.whoop.com/docs/developing/v1-v2-migration/)). `v1/recovery`, `v1/activity/sleep`, and `v1/activity/workout` now hard-404 regardless of token or scopes, while `v1/cycle` still happened to respond — which made it look exactly like a scope issue. It never was one; the token and scopes were fine all along.
+>
+> **Fix:** All Whoop API calls switched from `/developer/v1/...` to `/developer/v2/...` in `data/route.ts`, `debug/route.ts`, and `workout/route.ts`. Response shapes for the fields we read (`recovery_score`, `hrv_rmssd_milli`, `resting_heart_rate`, `strain`, `kilojoule`, `stage_summary.total_in_bed_time_milli`) are unchanged in v2. Verified live with the stored token: v2 recovery returns 200 with score 80, HRV 70.0, RHR 55 (placeholder values); sleep and workout also 200. Stale cycle-only cache rows were cleared so the next page load fetches fresh.
+>
+> The misleading "SCOPE ISSUE" diagnosis in the debug endpoint was also removed. The rest of this document is kept for historical context.
+
 ## The Problem
 
 Whoop's recovery and sleep API endpoints return HTTP 404 for every request, even with a

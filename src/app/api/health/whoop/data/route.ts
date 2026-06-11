@@ -77,15 +77,12 @@ export async function GET(req: NextRequest) {
 
   const headers = { Authorization: `Bearer ${accessToken}` }
 
+  // Whoop v1 API is deprecated and hard-404s — must use v2 paths
   const [recoveryRes, cycleRes, sleepRes] = await Promise.all([
-    fetch('https://api.prod.whoop.com/developer/v1/recovery?limit=5', { headers }),
-    fetch('https://api.prod.whoop.com/developer/v1/cycle?limit=5', { headers }),
-    fetch('https://api.prod.whoop.com/developer/v1/activity/sleep?limit=5', { headers }),
+    fetch('https://api.prod.whoop.com/developer/v2/recovery?limit=5', { headers }),
+    fetch('https://api.prod.whoop.com/developer/v2/cycle?limit=5', { headers }),
+    fetch('https://api.prod.whoop.com/developer/v2/activity/sleep?limit=5', { headers }),
   ])
-
-  if (recoveryRes.status === 404 && sleepRes.status === 404 && cycleRes.status === 200) {
-    console.warn('[whoop/data] recovery+sleep both 404 while cycle OK — likely missing OAuth scopes. Use Reconnect Whoop in settings.')
-  }
 
   // Only 401 means bad token — 404 means no data for this user (e.g. no sleep tracking)
   if (recoveryRes.status === 401 || cycleRes.status === 401 || sleepRes.status === 401) {

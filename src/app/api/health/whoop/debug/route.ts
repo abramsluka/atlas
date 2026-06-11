@@ -64,21 +64,21 @@ export async function GET() {
   const h = { Authorization: `Bearer ${accessToken}` }
 
   const [recoveryRes, cycleRes, sleepRes, cached] = await Promise.all([
-    fetch('https://api.prod.whoop.com/developer/v1/recovery?limit=5', { headers: h }),
-    fetch('https://api.prod.whoop.com/developer/v1/cycle?limit=5', { headers: h }),
-    fetch('https://api.prod.whoop.com/developer/v1/activity/sleep?limit=5', { headers: h }),
+    fetch('https://api.prod.whoop.com/developer/v2/recovery?limit=5', { headers: h }),
+    fetch('https://api.prod.whoop.com/developer/v2/cycle?limit=5', { headers: h }),
+    fetch('https://api.prod.whoop.com/developer/v2/activity/sleep?limit=5', { headers: h }),
     db.from('wearable_data').select('data, fetched_at').eq('user_id', user.id).eq('provider', 'whoop').order('fetched_at', { ascending: false }).limit(1).maybeSingle(),
   ])
 
-  const likelyOAuthScopeIssue = recoveryRes.status === 404 && sleepRes.status === 404 && cycleRes.status === 200
+  const anyFailed = recoveryRes.status !== 200 || sleepRes.status !== 200 || cycleRes.status !== 200
 
   return NextResponse.json({
     token_expires_at: tokenRow.expires_at,
     token_expired: new Date(tokenRow.expires_at) <= new Date(),
     token_scopes: tokenScopes,
-    diagnosis: likelyOAuthScopeIssue
-      ? 'SCOPE ISSUE: recovery+sleep are 404 but cycle is 200. Token is missing read:recovery and read:sleep scopes. Use Reconnect Whoop in settings.'
-      : 'OK',
+    diagnosis: anyFailed
+      ? 'One or more v2 endpoints failed. 401 = bad token (reconnect Whoop). 404 on v2 = no data recorded for that type yet.'
+      : 'OK — all v2 endpoints returning data',
     cached_data: cached.data,
     recovery: {
       status: recoveryRes.status,

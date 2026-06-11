@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
     accessToken = newToken
   }
 
-  const url = `https://api.prod.whoop.com/developer/v1/activity/workout?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`
+  const url = `https://api.prod.whoop.com/developer/v2/activity/workout?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`
   const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } })
 
   if (!res.ok) return NextResponse.json(null)

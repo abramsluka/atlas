@@ -213,7 +213,7 @@ function WearablesSection({
                   </p>
                 </div>
               )}
-              <div className={`grid gap-3 ${[whoop.cycle?.strain, whoop.cycle?.kilojoule, whoop.sleep?.duration_seconds, whoop.recovery?.hrv_rmssd_milli, whoop.recovery?.resting_heart_rate].filter(v => v != null).length >= 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+              <div className={`grid gap-3 ${[whoop.cycle?.strain, whoop.cycle?.kilojoule, whoop.sleep?.duration_seconds].filter(v => v != null).length >= 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
                 {whoop.cycle?.strain != null && (
                   <div>
                     <p className="text-[10px] uppercase tracking-wide text-zinc-500">Strain</p>
@@ -233,22 +233,6 @@ function WearablesSection({
                     <p className="text-[10px] uppercase tracking-wide text-zinc-500">Sleep</p>
                     <p className="text-sm font-semibold text-white">
                       {formatDuration(whoop.sleep.duration_seconds)}
-                    </p>
-                  </div>
-                )}
-                {whoop.recovery?.hrv_rmssd_milli != null && (
-                  <div className="bg-white/5 rounded-xl p-3">
-                    <p className="text-[10px] text-white/40 uppercase tracking-wider mb-1">HRV</p>
-                    <p className="text-sm font-semibold text-white">
-                      {Math.round(whoop.recovery.hrv_rmssd_milli)}ms
-                    </p>
-                  </div>
-                )}
-                {whoop.recovery?.resting_heart_rate != null && (
-                  <div className="bg-white/5 rounded-xl p-3">
-                    <p className="text-[10px] text-white/40 uppercase tracking-wider mb-1">RHR</p>
-                    <p className="text-sm font-semibold text-white">
-                      {Math.round(whoop.recovery.resting_heart_rate)} bpm
                     </p>
                   </div>
                 )}
