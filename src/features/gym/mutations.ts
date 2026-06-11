@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { GymConfig, GymExercise, GymLog, BodyWeight, ProgressPhoto } from './types'
+import type { GymConfig, GymExercise, GymLog, BodyWeight, BodyMeasurement, ProgressPhoto } from './types'
 
 export function useSaveGymConfig() {
   const qc = useQueryClient()
@@ -136,6 +136,27 @@ export function useDeletePhoto() {
       qc.setQueryData<ProgressPhoto[]>(['progress-photos'], (old = []) =>
         old.filter(p => p.id !== id)
       )
+    },
+  })
+}
+
+export function useLogBodyMeasurement() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (m: { date_key: string; neck_in: number; waist_in: number; hip_in?: number | null; bf_pct: number }) => {
+      const res = await fetch('/api/gym/measurements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(m),
+      })
+      if (!res.ok) throw new Error('Failed to save measurement')
+      return res.json() as Promise<BodyMeasurement>
+    },
+    onSuccess: (data) => {
+      qc.setQueryData<BodyMeasurement[]>(['body-measurements'], (old = []) => {
+        const filtered = old.filter(m => m.date_key !== data.date_key)
+        return [...filtered, data].sort((a, b) => a.date_key.localeCompare(b.date_key))
+      })
     },
   })
 }

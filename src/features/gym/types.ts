@@ -56,6 +56,17 @@ export interface BodyWeight {
   created_at?: string
 }
 
+export interface BodyMeasurement {
+  id: string
+  user_id?: string
+  date_key: string  // YYYY-MM-DD
+  neck_in: number
+  waist_in: number
+  hip_in?: number | null
+  bf_pct: number
+  created_at?: string
+}
+
 export interface ProgressPhoto {
   id: string
   user_id?: string

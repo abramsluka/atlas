@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import type { GymConfig, GymExercise, GymLog, BodyWeight, ProgressPhoto } from './types'
+import type { GymConfig, GymExercise, GymLog, BodyWeight, BodyMeasurement, ProgressPhoto } from './types'
 
 export function useGymConfig(initial?: GymConfig | null) {
   return useQuery<GymConfig>({
@@ -62,6 +62,18 @@ export function useProgressPhotos() {
     },
     staleTime: 60_000,
     retry: false,
+  })
+}
+
+export function useBodyMeasurements() {
+  return useQuery<BodyMeasurement[]>({
+    queryKey: ['body-measurements'],
+    queryFn: async () => {
+      const res = await fetch('/api/gym/measurements')
+      if (!res.ok) throw new Error('Failed to fetch body measurements')
+      return res.json()
+    },
+    staleTime: 60_000,
   })
 }
 
