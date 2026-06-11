@@ -134,7 +134,7 @@ export async function POST(
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
   const stream = anthropic.messages.stream({
-    model: 'claude-sonnet-4-6',
+    model: 'claude-haiku-4-5-20251001',
     max_tokens: 400,
     system: `You are a direct, no-nonsense strength training coach. Give honest, specific feedback on the user's workout in 3-5 sentences. Call out personal records if you spot them. Flag concerning patterns like missed sessions or volume drops. Note meaningful trends. If progressive overload history is provided, look for exercises stuck at the same weight, missed reps, or steady progress — factor that into your read. If recovery context (sleep, HRV, readiness) is provided and is notably low or short, or if the HRV is below baseline, factor it into your read on the session — but don't make excuses, just calibrate. Be direct — no cheerleading, no filler.`,
     messages: [{ role: 'user', content: userMessage }],

@@ -94,7 +94,7 @@ export async function POST() {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
   const reasoningRes = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
+    model: 'claude-haiku-4-5-20251001',
     max_tokens: 120,
     system: 'You are a nutrition coach. Write 1-2 plain sentences explaining these pre-calculated macro targets to the user. Be specific — mention the weight, pace, and calorie number. Do not recalculate anything.',
     messages: [{

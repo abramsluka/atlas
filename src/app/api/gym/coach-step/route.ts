@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 100,
       system: `You are an expert strength coach. Given an exercise name and weight unit, recommend a weight increment step size — the amount to add when the user is ready to progress. Use these guidelines: compound barbell lifts (squat, deadlift, bench, row, OHP) = 5 lbs or 2.5 kg. Smaller compounds and cable machines = 2.5 lbs or 1.25 kg. Isolation exercises (curl, lateral raise, fly, extension) = 2.5 lbs or 1.25 kg. If unsure, default to 2.5 lbs. Return ONLY valid JSON with no markdown: { "step": number, "reason": string }. Reason must be 1 short sentence.`,
       messages: [{
