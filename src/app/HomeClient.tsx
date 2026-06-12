@@ -111,8 +111,9 @@ function computeRing(): RingState {
 }
 
 function DayRing() {
-  const [ring, setRing] = useState<RingState>(computeRing)
+  const [ring, setRing] = useState<RingState | null>(null)
   useEffect(() => {
+    setRing(computeRing())
     const id = setInterval(() => setRing(computeRing()), 30_000)
     return () => clearInterval(id)
   }, [])
@@ -131,8 +132,8 @@ function DayRing() {
           <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8" />
           <circle
             cx="60" cy="60" r="52" fill="none"
-            stroke={ring.stroke} strokeWidth="8" strokeLinecap="round"
-            strokeDasharray={CIRC} strokeDashoffset={ring.offset}
+            stroke={ring?.stroke ?? '#4D4B47'} strokeWidth="8" strokeLinecap="round"
+            strokeDasharray={CIRC} strokeDashoffset={ring?.offset ?? CIRC}
             filter="url(#drGlow)"
             style={{
               transform: 'rotate(-90deg)', transformOrigin: '60px 60px',
@@ -142,19 +143,19 @@ function DayRing() {
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
           <span className="text-[40px] font-extrabold tabular-nums tracking-[-0.04em] leading-none text-white">
-            {ring.percent === null ? '—' : `${ring.percent}%`}
+            {ring === null ? '—' : ring.percent === null ? '—' : `${ring.percent}%`}
           </span>
           <span className="mt-[5px] font-mono text-[9.5px] font-extrabold tracking-[0.16em] uppercase text-zinc-500">
-            {ring.phase}
+            {ring?.phase ?? ''}
           </span>
-          <span className="font-mono text-[10.5px] text-zinc-500 mt-0.5">{ring.clock}</span>
+          <span className="font-mono text-[10.5px] text-zinc-500 mt-0.5">{ring?.clock ?? ''}</span>
         </div>
       </div>
 
       {/* Text */}
       <div className="flex flex-col gap-1.5 max-w-[280px]">
-        <div className="text-[14px] font-bold text-white">{ring.status}</div>
-        <div className="font-mono text-[12px] text-zinc-400">{ring.remaining}</div>
+        <div className="text-[14px] font-bold text-white">{ring?.status ?? ''}</div>
+        <div className="font-mono text-[12px] text-zinc-400">{ring?.remaining ?? ''}</div>
         <div className="font-mono text-[11px] text-zinc-500">8:00 AM – 12:00 AM</div>
       </div>
     </div>
