@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { motion } from 'framer-motion'
 import { useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { useTodayCheckin } from '@/features/workouts/queries'
@@ -288,7 +289,14 @@ function DailyCheckinCard({ today, checkin }: { today: string; checkin: DailyChe
 
   if (checkin?.evening_actual_training !== null && checkin?.evening_actual_training !== undefined) {
     return (
-      <div className="cosmic-card p-5">
+      <div style={{
+        background: 'rgba(255,255,255,0.03)',
+        backdropFilter: 'blur(10px)',
+        WebkitBackdropFilter: 'blur(10px)',
+        border: '1px solid rgba(255,255,255,0.07)',
+        borderRadius: 16,
+        padding: '1.25rem',
+      }}>
         <p className="text-[10.5px] font-bold tracking-[0.14em] uppercase text-zinc-600 mb-2">Daily check-in</p>
         <p className="text-lg font-semibold text-white">
           {checkin.evening_actual_training ? '✓ Trained today' : '✓ Rest day'}
@@ -301,7 +309,14 @@ function DailyCheckinCard({ today, checkin }: { today: string; checkin: DailyChe
   }
 
   return (
-    <div className="cosmic-card p-5">
+    <div style={{
+      background: 'rgba(255,255,255,0.03)',
+      backdropFilter: 'blur(10px)',
+      WebkitBackdropFilter: 'blur(10px)',
+      border: '1px solid rgba(255,255,255,0.07)',
+      borderRadius: 16,
+      padding: '1.25rem',
+    }}>
       <p className="mb-4 text-lg font-semibold text-white">Did you train today?</p>
       <textarea
         value={notes}
@@ -417,6 +432,94 @@ function TodaysCallCard() {
         </div>
       )}
     </div>
+  )
+}
+
+// ─── Activity Chips ───────────────────────────────────────────────────────────
+
+const CHIP_CONFIG = [
+  { id: 'gym',     label: 'Gym',     color: '#4ade80', glow: 'rgba(74,222,128,0.3)'  },
+  { id: 'health',  label: 'Health',  color: '#22d3ee', glow: 'rgba(34,211,238,0.3)'  },
+  { id: 'journal', label: 'Journal', color: '#fbbf24', glow: 'rgba(251,191,36,0.3)'  },
+  { id: 'mentor',  label: 'Mentor',  color: '#a3e635', glow: 'rgba(163,230,53,0.3)'  },
+] as const
+
+function ActivityChips({ activity }: { activity: ActivitySnapshot | null }) {
+  return (
+    <div className="flex gap-2 flex-wrap">
+      {CHIP_CONFIG.map((chip, i) => {
+        const count = activity ? activity[chip.id as keyof ActivitySnapshot] : 0
+        return (
+          <motion.div
+            key={chip.id}
+            initial={{ x: -12, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            transition={{ delay: i * 0.08, duration: 0.4, ease: 'easeOut' }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full"
+            style={{
+              background: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              boxShadow: count > 0 ? `0 0 8px ${chip.glow}` : 'none',
+            }}
+          >
+            <span className="text-[11px] font-semibold" style={{ color: chip.color }}>{chip.label}</span>
+            {count > 0 && (
+              <span className="text-[11px] text-zinc-400">{count}</span>
+            )}
+          </motion.div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Weekly Report Card ───────────────────────────────────────────────────────
+
+function WeeklyReportCard() {
+  const router = useRouter()
+  const [report, setReport] = useState<{ report_text: string; week_of: string } | null>(null)
+
+  useEffect(() => {
+    fetch('/api/mentor/weekly-reports')
+      .then(r => r.json())
+      .then((reports: Array<{ report_text: string; week_of: string }>) => {
+        const weekOf = getMostRecentSunday()
+        const current = reports.find(r => r.week_of === weekOf)
+        if (current) setReport(current)
+      })
+      .catch(() => {})
+  }, [])
+
+  if (!report) return null
+
+  const preview = report.report_text.split(/[.!?]/).slice(0, 2).join('. ').trim() + '.'
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      transition={{ duration: 0.4, ease: 'easeOut' }}
+      style={{
+        background: 'rgba(255,255,255,0.03)',
+        backdropFilter: 'blur(10px)',
+        WebkitBackdropFilter: 'blur(10px)',
+        border: '1px solid rgba(255,255,255,0.07)',
+        borderRadius: 16,
+        padding: '1.25rem',
+      }}
+    >
+      <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-zinc-600 mb-2">
+        Week of {new Date(report.week_of + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
+      </p>
+      <p className="text-sm text-zinc-300 leading-relaxed mb-4">{preview}</p>
+      <button
+        onClick={() => router.push('/mentor?tab=reports')}
+        className="text-xs font-semibold text-green-400 hover:text-green-300 transition-colors"
+      >
+        Read full report →
+      </button>
+    </motion.div>
   )
 }
 
@@ -740,8 +843,10 @@ export default function HomeClient({ today, timezone, initialCheckin }: { today:
     return (
       <>
         {/* Map view toggle button */}
-        <button
+        <motion.button
           onClick={toggleMapView}
+          whileTap={{ scale: 0.95 }}
+          transition={{ duration: 0.2 }}
           className="fixed top-4 right-4 z-50 w-9 h-9 rounded-full flex items-center justify-center"
           style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' }}
           aria-label="Switch to list view"
@@ -754,7 +859,7 @@ export default function HomeClient({ today, timezone, initialCheckin }: { today:
             <line x1="3" y1="12" x2="3.01" y2="12" />
             <line x1="3" y1="18" x2="3.01" y2="18" />
           </svg>
-        </button>
+        </motion.button>
         <CosmicMap activity={activity} />
         {showSundayModal && (
           <SundayModal onDismiss={() => {
@@ -765,6 +870,9 @@ export default function HomeClient({ today, timezone, initialCheckin }: { today:
       </>
     )
   }
+
+
+  const isCheckinActive = !checkin || checkin.evening_actual_training === null || checkin.evening_actual_training === undefined
 
   return (
     <>
@@ -782,8 +890,10 @@ export default function HomeClient({ today, timezone, initialCheckin }: { today:
             Luka&apos;s Dashboard
           </h1>
           {/* Map view toggle */}
-          <button
+          <motion.button
             onClick={toggleMapView}
+            whileTap={{ scale: 0.95 }}
+            transition={{ duration: 0.2 }}
             className="w-9 h-9 flex-shrink-0 rounded-full flex items-center justify-center mt-1"
             style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
             aria-label="Switch to map view"
@@ -796,57 +906,117 @@ export default function HomeClient({ today, timezone, initialCheckin }: { today:
               <line x1="2" y1="12" x2="8" y2="12" />
               <line x1="16" y1="12" x2="22" y2="12" />
             </svg>
-          </button>
+          </motion.button>
         </div>
 
         <GoalTicker checkin={checkin} />
-        <DayRing />
-        <TodaysCallCard />
 
-        <section>
-          <SectionTitle label="Check-in" />
-          <DailyCheckinCard today={today} checkin={checkin ?? null} />
+        {/* Section 1 — morning status (0ms) */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: 'easeOut' }}
+        >
+          <DayRing />
+          <TodaysCallCard />
+        </motion.div>
 
-          <div className="mt-4 cosmic-card p-5">
-            <p className="text-lg font-semibold text-white mb-2">Your briefing</p>
-            {!coachText && !coachStreaming && (
-              <p className="text-sm text-zinc-500 mb-4 leading-relaxed">
-                Get a read on where you stand across everything — gym, habits, health, journal.
-              </p>
-            )}
+        {/* Section 2 — evening check-in (100ms) */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: 'easeOut', delay: 0.1 }}
+        >
+          <section>
+            <SectionTitle label="Check-in" />
+            {/* Breathing glow when check-in is still pending */}
+            <motion.div
+              animate={isCheckinActive ? {
+                boxShadow: [
+                  '0 0 0px rgba(74,222,128,0)',
+                  '0 0 16px rgba(74,222,128,0.12)',
+                  '0 0 0px rgba(74,222,128,0)',
+                ],
+              } : { boxShadow: '0 0 0px rgba(74,222,128,0)' }}
+              transition={isCheckinActive ? { duration: 5, repeat: Infinity, ease: 'easeInOut' } : {}}
+              style={{ borderRadius: 16 }}
+            >
+              <DailyCheckinCard today={today} checkin={checkin ?? null} />
+            </motion.div>
 
-            {coachText && (
-              <p className="text-sm text-zinc-300 leading-relaxed mb-4 whitespace-pre-wrap">
-                {coachText}
-                {coachStreaming && (
-                  <span className="inline-block w-[2px] h-[14px] bg-zinc-400 ml-0.5 align-middle animate-pulse" />
-                )}
-              </p>
-            )}
-
-            {!coachText && coachStreaming && (
-              <p className="text-sm text-zinc-500 mb-4 leading-relaxed">
-                Reading your data
-                <span className="inline-block w-[2px] h-[14px] bg-zinc-400 ml-0.5 align-middle animate-pulse" />
-              </p>
-            )}
-
-            <button
-              onClick={streamBriefing}
-              disabled={coachStreaming}
-              className="flex h-12 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold disabled:opacity-50 active:opacity-80"
+            <div
+              className="mt-4"
               style={{
-                background: coachStreaming
-                  ? 'rgba(255,255,255,0.08)'
-                  : 'linear-gradient(180deg,#ffffff 0%,#e8e5dd 100%)',
-                boxShadow: coachStreaming ? 'none' : 'inset 0 1px 0 rgba(255,255,255,0.55),0 4px 14px rgba(0,0,0,0.40)',
-                color: coachStreaming ? '#71717a' : '#000',
+                background: 'rgba(255,255,255,0.03)',
+                backdropFilter: 'blur(10px)',
+                WebkitBackdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255,255,255,0.07)',
+                borderRadius: 16,
+                padding: '1.25rem',
               }}
             >
-              {coachStreaming ? 'Reading your data…' : coachText ? 'Refresh briefing' : 'Get my briefing'}
-            </button>
-          </div>
-        </section>
+              <p className="text-lg font-semibold text-white mb-2">Your briefing</p>
+              {!coachText && !coachStreaming && (
+                <p className="text-sm text-zinc-500 mb-4 leading-relaxed">
+                  Get a read on where you stand across everything — gym, habits, health, journal.
+                </p>
+              )}
+
+              {coachText && (
+                <p className="text-sm text-zinc-300 leading-relaxed mb-4 whitespace-pre-wrap">
+                  {coachText}
+                  {coachStreaming && (
+                    <span className="inline-block w-[2px] h-[14px] bg-zinc-400 ml-0.5 align-middle animate-pulse" />
+                  )}
+                </p>
+              )}
+
+              {!coachText && coachStreaming && (
+                <p className="text-sm text-zinc-500 mb-4 leading-relaxed">
+                  Reading your data
+                  <span className="inline-block w-[2px] h-[14px] bg-zinc-400 ml-0.5 align-middle animate-pulse" />
+                </p>
+              )}
+
+              <button
+                onClick={streamBriefing}
+                disabled={coachStreaming}
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold disabled:opacity-50 active:opacity-80"
+                style={{
+                  background: coachStreaming
+                    ? 'rgba(255,255,255,0.08)'
+                    : 'linear-gradient(180deg,#ffffff 0%,#e8e5dd 100%)',
+                  boxShadow: coachStreaming ? 'none' : 'inset 0 1px 0 rgba(255,255,255,0.55),0 4px 14px rgba(0,0,0,0.40)',
+                  color: coachStreaming ? '#71717a' : '#000',
+                }}
+              >
+                {coachStreaming ? 'Reading your data…' : coachText ? 'Refresh briefing' : 'Get my briefing'}
+              </button>
+            </div>
+          </section>
+        </motion.div>
+
+        {/* Section 3 — activity snapshot (200ms) */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: 'easeOut', delay: 0.2 }}
+          className="mt-6"
+        >
+          <SectionTitle label="Activity" />
+          <ActivityChips activity={activity} />
+        </motion.div>
+
+        {/* Section 4 — weekly report (300ms, also whileInView) */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: 'easeOut', delay: 0.3 }}
+          className="mt-6 mb-4"
+        >
+          <SectionTitle label="Weekly Report" />
+          <WeeklyReportCard />
+        </motion.div>
 
         <div className="px-4 pb-6 flex justify-center">
           <a href="/subscriptions" className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors">
