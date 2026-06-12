@@ -427,7 +427,11 @@ function TheVoid({
                     maxWidth: 160,
                     opacity: visible ? 1 : 0,
                     transition: `opacity 400ms ease ${i * 60}ms`,
-                    animation: visible ? `jotFloat ${duration}s ease-in-out infinite alternate` : 'none',
+                    animationName: visible ? 'jotFloat' : 'none',
+                    animationDuration: `${duration}s`,
+                    animationTimingFunction: 'ease-in-out',
+                    animationIterationCount: 'infinite',
+                    animationDirection: 'alternate',
                     animationDelay: `${i * 0.4}s`,
                     zIndex: 1,
                   }}
