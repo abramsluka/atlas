@@ -20,17 +20,19 @@ export default function StarField() {
     canvas.width = W
     canvas.height = H
 
-    // Seed 180 stars deterministically so they don't jump on re-render
+    // Seed 180 stars deterministically so they don't jump on re-render.
+    // Iterate LCG state between each property so x and y are uncorrelated.
+    // The old approach (seed + offset*1234) placed every star on the same diagonal.
     const stars: Star[] = Array.from({ length: 180 }, (_, i) => {
-      const seed = (i * 9301 + 49297) % 233280
-      const rand = (offset = 0) => ((seed + offset * 1234) % 233280) / 233280
+      let s = (i * 9301 + 49297) % 233280
+      const next = () => { s = (s * 1664525 + 1013904223) % 233280; return s / 233280 }
       return {
-        x: rand(1) * W,
-        y: rand(2) * H,
-        r: rand(3) * 1.2 + 0.3,
-        opacity: rand(4) * 0.5 + 0.1,
-        twinkleSpeed: rand(5) * 0.008 + 0.003,
-        twinkleOffset: rand(6) * Math.PI * 2,
+        x: next() * W,
+        y: next() * H,
+        r: next() * 1.2 + 0.3,
+        opacity: next() * 0.5 + 0.1,
+        twinkleSpeed: next() * 0.008 + 0.003,
+        twinkleOffset: next() * Math.PI * 2,
       }
     })
 
