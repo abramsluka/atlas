@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback, useId } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   useJots,
@@ -44,6 +45,51 @@ function getMostRecentSunday(): string {
   const d = new Date()
   d.setDate(d.getDate() - d.getDay())
   return d.toISOString().slice(0, 10)
+}
+
+// ─── useReducedMotion ─────────────────────────────────────────────────────────
+
+function useReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
+    setReduced(mq.matches)
+    const handler = (e: MediaQueryListEvent) => setReduced(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+  return reduced
+}
+
+// ─── useTypewriter ────────────────────────────────────────────────────────────
+
+function useTypewriter(text: string | null | undefined, speed = 18): string {
+  const rm = useReducedMotion()
+  const [displayed, setDisplayed] = useState('')
+  const animatedRef = useRef(false)
+
+  useEffect(() => {
+    if (!text) return
+    if (animatedRef.current) return  // only animate once per mount
+    animatedRef.current = true
+
+    if (rm) {
+      setDisplayed(text)
+      return
+    }
+
+    let i = 0
+    setDisplayed('')
+    const id = setInterval(() => {
+      i++
+      setDisplayed(text.slice(0, i))
+      if (i >= text.length) clearInterval(id)
+    }, speed)
+    return () => clearInterval(id)
+  }, [text, rm, speed])
+
+  return displayed
 }
 
 // ─── voice recorder hook ──────────────────────────────────────────────────────
@@ -155,11 +201,14 @@ function StreamingCursor({ done }: { done: boolean }) {
 
 function StreamingOrb() {
   return (
-    <div className="flex items-center gap-[4px] py-3 px-4">
+    <div
+      className="flex items-center gap-[5px] px-3 py-2"
+      style={{ background: 'rgba(74,222,128,0.06)', borderRadius: 20, display: 'inline-flex' }}
+    >
       {[0, 1, 2].map(i => (
         <div
           key={i}
-          className="w-1.5 h-1.5 rounded-full bg-green-600/60"
+          className="w-2 h-2 rounded-full bg-green-600/60"
           style={{ animation: 'orbPulse 1.2s ease-in-out infinite', animationDelay: `${i * 0.2}s` }}
         />
       ))}
@@ -169,7 +218,8 @@ function StreamingOrb() {
 
 // ─── GoalChip ─────────────────────────────────────────────────────────────────
 
-function GoalChip({ goal, lastComment }: { goal: string; lastComment: string | null }) {
+function GoalChip({ goal, lastComment, delay }: { goal: string; lastComment: string | null; delay: number }) {
+  const rm = useReducedMotion()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -182,10 +232,16 @@ function GoalChip({ goal, lastComment }: { goal: string; lastComment: string | n
   }, [])
 
   return (
-    <div className="relative" ref={ref}>
+    <motion.div
+      className="relative flex-shrink-0"
+      ref={ref}
+      initial={rm ? false : { x: -12, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      transition={{ delay, duration: 0.25, ease: 'easeOut' }}
+    >
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-widest uppercase bg-green-950/60 border border-green-800/40 text-green-400 whitespace-nowrap transition-colors hover:bg-green-900/40 chip-slide-in"
+        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-widest uppercase bg-green-950/60 border border-green-800/40 text-green-400 whitespace-nowrap transition-colors hover:bg-green-900/40"
       >
         GOAL: {goal.length > 18 ? goal.slice(0, 18) + '…' : goal}
       </button>
@@ -202,7 +258,7 @@ function GoalChip({ goal, lastComment }: { goal: string; lastComment: string | n
           {lastComment && <p className="text-zinc-400 italic">&quot;{lastComment}&quot;</p>}
         </div>
       )}
-    </div>
+    </motion.div>
   )
 }
 
@@ -219,29 +275,32 @@ function StatusBar({
   primaryGoal: string | null
   goalLastComment: string | null
 }) {
+  const rm = useReducedMotion()
   const chips: StatusChip[] = [
     { label: '● LIVE', color: '#4ade80' },
     { label: `WORKOUTS 7D: ${workoutsThisWeek}` },
   ]
 
   return (
-    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none mb-3" style={{ scrollbarWidth: 'none' }}>
+    <div className="flex gap-2 overflow-x-auto pb-1 mb-3" style={{ scrollbarWidth: 'none' }}>
       {chips.map((chip, i) => (
-        <div
+        <motion.div
           key={i}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-widest uppercase whitespace-nowrap chip-slide-in flex-shrink-0"
+          initial={rm ? false : { x: -12, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ delay: i * 0.08, duration: 0.25, ease: 'easeOut' }}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-widest uppercase whitespace-nowrap flex-shrink-0"
           style={{
             background: 'rgba(255,255,255,0.04)',
             border: '1px solid rgba(255,255,255,0.08)',
             color: chip.color ?? 'rgba(255,255,255,0.5)',
-            animationDelay: `${i * 80}ms`,
           }}
         >
           {chip.label}
-        </div>
+        </motion.div>
       ))}
       {primaryGoal && (
-        <GoalChip goal={primaryGoal} lastComment={goalLastComment} />
+        <GoalChip goal={primaryGoal} lastComment={goalLastComment} delay={chips.length * 0.08} />
       )}
     </div>
   )
@@ -273,11 +332,9 @@ function useJotFlight() {
   const fly = useCallback((text: string) => {
     const ghost = ghostRef.current
     const source = sourceRef.current
-    const target = targetRef.current
-    if (!ghost || !source || !target) return
+    if (!ghost || !source) return
 
     const srcRect = source.getBoundingClientRect()
-    const tgtRect = target.getBoundingClientRect()
 
     ghost.textContent = text
     ghost.style.display = 'block'
@@ -285,18 +342,16 @@ function useJotFlight() {
     ghost.style.top = `${srcRect.top}px`
     ghost.style.width = `${srcRect.width}px`
     ghost.style.opacity = '1'
-
-    const dx = tgtRect.left - srcRect.left
-    const dy = tgtRect.top - srcRect.top
+    ghost.style.transform = ''
 
     let start: number | null = null
-    const duration = 600
+    const duration = 400
 
     function step(ts: number) {
       if (!start) start = ts
       const t = Math.min((ts - start) / duration, 1)
-      const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t
-      ghost!.style.transform = `translate(${dx * ease}px, ${dy * ease}px) scale(${1 - ease * 0.4})`
+      const ease = t * t  // ease-in
+      ghost!.style.transform = `translateY(${120 * ease}px) scale(${1 - ease * 0.3})`
       ghost!.style.opacity = String(1 - ease)
       if (t < 1) requestAnimationFrame(step)
       else {
@@ -322,27 +377,15 @@ function TheVoid({
   totalCount: number
   onCountBounce: boolean
 }) {
+  const rm = useReducedMotion()
   const { data: jotsData } = useJots()
   const { data: synthesis } = useLatestSynthesis()
   const runSynthesis = useRunSynthesis()
-  const voidRef = useRef<HTMLDivElement>(null)
-  const [visible, setVisible] = useState(false)
-
-  useEffect(() => {
-    const el = voidRef.current
-    if (!el) return
-    const obs = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) { setVisible(true); obs.disconnect() }
-    }, { threshold: 0.1 })
-    obs.observe(el)
-    return () => obs.disconnect()
-  }, [])
 
   const jots = jotsData?.jots ?? []
 
   const shouldAutoSynthesize = useRef(false)
   useEffect(() => {
-    // Auto-trigger synthesis if 5+ jots and not done this week
     if (jots.length >= 5 && !synthesis && !shouldAutoSynthesize.current) {
       shouldAutoSynthesize.current = true
       runSynthesis.mutate()
@@ -351,11 +394,20 @@ function TheVoid({
   }, [jots.length, synthesis])
 
   return (
-    <div ref={voidRef} className="mt-8 pt-6 border-t border-zinc-900">
+    <div className="mt-8 pt-6 border-t border-zinc-900">
       {/* Divider label */}
       <div className="flex items-center justify-between mb-6">
         <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-zinc-600">
-          MEMORY · {totalCount} THOUGHTS
+          MEMORY ·{' '}
+          <motion.span
+            key={totalCount}
+            animate={rm ? undefined : { scale: [1, 1.4, 1] }}
+            transition={{ type: 'spring', stiffness: 400, damping: 10 }}
+            style={{ display: 'inline-block' }}
+          >
+            {totalCount}
+          </motion.span>
+          {' '}THOUGHTS
         </span>
         <button
           onClick={() => runSynthesis.mutate()}
@@ -372,25 +424,24 @@ function TheVoid({
       </div>
 
       {/* Heading */}
-      <h2
+      <motion.h2
         className="text-4xl font-bold italic text-white mb-3"
-        style={{
-          opacity: visible ? 1 : 0,
-          transform: visible ? 'translateY(0)' : 'translateY(20px)',
-          transition: 'opacity 400ms ease, transform 400ms ease',
-        }}
+        initial={rm ? false : { opacity: 0, y: 10 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+        viewport={{ once: true }}
       >
         The void.
-      </h2>
-      <p
+      </motion.h2>
+      <motion.p
         className="text-sm text-zinc-600 italic text-center mb-8 leading-relaxed max-w-sm mx-auto"
-        style={{
-          opacity: visible ? 1 : 0,
-          transition: 'opacity 400ms ease 100ms',
-        }}
+        initial={rm ? false : { opacity: 0 }}
+        whileInView={{ opacity: 1 }}
+        transition={{ duration: 0.4, delay: 0.1 }}
+        viewport={{ once: true }}
       >
         You have about fifty thousand thoughts a day. Most disappear. The ones that matter live here, and the mentor will remember them for you.
-      </p>
+      </motion.p>
 
       {/* Synthesis card */}
       {synthesis && (
@@ -408,7 +459,7 @@ function TheVoid({
       )}
 
       {/* Floating particle field */}
-      {jots.length > 0 && (() => {
+      {jots.length > 0 ? (() => {
         const shown = jots.slice(0, 8)
         const overflow = jots.length - shown.length
         return (
@@ -418,16 +469,18 @@ function TheVoid({
               const top = (i * 53 + 7) % 75
               const duration = 6 + (i % 4)
               return (
-                <div
+                <motion.div
                   key={jot.id}
                   className="absolute group cursor-default"
+                  initial={rm ? false : { opacity: 0, y: 8 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.05, duration: 0.3 }}
+                  viewport={{ once: true }}
                   style={{
                     left: `${left}%`,
                     top: `${top}%`,
                     maxWidth: 160,
-                    opacity: visible ? 1 : 0,
-                    transition: `opacity 400ms ease ${i * 60}ms`,
-                    animationName: visible ? 'jotFloat' : 'none',
+                    animationName: 'jotFloat',
                     animationDuration: `${duration}s`,
                     animationTimingFunction: 'ease-in-out',
                     animationIterationCount: 'infinite',
@@ -461,7 +514,7 @@ function TheVoid({
                     </p>
                     <p className="text-[9px] text-zinc-700">{relativeTime(jot.created_at)}</p>
                   </div>
-                </div>
+                </motion.div>
               )
             })}
 
@@ -480,7 +533,17 @@ function TheVoid({
             )}
           </div>
         )
-      })()}
+      })() : (
+        <motion.p
+          className="text-[12px] text-zinc-600 italic text-center py-12"
+          initial={rm ? false : { opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          transition={{ duration: 0.4 }}
+          viewport={{ once: true }}
+        >
+          Nothing yet. The void is patient.
+        </motion.p>
+      )}
 
       <div className="pb-32" />
     </div>
@@ -564,6 +627,7 @@ function ReportsTab() {
 
 export default function MentorClient() {
   const instanceId = useId()
+  const rm = useReducedMotion()
   const queryClient = useQueryClient()
 
   const [tab, setTab] = useState<'chat' | 'reports'>('chat')
@@ -574,6 +638,7 @@ export default function MentorClient() {
   const [jotBounce, setJotBounce] = useState(false)
   const [voiceMode, setVoiceMode] = useState(false)
   const [workoutsThisWeek, setWorkoutsThisWeek] = useState(0)
+  const [flightPill, setFlightPill] = useState<number | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -581,10 +646,15 @@ export default function MentorClient() {
 
   const { data: mentorCtx } = useMentorContext()
   const { data: promptsData, isLoading: promptsLoading } = useMentorPrompts()
+  const { data: synthesis, isLoading: synthesisLoading } = useLatestSynthesis()
   const createJot = useCreateJot()
   const voice = useVoiceInput()
 
   const { ghostRef, sourceRef, targetRef, fly } = useJotFlight()
+
+  // Typewriter for proactive Atlas message
+  const synthesisText = synthesis?.synthesis_text ?? null
+  const typewriterText = useTypewriter(synthesisText, 18)
 
   // Fetch workouts this week for status bar
   useEffect(() => {
@@ -650,6 +720,15 @@ export default function MentorClient() {
     setInput(prompt)
     setTimeout(() => sendMessage(prompt), 200)
   }, [sendMessage])
+
+  const handlePillClick = useCallback((p: string, i: number) => {
+    if (rm) { handlePromptClick(p); return }
+    setFlightPill(i)
+    setTimeout(() => {
+      setFlightPill(null)
+      handlePromptClick(p)
+    }, 200)
+  }, [rm, handlePromptClick])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -766,10 +845,35 @@ export default function MentorClient() {
           goalLastComment={mentorCtx?.goal_last_comment ?? null}
         />
 
-        {/* Intro */}
-        <p className="text-[11px] text-zinc-600 italic mb-4">
-          I can see your profile, workouts, water, weights, wearable, and notes.
-        </p>
+        {/* Proactive Atlas message */}
+        <div className="mb-4 min-h-[28px]">
+          {synthesisLoading ? (
+            <div
+              className="h-3 rounded animate-pulse"
+              style={{ width: '65%', background: 'rgba(255,255,255,0.06)' }}
+            />
+          ) : synthesis ? (
+            <div
+              className="rounded-xl px-4 py-3"
+              style={{
+                background: 'rgba(74,222,128,0.03)',
+                borderLeft: '2px solid rgba(74,222,128,0.25)',
+              }}
+            >
+              <span className="text-[9px] font-bold tracking-[0.2em] uppercase text-green-800 block mb-1">✦ ATLAS NOTICED</span>
+              <p className="text-[11px] text-zinc-400 leading-relaxed">
+                {typewriterText}
+                {typewriterText.length > 0 && typewriterText.length < (synthesisText?.length ?? 0) && (
+                  <span className="inline-block w-[1px] h-[11px] bg-green-700/60 ml-0.5 align-middle animate-pulse" />
+                )}
+              </p>
+            </div>
+          ) : (
+            <p className="text-[11px] text-zinc-600 italic">
+              I can see your profile, workouts, water, weights, wearable, and notes.
+            </p>
+          )}
+        </div>
 
         {/* Tabs */}
         <div className="flex gap-4 mb-4 border-b border-zinc-900">
@@ -795,20 +899,29 @@ export default function MentorClient() {
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {(promptsData?.prompts ?? []).map((p, i) => (
-                    <button
+                    <motion.button
                       key={`${instanceId}-${i}`}
-                      onClick={() => handlePromptClick(p)}
+                      onClick={() => handlePillClick(p, i)}
                       disabled={streaming}
-                      className="px-3 py-1.5 rounded-full text-xs text-zinc-400 border border-zinc-800 hover:border-green-900/50 hover:shadow-[0_0_8px_rgba(74,222,128,0.15)] hover:scale-[1.01] transition-all disabled:opacity-40"
+                      whileTap={rm ? undefined : { scale: 0.95 }}
+                      animate={flightPill === i ? { y: 40, opacity: 0 } : { y: 0, opacity: 1 }}
+                      transition={{ duration: 0.2 }}
+                      className="px-3 py-1.5 rounded-full text-xs text-zinc-400 border border-zinc-800 disabled:opacity-40 transition-[border-color,box-shadow]"
                       style={{
                         background: 'rgba(255,255,255,0.02)',
-                        opacity: 0,
-                        animation: `promptFadeIn 250ms ease forwards`,
-                        animationDelay: `${i * 60}ms`,
+                        animationFillMode: 'both',
+                      }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.boxShadow = '0 0 12px rgba(74,222,128,0.25)'
+                        e.currentTarget.style.borderColor = 'rgba(74,222,128,0.3)'
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.boxShadow = 'none'
+                        e.currentTarget.style.borderColor = ''
                       }}
                     >
                       {p}
-                    </button>
+                    </motion.button>
                   ))}
                 </div>
               )}
@@ -817,55 +930,65 @@ export default function MentorClient() {
             {/* Messages */}
             {messages.length > 0 && (
               <div className="space-y-4 mb-4">
-                {messages.map((msg, i) => {
-                  const isLast = i === messages.length - 1
-                  const isStreaming = isLast && streaming && msg.role === 'assistant'
-                  const mode = !isStreaming && msg.role === 'assistant' && msg.content ? inferMode(msg.content) : null
+                <AnimatePresence initial={false}>
+                  {messages.map((msg, i) => {
+                    const isLast = i === messages.length - 1
+                    const isStreaming = isLast && streaming && msg.role === 'assistant'
+                    const mode = !isStreaming && msg.role === 'assistant' && msg.content ? inferMode(msg.content) : null
 
-                  return (
-                    <div
-                      key={msg.id}
-                      className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                      style={{
-                        animation: 'msgEnter 150ms ease-out',
-                      }}
-                    >
-                      <div className="max-w-[85%]">
-                        {msg.role === 'user' ? (
-                          <div className="rounded-2xl px-4 py-2.5 text-sm text-white leading-relaxed" style={{ background: 'rgba(255,255,255,0.1)' }}>
-                            {msg.content}
-                          </div>
-                        ) : (
-                          <>
-                            {msg.content === '' && isStreaming ? (
-                              <StreamingOrb />
-                            ) : (
-                              <div
-                                className="rounded-2xl px-4 py-3 text-sm text-zinc-200 leading-relaxed backdrop-blur-sm"
-                                style={{
-                                  background: 'rgba(255,255,255,0.05)',
-                                  border: '1px solid rgba(74,222,128,0.12)',
-                                }}
-                              >
-                                <span className="whitespace-pre-wrap">{msg.content}</span>
-                                {isStreaming && <StreamingCursor done={false} />}
-                                {!isStreaming && isLast && <StreamingCursor done={true} />}
-                              </div>
-                            )}
-                            {mode && (
-                              <div
-                                className="mt-1 ml-1 text-[10px] tracking-widest uppercase text-green-800/70"
-                                style={{ animation: 'promptFadeIn 200ms ease forwards' }}
-                              >
-                                · {mode.toLowerCase()} ·
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
+                    return (
+                      <motion.div
+                        key={msg.id}
+                        initial={rm ? false : { opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.2, ease: 'easeOut' }}
+                        className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div className="max-w-[85%]">
+                          {msg.role === 'user' ? (
+                            <div
+                              className="rounded-2xl px-4 py-2.5 text-sm text-white leading-relaxed"
+                              style={{ background: 'rgba(255,255,255,0.08)' }}
+                            >
+                              {msg.content}
+                            </div>
+                          ) : (
+                            <>
+                              {msg.content === '' && isStreaming ? (
+                                <StreamingOrb />
+                              ) : (
+                                <div
+                                  className="text-sm text-zinc-200 leading-relaxed"
+                                  style={{
+                                    borderRadius: 16,
+                                    padding: '12px 16px',
+                                    background: 'rgba(74,222,128,0.04)',
+                                    border: '1px solid rgba(74,222,128,0.12)',
+                                    backdropFilter: 'blur(8px)',
+                                    WebkitBackdropFilter: 'blur(8px)',
+                                    borderLeft: '2px solid rgba(74,222,128,0.25)',
+                                  }}
+                                >
+                                  <span className="whitespace-pre-wrap">{msg.content}</span>
+                                  {isStreaming && <StreamingCursor done={false} />}
+                                  {!isStreaming && isLast && <StreamingCursor done={true} />}
+                                </div>
+                              )}
+                              {mode && (
+                                <div
+                                  className="mt-1 ml-1 text-[10px] tracking-widest uppercase text-green-800/70"
+                                  style={{ animation: 'promptFadeIn 200ms ease forwards' }}
+                                >
+                                  · {mode.toLowerCase()} ·
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </motion.div>
+                    )
+                  })}
+                </AnimatePresence>
                 <div ref={messagesEndRef} />
               </div>
             )}
@@ -959,12 +1082,8 @@ export default function MentorClient() {
           50% { height: 18px; }
         }
         @keyframes orbPulse {
-          0%, 100% { opacity: 0.4; transform: scale(1); }
-          50% { opacity: 1; transform: scale(1.3); }
-        }
-        @keyframes msgEnter {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
+          0%, 100% { opacity: 0.4; transform: scale(1); box-shadow: none; }
+          50% { opacity: 1; transform: scale(1.3); box-shadow: 0 0 6px rgba(74,222,128,0.6); }
         }
         @keyframes promptFadeIn {
           from { opacity: 0; }
@@ -973,13 +1092,6 @@ export default function MentorClient() {
         @keyframes goalPopover {
           from { opacity: 0; transform: scale(0.95); }
           to { opacity: 1; transform: scale(1); }
-        }
-        .chip-slide-in {
-          animation: chipSlide 300ms ease-out both;
-        }
-        @keyframes chipSlide {
-          from { opacity: 0; transform: translateX(-20px); }
-          to { opacity: 1; transform: translateX(0); }
         }
         .scrollbar-none::-webkit-scrollbar { display: none; }
       `}</style>
