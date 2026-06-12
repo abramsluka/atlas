@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
 import Providers from './providers'
 import TabBar from './TabBar'
+import StarField from '@/components/StarField'
+import PageTransition from '@/components/PageTransition'
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -52,8 +54,13 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full`}
     >
-      <body className="min-h-full bg-black text-white antialiased">
-        <Providers>{children}</Providers>
+      <body className="min-h-full text-white antialiased" style={{ background: 'var(--background)' }}>
+        <StarField />
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          <Providers>
+            <PageTransition>{children}</PageTransition>
+          </Providers>
+        </div>
         <TabBar />
         <script
           dangerouslySetInnerHTML={{

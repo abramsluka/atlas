@@ -1,8 +1,15 @@
 @import "tailwindcss";
 
 :root {
-  --background: #000000;
+  --background: #050508;
   --foreground: #ffffff;
+  --cosmic-green: rgba(74, 222, 128, 1);
+  --cosmic-green-dim: rgba(74, 222, 128, 0.15);
+  --cosmic-green-glow: rgba(74, 222, 128, 0.25);
+  --cosmic-blue: rgba(56, 189, 248, 0.8);
+  --cosmic-surface: rgba(255, 255, 255, 0.04);
+  --cosmic-border: rgba(255, 255, 255, 0.08);
+  --cosmic-border-green: rgba(74, 222, 128, 0.2);
 }
 
 @theme inline {
@@ -16,6 +23,105 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans, Arial, Helvetica, sans-serif);
+}
+
+/* ── Glassmorphism card ── */
+.cosmic-card {
+  background: var(--cosmic-surface);
+  border: 1px solid var(--cosmic-border);
+  border-radius: 16px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: border-color 200ms, box-shadow 200ms;
+}
+.cosmic-card:hover {
+  border-color: var(--cosmic-border-green);
+  box-shadow: 0 0 20px rgba(74, 222, 128, 0.06);
+}
+
+/* ── Cosmic keyframe animations ── */
+@keyframes cosmicPulseGlow {
+  0%, 100% { box-shadow: 0 0 8px rgba(74, 222, 128, 0.2); }
+  50% { box-shadow: 0 0 24px rgba(74, 222, 128, 0.45); }
+}
+@keyframes nebulaShift {
+  0% { opacity: 0.4; transform: scale(1) translate(0, 0); }
+  50% { opacity: 0.6; transform: scale(1.05) translate(2%, 1%); }
+  100% { opacity: 0.4; transform: scale(1) translate(0, 0); }
+}
+@keyframes starTwinkle {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 0.8; }
+}
+@keyframes cosmicOrbit {
+  from { transform: rotate(0deg) translateX(var(--orbit-radius, 80px)) rotate(0deg); }
+  to { transform: rotate(360deg) translateX(var(--orbit-radius, 80px)) rotate(-360deg); }
+}
+@keyframes cosmicWarpIn {
+  from { opacity: 0; transform: scale(0.95) translateY(12px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes tabGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); }
+  50% { box-shadow: 0 0 8px 1px rgba(74,222,128,0.3); }
+}
+
+/* ── Per-page nebula backgrounds ── */
+.nebula-home::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 60% 50% at 10% 15%, rgba(74,222,128,0.05) 0%, transparent 70%),
+    radial-gradient(ellipse 40% 35% at 85% 80%, rgba(56,189,248,0.04) 0%, transparent 70%);
+  animation: nebulaShift 25s ease-in-out infinite;
+}
+.nebula-gym::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(ellipse 50% 60% at 5% 40%, rgba(74,222,128,0.06) 0%, transparent 65%);
+  animation: nebulaShift 20s ease-in-out infinite;
+}
+.nebula-health::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(ellipse 55% 45% at 90% 30%, rgba(56,189,248,0.05) 0%, transparent 65%);
+  animation: nebulaShift 30s ease-in-out infinite;
+}
+.nebula-mentor::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 50% 40% at 50% 90%, rgba(74,222,128,0.04) 0%, transparent 70%),
+    radial-gradient(ellipse 30% 30% at 80% 10%, rgba(124,58,237,0.03) 0%, transparent 60%);
+  animation: nebulaShift 35s ease-in-out infinite;
+}
+.nebula-journal::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(ellipse 45% 50% at 50% 50%, rgba(251,191,36,0.03) 0%, transparent 70%);
+  animation: nebulaShift 28s ease-in-out infinite;
+}
+
+/* ── Page content sits above nebula ── */
+.nebula-home > *, .nebula-gym > *, .nebula-health > *,
+.nebula-mentor > *, .nebula-journal > * {
+  position: relative;
+  z-index: 1;
 }
 
 input[type="range"] {

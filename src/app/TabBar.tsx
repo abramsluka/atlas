@@ -73,7 +73,7 @@ export default function TabBar() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 border-t border-zinc-900 bg-black"
+      className="fixed bottom-0 left-0 right-0 border-t border-zinc-900 bg-[#050508]"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <div className="flex h-14">
@@ -84,11 +84,13 @@ export default function TabBar() {
               key={tab.href}
               href={tab.href}
               className={`flex flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium tracking-wide transition-colors ${
-                isActive ? 'text-white' : 'text-zinc-600 active:text-zinc-400'
+                isActive ? 'text-green-400' : 'text-zinc-600 active:text-zinc-400'
               }`}
+              style={isActive ? { boxShadow: '0 -1px 8px rgba(74,222,128,0.08)' } : undefined}
             >
               {tab.icon}
               {tab.label}
+              {isActive && <span className="w-1 h-1 rounded-full bg-green-400/70 mt-0.5" />}
             </Link>
           )
         })}

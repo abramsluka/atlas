@@ -857,7 +857,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   )].sort((a, b) => b.localeCompare(a)).slice(0, 10)
 
   return (
-    <div className="min-h-screen bg-black text-white pb-28">
+    <div className="nebula-gym min-h-screen bg-black text-white pb-28">
       {/* Day Pill */}
       <div className="sticky top-0 z-10 px-4 pt-4 pb-2 bg-black/80 backdrop-blur-sm">
         <div className="flex items-center justify-between">
@@ -931,7 +931,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
           )}
 
           {compEstimate && (
-            <div className="mx-5 mt-3 mb-4 rounded-xl bg-white/[0.04] border border-white/[0.07] px-4 py-3 space-y-2">
+            <div className="mx-5 mt-3 mb-4 cosmic-card px-4 py-3 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-white/70">{compEstimate.verdict}</span>
                 <span className="text-[10px] text-white/30">
@@ -1713,7 +1713,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   </div>
 
                   {bfPct != null && (
-                    <div className="rounded-xl bg-white/[0.04] border border-white/[0.07] px-4 py-3 space-y-2">
+                    <div className="cosmic-card px-4 py-3 space-y-2">
                       <div className="flex items-baseline gap-2">
                         <span className="text-3xl font-bold tabular-nums">{bfPct.toFixed(1)}%</span>
                         <span className="text-xs text-white/40">body fat</span>

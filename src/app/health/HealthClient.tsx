@@ -2019,7 +2019,7 @@ function CalorieTargetSheet({
         )}
 
         {result && (
-          <div className="rounded-xl bg-white/[0.04] border border-white/[0.06] p-4 space-y-2">
+          <div className="cosmic-card p-4 space-y-2">
             <p className="text-sm font-bold text-white">
               {result.daily_calories.toLocaleString()} cal · {result.protein_g}g P · {result.carbs_g}g C
             </p>
@@ -2585,7 +2585,7 @@ export default function HealthClient({
     : null
 
   return (
-    <main className="min-h-screen space-y-5 px-4 pb-24 pt-14">
+    <main className="nebula-health min-h-screen space-y-5 px-4 pb-24 pt-14">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-white">Health</h1>
         <button

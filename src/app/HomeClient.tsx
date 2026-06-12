@@ -118,7 +118,7 @@ function DayRing() {
   }, [])
 
   return (
-    <div className="flex flex-wrap items-center justify-center gap-[26px] p-[22px] mb-[22px] rounded-2xl bg-white/[0.04] backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
+    <div className="flex flex-wrap items-center justify-center gap-[26px] p-[22px] mb-[22px] cosmic-card">
       {/* Ring SVG */}
       <div className="relative w-[168px] h-[168px] max-[480px]:w-[144px] max-[480px]:h-[144px] flex-shrink-0">
         <svg viewBox="0 0 120 120" style={{ width: '100%', height: '100%', display: 'block' }}>
@@ -287,7 +287,7 @@ function DailyCheckinCard({ today, checkin }: { today: string; checkin: DailyChe
 
   if (checkin?.evening_actual_training !== null && checkin?.evening_actual_training !== undefined) {
     return (
-      <div className="rounded-2xl bg-white/[0.04] backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.45)] p-5">
+      <div className="cosmic-card p-5">
         <p className="text-[10.5px] font-bold tracking-[0.14em] uppercase text-zinc-600 mb-2">Daily check-in</p>
         <p className="text-lg font-semibold text-white">
           {checkin.evening_actual_training ? '✓ Trained today' : '✓ Rest day'}
@@ -300,7 +300,7 @@ function DailyCheckinCard({ today, checkin }: { today: string; checkin: DailyChe
   }
 
   return (
-    <div className="rounded-2xl bg-white/[0.04] backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.45)] p-5">
+    <div className="cosmic-card p-5">
       <p className="mb-4 text-lg font-semibold text-white">Did you train today?</p>
       <textarea
         value={notes}
@@ -762,7 +762,7 @@ export default function HomeClient({ today, timezone, initialCheckin }: { today:
 
   return (
     <>
-      <main className="min-h-screen px-4 pb-24 pt-14">
+      <main className="nebula-home min-h-screen px-4 pb-24 pt-14">
         <div className="flex items-start justify-between mb-4">
           <h1
             className="text-5xl font-bold tracking-tight"
@@ -801,7 +801,7 @@ export default function HomeClient({ today, timezone, initialCheckin }: { today:
           <SectionTitle label="Check-in" />
           <DailyCheckinCard today={today} checkin={checkin ?? null} />
 
-          <div className="mt-4 rounded-2xl bg-white/[0.04] backdrop-blur-2xl shadow-[0_12px_40px_rgba(0,0,0,0.45)] p-5">
+          <div className="mt-4 cosmic-card p-5">
             <p className="text-lg font-semibold text-white mb-2">Your briefing</p>
             {!coachText && !coachStreaming && (
               <p className="text-sm text-zinc-500 mb-4 leading-relaxed">

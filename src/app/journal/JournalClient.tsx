@@ -49,7 +49,7 @@ export default function JournalClient({ initialData }: Props) {
   const groups = groupByMonth(list)
 
   return (
-    <main className="min-h-screen px-6 pb-24 pt-14">
+    <main className="nebula-journal min-h-screen px-6 pb-24 pt-14">
       <div className="mb-8 flex items-center justify-between">
         <h1 className="text-3xl font-bold tracking-tight">Journal</h1>
         <Link

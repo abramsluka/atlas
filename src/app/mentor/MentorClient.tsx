@@ -708,7 +708,7 @@ export default function MentorClient() {
         }}
       />
 
-      <main className="min-h-screen px-4 pt-14 pb-24">
+      <main className="nebula-mentor min-h-screen px-4 pt-14 pb-24">
         {/* Header row */}
         <div className="flex items-start justify-between gap-4 mb-4">
           {/* Left: title */}
