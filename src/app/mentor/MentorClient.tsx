@@ -402,7 +402,7 @@ function TheVoid({
           <motion.span
             key={totalCount}
             animate={rm ? undefined : { scale: [1, 1.4, 1] }}
-            transition={{ type: 'spring', stiffness: 400, damping: 10 }}
+            transition={{ type: 'keyframes', duration: 0.35, ease: [0.34, 1.56, 0.64, 1] }}
             style={{ display: 'inline-block' }}
           >
             {totalCount}
