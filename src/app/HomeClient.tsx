@@ -435,16 +435,15 @@ interface MapNode {
 }
 
 const MAP_NODES: MapNode[] = [
-  { id: 'gym',    label: 'Gym',    href: '/gym',    color: '#4ade80', glowColor: '#4ade80', radius: 90,  size: 36, period: 25, angle: 0   },
-  { id: 'health', label: 'Health', href: '/health', color: '#22d3ee', glowColor: '#22d3ee', radius: 120, size: 32, period: 32, angle: 72  },
-  { id: 'journal',label: 'Journal',href: '/journal',color: '#fbbf24', glowColor: '#fbbf24', radius: 80,  size: 30, period: 20, angle: 144 },
-  { id: 'mentor', label: 'Mentor', href: '/mentor', color: '#a3e635', glowColor: '#a3e635', radius: 140, size: 40, period: 38, angle: 216 },
-  { id: 'home',   label: 'Today',  href: '/',       color: '#f4f4f5', glowColor: '#ffffff', radius: 65,  size: 28, period: 15, angle: 288 },
+  { id: 'gym',    label: 'Gym',    href: '/gym',    color: '#4ade80', glowColor: '#4ade80', radius: 135, size: 48, period: 25, angle: 0   },
+  { id: 'health', label: 'Health', href: '/health', color: '#22d3ee', glowColor: '#22d3ee', radius: 180, size: 44, period: 32, angle: 72  },
+  { id: 'journal',label: 'Journal',href: '/journal',color: '#fbbf24', glowColor: '#fbbf24', radius: 120, size: 42, period: 20, angle: 144 },
+  { id: 'mentor', label: 'Mentor', href: '/mentor', color: '#a3e635', glowColor: '#a3e635', radius: 210, size: 52, period: 38, angle: 216 },
+  { id: 'home',   label: 'Today',  href: '/',       color: '#f4f4f5', glowColor: '#ffffff', radius: 100, size: 38, period: 15, angle: 288 },
 ]
 
 function CosmicMap({ activity }: { activity: ActivitySnapshot | null }) {
   const router = useRouter()
-  const [hovered, setHovered] = useState<string | null>(null)
   const [entered, setEntered] = useState(false)
 
   useEffect(() => {
@@ -470,6 +469,8 @@ function CosmicMap({ activity }: { activity: ActivitySnapshot | null }) {
     }))
   ).current
 
+  const CENTER = 240
+
   return (
     <div className="relative w-full" style={{ height: '100svh', marginTop: -56, background: '#000' }}>
       {/* Stars */}
@@ -483,7 +484,7 @@ function CosmicMap({ activity }: { activity: ActivitySnapshot | null }) {
 
       {/* Orbital system centered */}
       <div className="absolute inset-0 flex items-center justify-center">
-        <div className="relative" style={{ width: 320, height: 320 }}>
+        <div className="relative" style={{ width: CENTER * 2, height: CENTER * 2 }}>
           {/* Orbital rings */}
           {MAP_NODES.map(node => (
             <div
@@ -492,8 +493,8 @@ function CosmicMap({ activity }: { activity: ActivitySnapshot | null }) {
               style={{
                 width: node.radius * 2,
                 height: node.radius * 2,
-                top: 160 - node.radius,
-                left: 160 - node.radius,
+                top: CENTER - node.radius,
+                left: CENTER - node.radius,
                 borderColor: 'rgba(255,255,255,0.08)',
               }}
             />
@@ -503,23 +504,22 @@ function CosmicMap({ activity }: { activity: ActivitySnapshot | null }) {
           <div
             className="absolute flex items-center justify-center rounded-full"
             style={{
-              width: 52,
-              height: 52,
-              top: 134,
-              left: 134,
+              width: 68,
+              height: 68,
+              top: CENTER - 34,
+              left: CENTER - 34,
               background: 'radial-gradient(circle, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.03) 70%)',
               border: '1px solid rgba(255,255,255,0.2)',
               boxShadow: '0 0 20px rgba(255,255,255,0.1), 0 0 40px rgba(255,255,255,0.05)',
               animation: 'atlasGlow 8s ease-in-out infinite',
             }}
           >
-            <span className="text-[9px] font-bold tracking-[0.2em] text-white/80">ATLAS</span>
+            <span className="text-[10px] font-bold tracking-[0.2em] text-white/80">ATLAS</span>
           </div>
 
-          {/* Orbiting nodes */}
+          {/* Orbiting nodes — outer div rotates, inner content counter-rotates to stay upright */}
           {MAP_NODES.map((node, idx) => {
             const intensity = glowIntensity(node.id)
-            const isHovered = hovered === node.id
             return (
               <div
                 key={node.id}
@@ -527,32 +527,31 @@ function CosmicMap({ activity }: { activity: ActivitySnapshot | null }) {
                 style={{
                   width: node.radius * 2,
                   height: node.radius * 2,
-                  top: 160 - node.radius,
-                  left: 160 - node.radius,
-                  animation: isHovered ? 'none' : `orbit${idx} ${node.period}s linear infinite`,
+                  top: CENTER - node.radius,
+                  left: CENTER - node.radius,
+                  animation: `orbit${idx} ${node.period}s linear infinite`,
                   opacity: entered ? 1 : 0,
-                  transform: entered ? 'scale(1)' : 'scale(0.5)',
-                  transition: `opacity 600ms ease ${idx * 150}ms, transform 600ms ease ${idx * 150}ms`,
+                  transition: `opacity 600ms ease ${idx * 150}ms`,
                   pointerEvents: 'none',
                 }}
               >
+                {/* Counter-rotate so label stays readable */}
                 <div
                   style={{
                     position: 'absolute',
                     top: -node.size / 2,
                     left: '50%',
                     transform: 'translateX(-50%)',
+                    animation: `counterOrbit${idx} ${node.period}s linear infinite`,
+                    pointerEvents: 'auto',
                   }}
                 >
                   <button
-                    onMouseEnter={() => setHovered(node.id)}
-                    onMouseLeave={() => setHovered(null)}
                     onClick={() => router.push(node.href)}
-                    className="flex flex-col items-center gap-1.5 group"
-                    style={{ transform: isHovered ? 'scale(1.1)' : 'scale(1)', transition: 'transform 200ms', pointerEvents: 'auto' }}
+                    className="flex flex-col items-center gap-2 group transition-transform duration-200 hover:scale-110 active:scale-95"
                   >
                     <div
-                      className="rounded-full"
+                      className="rounded-full transition-shadow duration-300"
                       style={{
                         width: node.size,
                         height: node.size,
@@ -562,8 +561,8 @@ function CosmicMap({ activity }: { activity: ActivitySnapshot | null }) {
                       }}
                     />
                     <span
-                      className="text-[8px] font-bold tracking-widest uppercase"
-                      style={{ color: node.color, opacity: isHovered ? 1 : 0.6 }}
+                      className="text-[10px] font-bold tracking-widest uppercase opacity-60 group-hover:opacity-100 transition-opacity duration-200"
+                      style={{ color: node.color }}
                     >
                       {node.label}
                     </span>
@@ -585,6 +584,11 @@ function CosmicMap({ activity }: { activity: ActivitySnapshot | null }) {
         @keyframes orbit2 { from { transform: rotate(144deg); } to { transform: rotate(504deg); } }
         @keyframes orbit3 { from { transform: rotate(216deg); } to { transform: rotate(576deg); } }
         @keyframes orbit4 { from { transform: rotate(288deg); } to { transform: rotate(648deg); } }
+        @keyframes counterOrbit0 { from { transform: translateX(-50%) rotate(0deg); } to { transform: translateX(-50%) rotate(-360deg); } }
+        @keyframes counterOrbit1 { from { transform: translateX(-50%) rotate(-72deg); } to { transform: translateX(-50%) rotate(-432deg); } }
+        @keyframes counterOrbit2 { from { transform: translateX(-50%) rotate(-144deg); } to { transform: translateX(-50%) rotate(-504deg); } }
+        @keyframes counterOrbit3 { from { transform: translateX(-50%) rotate(-216deg); } to { transform: translateX(-50%) rotate(-576deg); } }
+        @keyframes counterOrbit4 { from { transform: translateX(-50%) rotate(-288deg); } to { transform: translateX(-50%) rotate(-648deg); } }
       `}</style>
     </div>
   )
