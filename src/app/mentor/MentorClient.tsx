@@ -407,25 +407,76 @@ function TheVoid({
         </div>
       )}
 
-      {/* Jots list */}
-      <div className="space-y-3">
-        {jots.map((jot, i) => (
-          <div
-            key={jot.id}
-            className="rounded-xl p-3.5"
-            style={{
-              background: 'rgba(255,255,255,0.03)',
-              border: '1px solid rgba(255,255,255,0.06)',
-              opacity: visible ? 1 : 0,
-              transform: visible ? 'translateY(0)' : 'translateY(10px)',
-              transition: `opacity 250ms ease ${i * 60}ms, transform 250ms ease ${i * 60}ms`,
-            }}
-          >
-            <p className="text-sm text-zinc-300 leading-relaxed mb-1">{jot.content}</p>
-            <p className="text-[10px] text-zinc-600">{relativeTime(jot.created_at)}</p>
+      {/* Floating particle field */}
+      {jots.length > 0 && (() => {
+        const shown = jots.slice(0, 8)
+        const overflow = jots.length - shown.length
+        return (
+          <div className="relative" style={{ minHeight: 280, overflow: 'hidden' }}>
+            {shown.map((jot, i) => {
+              const left = (i * 37 + 11) % 70
+              const top = (i * 53 + 7) % 75
+              const duration = 6 + (i % 4)
+              return (
+                <div
+                  key={jot.id}
+                  className="absolute group cursor-default"
+                  style={{
+                    left: `${left}%`,
+                    top: `${top}%`,
+                    maxWidth: 160,
+                    opacity: visible ? 1 : 0,
+                    transition: `opacity 400ms ease ${i * 60}ms`,
+                    animation: visible ? `jotFloat ${duration}s ease-in-out infinite alternate` : 'none',
+                    animationDelay: `${i * 0.4}s`,
+                    zIndex: 1,
+                  }}
+                >
+                  <div
+                    className="rounded-xl px-3 py-2 backdrop-blur-sm transition-all duration-200 group-hover:scale-105 group-hover:z-10"
+                    style={{
+                      background: 'rgba(255,255,255,0.04)',
+                      border: '1px solid rgba(255,255,255,0.07)',
+                      boxShadow: 'none',
+                    }}
+                    onMouseEnter={e => {
+                      const el = e.currentTarget
+                      el.style.border = '1px solid rgba(74,222,128,0.25)'
+                      el.style.boxShadow = '0 0 12px rgba(74,222,128,0.08)'
+                      el.parentElement!.style.zIndex = '10'
+                    }}
+                    onMouseLeave={e => {
+                      const el = e.currentTarget
+                      el.style.border = '1px solid rgba(255,255,255,0.07)'
+                      el.style.boxShadow = 'none'
+                      el.parentElement!.style.zIndex = '1'
+                    }}
+                  >
+                    <p className="text-[11px] text-zinc-300 leading-snug mb-1 line-clamp-3 group-hover:line-clamp-none">
+                      {jot.content}
+                    </p>
+                    <p className="text-[9px] text-zinc-700">{relativeTime(jot.created_at)}</p>
+                  </div>
+                </div>
+              )
+            })}
+
+            {/* Radial edge fade */}
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                background: 'radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.7) 90%, rgba(0,0,0,0.95) 100%)',
+              }}
+            />
+
+            {overflow > 0 && (
+              <div className="absolute bottom-2 left-0 right-0 flex justify-center pointer-events-none">
+                <span className="text-[10px] text-zinc-700 tracking-widest">+ {overflow} more</span>
+              </div>
+            )}
           </div>
-        ))}
-      </div>
+        )
+      })()}
 
       <div className="pb-32" />
     </div>
@@ -895,6 +946,10 @@ export default function MentorClient() {
       </main>
 
       <style>{`
+        @keyframes jotFloat {
+          from { transform: translateY(0px) rotate(0deg); }
+          to { transform: translateY(-12px) rotate(0.5deg); }
+        }
         @keyframes waveBar {
           0%, 100% { height: 6px; }
           50% { height: 18px; }

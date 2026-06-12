@@ -1,10 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { subDays } from 'date-fns'
-import { formatInTimeZone } from 'date-fns-tz'
-import { getUserTimezone } from '@/lib/getUserTimezone'
-
-export const revalidate = 300 // 5-minute cache
 
 export async function GET() {
   const authClient = await createClient()
@@ -12,9 +8,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const db = createServiceClient()
-  const TZ = await getUserTimezone(user.id)
-  const sevenDaysAgo = formatInTimeZone(subDays(new Date(), 7), TZ, 'yyyy-MM-dd')
-  const sevenDaysAgoISO = new Date(sevenDaysAgo).toISOString()
+  const sevenDaysAgoISO = subDays(new Date(), 7).toISOString()
 
   const [gymRes, journalRes, mentorRes] = await Promise.all([
     db.from('workouts').select('id', { count: 'exact', head: true }).eq('user_id', user.id).not('completed_at', 'is', null).gte('completed_at', sevenDaysAgoISO),
