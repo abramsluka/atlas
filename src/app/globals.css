@@ -45,9 +45,9 @@ body {
   50% { box-shadow: 0 0 24px rgba(74, 222, 128, 0.45); }
 }
 @keyframes nebulaShift {
-  0% { opacity: 0.4; transform: scale(1) translate(0, 0); }
-  50% { opacity: 0.6; transform: scale(1.05) translate(2%, 1%); }
-  100% { opacity: 0.4; transform: scale(1) translate(0, 0); }
+  0% { opacity: 0.4; }
+  50% { opacity: 0.6; }
+  100% { opacity: 0.4; }
 }
 @keyframes starTwinkle {
   0%, 100% { opacity: 0.2; }
