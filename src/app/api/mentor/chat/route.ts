@@ -107,17 +107,91 @@ function formatWorkout(w: WorkoutRow): string {
   return `${w.name || 'Workout'} (${w.completed_at ? new Date(w.completed_at).toDateString() : 'in progress'})\n${exercises}`
 }
 
-function hasKeyword(msg: string, words: string[]): boolean {
-  const lower = msg.toLowerCase()
-  return words.some(w => lower.includes(w))
+type JournalRow = {
+  date: string
+  title: string | null
+  body: string
+  mood: number | null
+  audio_transcript: string | null
+  ai_reflection: string | null
 }
 
-const WORKOUT_KW = ['workout','gym','lift','exercise','sets','reps','bench','squat','deadlift','press','training','volume']
-const RECOVERY_KW = ['recovery','sleep','hrv','readiness','rest','tired','fatigue','oura']
-const WATER_KW = ['water','hydration','drink','fluid']
-const WEIGHT_KW = ['weight','body','scale','lbs','kg','bodyweight']
-const FOOD_KW = ['food','calorie','eat','nutrition','macro','protein','carb','fat']
-const BROAD_KW = ['week','how am i','how\'s my','focus','overview','everything','doing','summary','goal']
+function formatJournalEntry(e: JournalRow): string {
+  const contentParts: string[] = []
+  if (e.body?.trim()) contentParts.push(e.body.trim())
+  if (e.audio_transcript?.trim()) contentParts.push(`[Voice transcript]: ${e.audio_transcript.trim()}`)
+  const content = contentParts.join('\n\n')
+  const truncated = content.length > 400 ? content.slice(0, 400) + '…' : content
+
+  const lines = [
+    `${e.date}${e.title ? ` — "${e.title}"` : ''}`,
+    e.mood != null ? `Mood: ${e.mood}/5` : null,
+    truncated || '(no written content)',
+    e.ai_reflection
+      ? `↳ Atlas reflected: ${e.ai_reflection.length > 180 ? e.ai_reflection.slice(0, 180) + '…' : e.ai_reflection}`
+      : null,
+  ].filter(Boolean)
+  return lines.join('\n')
+}
+
+type CheckinRow = {
+  date: string
+  morning_planned_training: string | null
+  morning_intent: string | null
+  evening_actual_training: string | null
+  evening_reflection: string | null
+}
+
+function formatCheckin(c: CheckinRow): string {
+  const lines: string[] = [`${c.date}:`]
+  if (c.morning_planned_training) lines.push(`  Planned training: ${c.morning_planned_training}`)
+  if (c.morning_intent) lines.push(`  Morning intent: ${c.morning_intent}`)
+  if (c.evening_actual_training) lines.push(`  Actual training: ${c.evening_actual_training}`)
+  if (c.evening_reflection) lines.push(`  Evening reflection: ${c.evening_reflection}`)
+  return lines.join('\n')
+}
+
+type PoLogRow = {
+  logged_at: string
+  weight: number | null
+  reps: number | null
+  po_exercises: { name: string; bodyweight: boolean } | null
+}
+
+function formatPoLogs(logs: PoLogRow[]): string {
+  const byExercise: Record<string, string[]> = {}
+  for (const log of logs) {
+    const name = log.po_exercises?.name ?? 'Unknown exercise'
+    if (!byExercise[name]) byExercise[name] = []
+    const date = new Date(log.logged_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    const isBodyweight = log.po_exercises?.bodyweight ?? false
+    const weightPart = isBodyweight
+      ? (log.weight != null ? `+${log.weight} lbs BW` : 'BW')
+      : (log.weight != null ? `${log.weight} lbs` : '? lbs')
+    byExercise[name].push(`${date}: ${log.reps ?? '?'} reps @ ${weightPart}`)
+  }
+  return Object.entries(byExercise)
+    .map(([name, entries]) => `${name}:\n${entries.map(e => `  ${e}`).join('\n')}`)
+    .join('\n\n')
+}
+
+type SupplementLogRow = {
+  taken_at: string
+  supplements: { name: string } | null
+}
+
+function formatSupplementLogs(logs: SupplementLogRow[]): string {
+  const byDate: Record<string, string[]> = {}
+  for (const log of logs) {
+    const date = new Date(log.taken_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    if (!byDate[date]) byDate[date] = []
+    if (log.supplements?.name) byDate[date].push(log.supplements.name)
+  }
+  return Object.entries(byDate)
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([date, names]) => `${date}: ${names.join(', ')}`)
+    .join('\n')
+}
 
 // ─── route ───────────────────────────────────────────────────────────────────
 
@@ -145,39 +219,41 @@ export async function POST(req: NextRequest) {
   const mentorCtx = contextResult.data as { primary_goal: string | null; about_me: string | null; goal_last_comment: string | null } | null
   const memories = (memoriesResult.data ?? []).map(m => m.summary)
 
-  // Step 2 — keyword-based data fetching
-  const isBroad = hasKeyword(message, BROAD_KW)
-  const fetchWorkouts = isBroad || hasKeyword(message, WORKOUT_KW)
-  const fetchRecovery = isBroad || hasKeyword(message, RECOVERY_KW)
-  const fetchWater = isBroad || hasKeyword(message, WATER_KW)
-  const fetchWeight = isBroad || hasKeyword(message, WEIGHT_KW)
-  const fetchFood = isBroad || hasKeyword(message, FOOD_KW)
-
+  // Step 2 — date windows
   const fourWeeksAgo = subWeeks(new Date(), 4).toISOString()
   const today = toLocalDate(TZ)
   const fourteenDaysAgo = formatInTimeZone(subDays(new Date(), 14), TZ, 'yyyy-MM-dd')
   const sevenDaysAgo = formatInTimeZone(subDays(new Date(), 7), TZ, 'yyyy-MM-dd')
   const thirtyDaysAgo = formatInTimeZone(subDays(new Date(), 30), TZ, 'yyyy-MM-dd')
 
-  const [workoutData, ouraData, waterData, weightData, foodData] = await Promise.all([
-    fetchWorkouts
-      ? db.from('workouts').select('*, exercises(*, sets(*))').eq('user_id', user.id).not('completed_at', 'is', null).gte('completed_at', fourWeeksAgo).order('completed_at', { ascending: false }).limit(20)
-      : Promise.resolve({ data: null }),
-    fetchRecovery
-      ? getOuraContextRange(db, user.id, fourteenDaysAgo, today)
-      : Promise.resolve([]),
-    fetchWater
-      ? db.from('water_logs').select('date, amount_oz').eq('user_id', user.id).gte('date', sevenDaysAgo).order('date', { ascending: false })
-      : Promise.resolve({ data: null }),
-    fetchWeight
-      ? db.from('body_weights').select('date_key, weight').eq('user_id', user.id).gte('date_key', thirtyDaysAgo).order('date_key', { ascending: false }).limit(10)
-      : Promise.resolve({ data: null }),
-    fetchFood
-      ? db.from('food_logs').select('date, item_name, calories, protein_g, carbs_g').eq('user_id', user.id).gte('date', sevenDaysAgo).order('date', { ascending: false }).limit(30)
-      : Promise.resolve({ data: null }),
+  // Step 3 — fetch all data sources unconditionally
+  const [
+    workoutData,
+    ouraData,
+    waterData,
+    weightData,
+    foodData,
+    journalData,
+    checkinData,
+    jotData,
+    healthProfileData,
+    poLogData,
+    supplementLogData,
+  ] = await Promise.all([
+    db.from('workouts').select('*, exercises(*, sets(*))').eq('user_id', user.id).not('completed_at', 'is', null).gte('completed_at', fourWeeksAgo).order('completed_at', { ascending: false }).limit(20),
+    getOuraContextRange(db, user.id, fourteenDaysAgo, today),
+    db.from('water_logs').select('date, amount_oz').eq('user_id', user.id).gte('date', sevenDaysAgo).order('date', { ascending: false }),
+    db.from('body_weights').select('date_key, weight').eq('user_id', user.id).gte('date_key', thirtyDaysAgo).order('date_key', { ascending: false }).limit(10),
+    db.from('food_logs').select('date, item_name, calories, protein_g, carbs_g').eq('user_id', user.id).gte('date', sevenDaysAgo).order('date', { ascending: false }).limit(30),
+    db.from('journal_entries').select('date, title, body, mood, audio_transcript, ai_reflection').eq('user_id', user.id).gte('date', fourteenDaysAgo).order('date', { ascending: false }).limit(14),
+    db.from('daily_checkins').select('date, morning_planned_training, morning_intent, evening_actual_training, evening_reflection').eq('user_id', user.id).gte('date', sevenDaysAgo).order('date', { ascending: false }),
+    db.from('jots').select('content, created_at').eq('user_id', user.id).gte('created_at', formatInTimeZone(subDays(new Date(), 14), TZ, "yyyy-MM-dd'T'HH:mm:ssxxx")).order('created_at', { ascending: false }).limit(20),
+    db.from('health_profile').select('*').eq('user_id', user.id).maybeSingle(),
+    db.from('po_logs').select('logged_at, weight, reps, po_exercises(name, bodyweight)').eq('user_id', user.id).gte('logged_at', fourWeeksAgo).order('logged_at', { ascending: false }).limit(30),
+    db.from('supplement_logs').select('taken_at, supplements(name)').eq('user_id', user.id).gte('taken_at', formatInTimeZone(subDays(new Date(), 7), TZ, "yyyy-MM-dd'T'HH:mm:ssxxx")).order('taken_at', { ascending: false }).limit(30),
   ])
 
-  // Step 3 — system prompt
+  // Step 4 — system prompt
   const parts: string[] = [
     `You are Atlas, Luka's personal AI mentor and life coach. You have been following his journey closely and know him deeply. You speak like a trusted advisor who has earned the right to be direct: honest, specific, occasionally challenging, always in his corner. You reference real numbers and real patterns when you have them. You don't pad responses with filler or motivation-poster language. You ask one good follow-up question when it would deepen the conversation. Keep responses conversational — this is a chat, not a report.
 
@@ -185,7 +261,9 @@ Read the tone and intent of what Luka is asking, and calibrate your approach acc
 - If he needs accountability, a hard truth, or a performance read — be direct and challenging. Don't soften it.
 - If he seems to be processing something, thinking out loud, or working through a feeling — ask more questions than you answer. Help him think, don't just tell him what to think.
 - If he wants a plan, next steps, or tactical guidance — give him specific, sequenced actions. Be concrete.
-Shift naturally between these as the conversation evolves. Do not announce the mode or explain your approach — just do it.`,
+Shift naturally between these as the conversation evolves. Do not announce the mode or explain your approach — just do it.
+
+When journal data is present: look for mood trends across entries (not just today's), recurring themes or words, and whether what he's writing about lines up with what he's doing physically. If his mood has been trending down, or the same thing keeps showing up across multiple entries, name it — don't wait for him to connect the dots.`,
   ]
 
   if (mentorCtx?.about_me) {
@@ -203,20 +281,20 @@ Shift naturally between these as the conversation evolves. Do not announce the m
 
   const systemPrompt = parts.join('\n\n')
 
-  // Step 4 — build user message with data
+  // Step 5 — build user message with data
   const dataSections: string[] = []
 
-  if (fetchWorkouts && workoutData.data) {
+  if (workoutData.data?.length) {
     const formatted = (workoutData.data as WorkoutRow[]).map(formatWorkout).join('\n\n')
     if (formatted) dataSections.push(`WORKOUT HISTORY (last 4 weeks):\n${formatted}`)
   }
 
-  if (fetchRecovery && Array.isArray(ouraData) && ouraData.length > 0) {
+  if (Array.isArray(ouraData) && ouraData.length > 0) {
     const summary = summarizeOuraForCoach(ouraData)
     if (summary) dataSections.push(`OURA RECOVERY DATA:\n${summary}`)
   }
 
-  if (fetchWater && waterData.data) {
+  if (waterData.data?.length) {
     const waterByDate: Record<string, number> = {}
     for (const row of waterData.data as Array<{ date: string; amount_oz: number }>) {
       waterByDate[row.date] = (waterByDate[row.date] ?? 0) + row.amount_oz
@@ -228,18 +306,65 @@ Shift naturally between these as the conversation evolves. Do not announce the m
     if (waterLines) dataSections.push(`WATER LOGS (last 7 days):\n${waterLines}`)
   }
 
-  if (fetchWeight && weightData.data) {
+  if (weightData.data?.length) {
     const weightLines = (weightData.data as Array<{ date_key: string; weight: number }>)
       .map(r => `${r.date_key}: ${r.weight} lbs`)
       .join('\n')
     if (weightLines) dataSections.push(`WEIGHT LOG (last 30 days):\n${weightLines}`)
   }
 
-  if (fetchFood && foodData.data) {
+  if (foodData.data?.length) {
     const foodLines = (foodData.data as Array<{ date: string; item_name: string; calories: number | null; protein_g: number | null }>)
       .map(r => `${r.date}: ${r.item_name}${r.calories != null ? ` (${r.calories} kcal${r.protein_g != null ? `, ${r.protein_g}g protein` : ''})` : ''}`)
       .join('\n')
     if (foodLines) dataSections.push(`FOOD LOGS (last 7 days):\n${foodLines}`)
+  }
+
+  if (journalData.data?.length) {
+    const entries = journalData.data as JournalRow[]
+    const withContent = entries.filter(e => e.body?.trim() || e.audio_transcript?.trim())
+    if (withContent.length > 0) {
+      dataSections.push(`JOURNAL ENTRIES (last 2 weeks):\n${withContent.map(formatJournalEntry).join('\n\n')}`)
+    }
+  }
+
+  if (checkinData.data?.length) {
+    const checkins = checkinData.data as CheckinRow[]
+    const withContent = checkins.filter(c =>
+      c.morning_planned_training || c.morning_intent || c.evening_actual_training || c.evening_reflection
+    )
+    if (withContent.length > 0) {
+      dataSections.push(`DAILY CHECK-INS (last 7 days):\n${withContent.map(formatCheckin).join('\n\n')}`)
+    }
+  }
+
+  if (jotData.data?.length) {
+    const jots = jotData.data as Array<{ content: string; created_at: string }>
+    const jotLines = jots.map(j => {
+      const ts = new Date(j.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+      return `${ts}: ${j.content}`
+    }).join('\n')
+    dataSections.push(`JOTS (last 14 days):\n${jotLines}`)
+  }
+
+  if (healthProfileData.data) {
+    const profile = healthProfileData.data as Record<string, unknown>
+    const skip = new Set(['id', 'user_id', 'created_at', 'updated_at', 'linked_target_goal_id'])
+    const profileLines = Object.entries(profile)
+      .filter(([k, v]) => !skip.has(k) && v != null && v !== '')
+      .map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`)
+      .join('\n')
+    if (profileLines) dataSections.push(`HEALTH PROFILE:\n${profileLines}`)
+  }
+
+  if (poLogData.data?.length) {
+    const formatted = formatPoLogs(poLogData.data as unknown as PoLogRow[])
+    if (formatted) dataSections.push(`PROGRESSIVE OVERLOAD LOGS (last 4 weeks):\n${formatted}`)
+  }
+
+  if (supplementLogData.data?.length) {
+    const formatted = formatSupplementLogs(supplementLogData.data as unknown as SupplementLogRow[])
+    if (formatted) dataSections.push(`SUPPLEMENT LOGS (last 7 days):\n${formatted}`)
   }
 
   const userContent = dataSections.length > 0
@@ -253,7 +378,7 @@ Shift naturally between these as the conversation evolves. Do not announce the m
     { role: 'user', content: userContent },
   ]
 
-  // Step 5 — stream
+  // Step 6 — stream
   const stream = anthropic.messages.stream({
     model: 'claude-sonnet-4-6',
     max_tokens: 600,
@@ -276,7 +401,7 @@ Shift naturally between these as the conversation evolves. Do not announce the m
         controller.close()
       }
 
-      // Step 6 — background processing (no await before returning)
+      // Step 7 — background processing (no await before returning)
       if (fullText.length > 150) {
         // Operation A — memory summary
         Promise.resolve().then(async () => {

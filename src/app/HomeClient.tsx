@@ -533,6 +533,7 @@ function CosmicMap({ activity }: { activity: ActivitySnapshot | null }) {
                   opacity: entered ? 1 : 0,
                   transform: entered ? 'scale(1)' : 'scale(0.5)',
                   transition: `opacity 600ms ease ${idx * 150}ms, transform 600ms ease ${idx * 150}ms`,
+                  pointerEvents: 'none',
                 }}
               >
                 <div
@@ -548,7 +549,7 @@ function CosmicMap({ activity }: { activity: ActivitySnapshot | null }) {
                     onMouseLeave={() => setHovered(null)}
                     onClick={() => router.push(node.href)}
                     className="flex flex-col items-center gap-1.5 group"
-                    style={{ transform: isHovered ? 'scale(1.1)' : 'scale(1)', transition: 'transform 200ms' }}
+                    style={{ transform: isHovered ? 'scale(1.1)' : 'scale(1)', transition: 'transform 200ms', pointerEvents: 'auto' }}
                   >
                     <div
                       className="rounded-full"
