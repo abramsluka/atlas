@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 
 const EASE_OUT = [0.16, 1, 0.3, 1] as const
@@ -391,6 +392,9 @@ export default function GymClient({ today, initialConfig, initialExercises, init
 
   // Modals
   const [exModal, setExModal] = useState<ExModalState>(EMPTY_EX_MODAL)
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
+
   const [showSettings, setShowSettings] = useState(false)
   const [showRotation, setShowRotation] = useState(false)
   const [rotDraft, setRotDraft] = useState<string[]>([])
@@ -867,6 +871,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   )].sort((a, b) => b.localeCompare(a)).slice(0, 10)
 
   return (
+    <>
     <div className="nebula-gym min-h-screen bg-black text-white pb-28">
       {/* Day Pill */}
       <div className="sticky top-0 z-10 px-4 pt-4 pb-2 bg-black/80 backdrop-blur-sm">
@@ -1745,6 +1750,9 @@ export default function GymClient({ today, initialConfig, initialExercises, init
         }}
       />
 
+    </div>
+    {mounted && createPortal(
+      <>
       {/* ── Progress Photos Overlay ─────────────────────────────────── */}
       {showPhotos && !viewPhoto && (
         <div className="fixed inset-0 z-50 bg-black flex flex-col">
@@ -2345,6 +2353,9 @@ export default function GymClient({ today, initialConfig, initialExercises, init
           </div>
         </div>
       )}
-    </div>
+      </>,
+      document.body
+    )}
+    </>
   )
 }
