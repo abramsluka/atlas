@@ -394,7 +394,7 @@ function TheVoid({
   }, [jots.length, synthesis])
 
   return (
-    <div className="mt-8 pt-6 border-t border-zinc-900">
+    <div className="mt-8 pt-6" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
       {/* Divider label */}
       <div className="flex items-center justify-between mb-6">
         <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-zinc-600">
@@ -876,7 +876,7 @@ export default function MentorClient() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-4 mb-4 border-b border-zinc-900">
+        <div className="flex gap-4 mb-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
           {(['chat', 'reports'] as const).map(t => (
             <button
               key={t}

@@ -82,29 +82,37 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
-type WorkoutRow = {
-  name: string | null
-  completed_at: string | null
-  exercises: Array<{
-    name: string
-    order_index: number
-    sets: Array<{ reps: number | null; weight_lbs: number | null; rpe: number | null; completed: boolean }>
-  }>
+type GymLogRow = {
+  logged_at: string
+  weight: number | null
+  reps: number | null
+  exercise_id: string
+  gym_exercises: { name: string } | null
 }
 
-function formatWorkout(w: WorkoutRow): string {
-  const exercises = (w.exercises ?? [])
-    .slice()
-    .sort((a, b) => a.order_index - b.order_index)
-    .map(ex => {
-      const sets = (ex.sets ?? [])
-        .filter(s => s.completed)
-        .map(s => `${s.reps ?? '?'} reps @ ${s.weight_lbs ?? '?'} lbs${s.rpe != null ? ` RPE ${s.rpe}` : ''}`)
-        .join(', ')
-      return `  ${ex.name || 'Unnamed'}: ${sets || 'no completed sets'}`
+function formatGymLogs(logs: GymLogRow[], tz: string): string {
+  // Group by local date → exercise → sets
+  const byDay: Record<string, Record<string, Array<{ reps: number | null; weight: number | null }>>> = {}
+  for (const log of logs) {
+    const date = new Date(log.logged_at).toLocaleDateString('en-CA', { timeZone: tz })
+    const name = log.gym_exercises?.name ?? 'Unknown'
+    if (!byDay[date]) byDay[date] = {}
+    if (!byDay[date][name]) byDay[date][name] = []
+    byDay[date][name].push({ reps: log.reps, weight: log.weight })
+  }
+  return Object.entries(byDay)
+    .sort(([a], [b]) => b.localeCompare(a))
+    .slice(0, 14)
+    .map(([date, exercises]) => {
+      const exLines = Object.entries(exercises)
+        .map(([name, sets]) => {
+          const setsStr = sets.map(s => `${s.reps ?? '?'} reps @ ${s.weight ?? '?'} lbs`).join(', ')
+          return `  ${name}: ${setsStr}`
+        })
+        .join('\n')
+      return `${date}:\n${exLines}`
     })
-    .join('\n')
-  return `${w.name || 'Workout'} (${w.completed_at ? new Date(w.completed_at).toDateString() : 'in progress'})\n${exercises}`
+    .join('\n\n')
 }
 
 type JournalRow = {
@@ -151,29 +159,6 @@ function formatCheckin(c: CheckinRow): string {
   return lines.join('\n')
 }
 
-type PoLogRow = {
-  logged_at: string
-  weight: number | null
-  reps: number | null
-  po_exercises: { name: string; bodyweight: boolean } | null
-}
-
-function formatPoLogs(logs: PoLogRow[]): string {
-  const byExercise: Record<string, string[]> = {}
-  for (const log of logs) {
-    const name = log.po_exercises?.name ?? 'Unknown exercise'
-    if (!byExercise[name]) byExercise[name] = []
-    const date = new Date(log.logged_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    const isBodyweight = log.po_exercises?.bodyweight ?? false
-    const weightPart = isBodyweight
-      ? (log.weight != null ? `+${log.weight} lbs BW` : 'BW')
-      : (log.weight != null ? `${log.weight} lbs` : '? lbs')
-    byExercise[name].push(`${date}: ${log.reps ?? '?'} reps @ ${weightPart}`)
-  }
-  return Object.entries(byExercise)
-    .map(([name, entries]) => `${name}:\n${entries.map(e => `  ${e}`).join('\n')}`)
-    .join('\n\n')
-}
 
 type SupplementLogRow = {
   taken_at: string
@@ -228,7 +213,7 @@ export async function POST(req: NextRequest) {
 
   // Step 3 — fetch all data sources unconditionally
   const [
-    workoutData,
+    gymLogData,
     ouraData,
     waterData,
     weightData,
@@ -237,10 +222,9 @@ export async function POST(req: NextRequest) {
     checkinData,
     jotData,
     healthProfileData,
-    poLogData,
     supplementLogData,
   ] = await Promise.all([
-    db.from('workouts').select('*, exercises(*, sets(*))').eq('user_id', user.id).not('completed_at', 'is', null).gte('completed_at', fourWeeksAgo).order('completed_at', { ascending: false }).limit(20),
+    db.from('gym_logs').select('logged_at, weight, reps, exercise_id, gym_exercises(name)').eq('user_id', user.id).gte('logged_at', fourWeeksAgo).order('logged_at', { ascending: false }).limit(200),
     getOuraContextRange(db, user.id, fourteenDaysAgo, today),
     db.from('water_logs').select('date, amount_oz').eq('user_id', user.id).gte('date', sevenDaysAgo).order('date', { ascending: false }),
     db.from('body_weights').select('date_key, weight').eq('user_id', user.id).gte('date_key', thirtyDaysAgo).order('date_key', { ascending: false }).limit(10),
@@ -249,7 +233,6 @@ export async function POST(req: NextRequest) {
     db.from('daily_checkins').select('date, morning_planned_training, morning_intent, evening_actual_training, evening_reflection').eq('user_id', user.id).gte('date', sevenDaysAgo).order('date', { ascending: false }),
     db.from('jots').select('content, created_at').eq('user_id', user.id).gte('created_at', formatInTimeZone(subDays(new Date(), 14), TZ, "yyyy-MM-dd'T'HH:mm:ssxxx")).order('created_at', { ascending: false }).limit(20),
     db.from('health_profile').select('*').eq('user_id', user.id).maybeSingle(),
-    db.from('po_logs').select('logged_at, weight, reps, po_exercises(name, bodyweight)').eq('user_id', user.id).gte('logged_at', fourWeeksAgo).order('logged_at', { ascending: false }).limit(30),
     db.from('supplement_logs').select('taken_at, supplements(name)').eq('user_id', user.id).gte('taken_at', formatInTimeZone(subDays(new Date(), 7), TZ, "yyyy-MM-dd'T'HH:mm:ssxxx")).order('taken_at', { ascending: false }).limit(30),
   ])
 
@@ -284,9 +267,9 @@ When journal data is present: look for mood trends across entries (not just toda
   // Step 5 — build user message with data
   const dataSections: string[] = []
 
-  if (workoutData.data?.length) {
-    const formatted = (workoutData.data as WorkoutRow[]).map(formatWorkout).join('\n\n')
-    if (formatted) dataSections.push(`WORKOUT HISTORY (last 4 weeks):\n${formatted}`)
+  if (gymLogData.data?.length) {
+    const formatted = formatGymLogs(gymLogData.data as unknown as GymLogRow[], TZ)
+    if (formatted) dataSections.push(`GYM TRAINING (last 4 weeks — grouped by day):\n${formatted}`)
   }
 
   if (Array.isArray(ouraData) && ouraData.length > 0) {
@@ -355,11 +338,6 @@ When journal data is present: look for mood trends across entries (not just toda
       .map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`)
       .join('\n')
     if (profileLines) dataSections.push(`HEALTH PROFILE:\n${profileLines}`)
-  }
-
-  if (poLogData.data?.length) {
-    const formatted = formatPoLogs(poLogData.data as unknown as PoLogRow[])
-    if (formatted) dataSections.push(`PROGRESSIVE OVERLOAD LOGS (last 4 weeks):\n${formatted}`)
   }
 
   if (supplementLogData.data?.length) {

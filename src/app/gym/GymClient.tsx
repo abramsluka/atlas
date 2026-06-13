@@ -186,8 +186,9 @@ function WtChart({ entries, units }: { entries: BodyWeight[]; units: string }) {
   const padded = { min: minW - range * 0.1, max: maxW + range * 0.1 }
   const totalRange = padded.max - padded.min
 
+  const inset = 5
   const pts = entries.map((e, i) => ({
-    x: (i / (entries.length - 1)) * W,
+    x: inset + (i / (entries.length - 1)) * (W - 2 * inset),
     y: H - 10 - ((e.weight - padded.min) / totalRange) * (H - 20),
   }))
 
@@ -222,7 +223,7 @@ function WtChart({ entries, units }: { entries: BodyWeight[]; units: string }) {
 
   return (
     <div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }}>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }} preserveAspectRatio="none">
         <defs>
           <linearGradient id="wt-fill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#4ade80" stopOpacity="0.25" />
@@ -946,7 +947,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
           </div>
 
           {bodyWeights.length >= 2 && (
-            <div className="px-2">
+            <div className="px-4">
               <WtChart entries={bodyWeights} units={config.units} />
             </div>
           )}

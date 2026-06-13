@@ -12,12 +12,12 @@ interface Props {
   initialData: JournalEntry[]
 }
 
-const MOOD_COLORS: Record<number, string> = {
-  1: 'bg-red-500',
-  2: 'bg-orange-500',
-  3: 'bg-yellow-400',
-  4: 'bg-green-400',
-  5: 'bg-emerald-400',
+const MOOD_DOT: Record<number, { bg: string; glow: string }> = {
+  1: { bg: '#ef4444', glow: 'rgba(239,68,68,0.55)' },
+  2: { bg: '#f97316', glow: 'rgba(249,115,22,0.55)' },
+  3: { bg: '#facc15', glow: 'rgba(250,204,21,0.55)' },
+  4: { bg: '#4ade80', glow: 'rgba(74,222,128,0.55)' },
+  5: { bg: '#34d399', glow: 'rgba(52,211,153,0.55)' },
 }
 
 function groupByMonth(entries: JournalEntry[]) {
@@ -51,48 +51,60 @@ export default function JournalClient({ initialData }: Props) {
   return (
     <main className="nebula-journal min-h-screen px-6 pb-24 pt-14">
       <div className="mb-8 flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight">Journal</h1>
+        <div>
+          <h1 className="text-4xl font-bold italic tracking-tight text-white leading-tight">Journal</h1>
+          <p className="text-xs text-zinc-600 mt-0.5">thoughts · moods · reflections</p>
+        </div>
         <Link
           href="/journal/new"
-          className="flex h-10 items-center rounded-xl bg-white px-4 text-sm font-semibold text-black active:opacity-80"
+          className="flex h-10 items-center rounded-xl px-4 text-sm font-semibold text-white active:opacity-80"
+          style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' }}
         >
           + New
         </Link>
       </div>
 
       {list.length === 0 && (
-        <p className="text-zinc-500">No entries yet. Write your first one.</p>
+        <p className="text-zinc-600 italic text-sm">Nothing here yet. Write your first entry.</p>
       )}
 
       {groups.map((group) => (
         <section key={group.key} className="mb-8">
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-zinc-500">
-            {group.label}
-          </h2>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="h-px flex-1" style={{ background: 'rgba(255,255,255,0.06)' }} />
+            <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-zinc-600">{group.label}</span>
+            <div className="h-px flex-1" style={{ background: 'rgba(255,255,255,0.06)' }} />
+          </div>
           <div className="flex flex-col gap-2">
             {group.items.map((entry) => (
               <div key={entry.id} className="flex items-center gap-2">
                 <Link
                   href={`/journal/${entry.id}`}
-                  className="flex flex-1 items-center justify-between rounded-xl bg-zinc-900 px-5 py-4 active:opacity-80"
+                  className="flex flex-1 items-center justify-between rounded-[18px] px-5 py-4 active:opacity-80 transition-all duration-150"
+                  style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm text-zinc-400">
+                    <p className="text-[11px] text-zinc-600 mb-0.5 font-medium tracking-wide">
                       {format(new Date(entry.date + 'T12:00:00'), 'EEE, MMM d')}
                     </p>
-                    <p className="truncate font-semibold">
-                      {entry.title || entry.body.slice(0, 80) || (entry.audio_path ? '🎙️ Voice note' : '')}
+                    <p className="truncate text-[15px] font-semibold text-white leading-snug">
+                      {entry.title || entry.body.slice(0, 80) || (entry.audio_path ? 'Voice note' : '')}
                     </p>
                   </div>
                   {entry.mood != null && (
                     <div
-                      className={`ml-4 h-3 w-3 flex-shrink-0 rounded-full ${MOOD_COLORS[entry.mood]}`}
+                      className="ml-4 h-3 w-3 flex-shrink-0 rounded-full"
+                      style={{
+                        background: MOOD_DOT[entry.mood].bg,
+                        boxShadow: `0 0 8px ${MOOD_DOT[entry.mood].glow}`,
+                      }}
                     />
                   )}
                 </Link>
                 <button
                   onClick={() => setConfirmId(entry.id)}
-                  className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-zinc-900 text-lg text-zinc-600 active:text-zinc-400"
+                  className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[18px] text-lg text-zinc-700 active:text-zinc-400 transition-colors"
+                  style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}
                 >
                   ×
                 </button>
@@ -108,7 +120,8 @@ export default function JournalClient({ initialData }: Props) {
           onClick={() => setConfirmId(null)}
         >
           <div
-            className="mx-4 w-full max-w-sm rounded-2xl bg-zinc-900 p-6"
+            className="mx-4 w-full max-w-sm rounded-2xl p-6"
+            style={{ background: '#111113', border: '1px solid rgba(255,255,255,0.1)' }}
             onClick={(e) => e.stopPropagation()}
           >
             <p className="mb-1 text-base font-semibold">Delete entry?</p>

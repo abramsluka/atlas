@@ -287,8 +287,14 @@ export default function EntryDetail({ initialEntry }: Props) {
   return (
     <div className="flex min-h-screen flex-col bg-black">
       <div
-        className="fixed left-0 right-0 top-0 z-10 border-b border-zinc-900 bg-black"
-        style={{ paddingTop: 'env(safe-area-inset-top)' }}
+        className="fixed left-0 right-0 top-0 z-10"
+        style={{
+          paddingTop: 'env(safe-area-inset-top)',
+          background: 'rgba(0,0,0,0.85)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          borderBottom: '1px solid rgba(255,255,255,0.07)',
+        }}
       >
         <div className="flex items-center justify-between px-4 py-3">
           <button
@@ -330,11 +336,11 @@ export default function EntryDetail({ initialEntry }: Props) {
           className="w-full bg-transparent text-xl font-semibold text-white outline-none placeholder:text-zinc-600"
         />
 
-        <div className="mt-3 mb-4 border-b border-zinc-800" />
+        <div className="mt-3 mb-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }} />
 
         {entry.audio_url && (
-          <div className="mb-5 rounded-2xl bg-zinc-900 px-4 py-3">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-zinc-500">🎙️ Voice note</p>
+          <div className="mb-5 rounded-[18px] px-4 py-3" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-600">Voice note</p>
             <audio controls src={entry.audio_url} className="w-full" />
             {transcribeError && <p className="mt-2 text-xs text-red-400">{transcribeError}</p>}
             <div className="mt-2">
@@ -396,20 +402,30 @@ export default function EntryDetail({ initialEntry }: Props) {
           </div>
         </div>
 
-        <div className="mt-6 mb-6 border-b border-zinc-800" />
+        <div className="mt-6 mb-6" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }} />
 
         <div>
           {(displayReflection || streaming) ? (
             <>
-              <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-zinc-500">
-                Atlas
+              <div className="mb-3 flex items-center gap-2">
+                <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-green-700">✦ ATLAS</span>
                 {streaming && (
-                  <span className="ml-2 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-zinc-400 align-middle" />
+                  <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-green-600/60 align-middle" />
                 )}
-              </p>
-              <p className="text-base italic leading-relaxed text-zinc-300">
-                {displayReflection}
-              </p>
+              </div>
+              <div
+                className="rounded-[16px] px-4 py-3 mb-2"
+                style={{
+                  background: 'rgba(74,222,128,0.04)',
+                  border: '1px solid rgba(74,222,128,0.12)',
+                  borderLeft: '2px solid rgba(74,222,128,0.3)',
+                }}
+              >
+                <p className="text-[15px] italic leading-relaxed text-zinc-300">
+                  {displayReflection}
+                  {streaming && <span className="ml-1 inline-block h-[15px] w-[2px] bg-green-400/60 align-middle animate-pulse" />}
+                </p>
+              </div>
               <div className="mt-2 flex gap-4">
                 {savedReflection && !streaming && (
                   <button
@@ -437,7 +453,10 @@ export default function EntryDetail({ initialEntry }: Props) {
                   {conversation.map((msg, i) => (
                     <div key={i} className={msg.role === 'user' ? 'text-right' : ''}>
                       {msg.role === 'user' ? (
-                        <div className="inline-block bg-white/8 rounded-2xl px-4 py-3 text-sm text-white max-w-[85%] text-left">
+                        <div
+                          className="inline-block rounded-2xl px-4 py-3 text-sm text-white max-w-[85%] text-left"
+                          style={{ background: 'rgba(255,255,255,0.08)' }}
+                        >
                           {msg.audio_url && (
                             <audio controls src={msg.audio_url} className="mb-2 w-full min-w-[220px]" />
                           )}
@@ -448,12 +467,19 @@ export default function EntryDetail({ initialEntry }: Props) {
                           )}
                         </div>
                       ) : (
-                        <div>
+                        <div
+                          className="rounded-[16px] px-4 py-3"
+                          style={{
+                            background: 'rgba(74,222,128,0.04)',
+                            border: '1px solid rgba(74,222,128,0.12)',
+                            borderLeft: '2px solid rgba(74,222,128,0.25)',
+                          }}
+                        >
                           <p className="text-sm italic leading-relaxed text-zinc-300">{msg.content}</p>
                           <button
                             onClick={() => handleGoLonger(i)}
                             disabled={isReplying}
-                            className="text-xs text-zinc-600 hover:text-zinc-400 mt-1 transition-colors"
+                            className="text-xs text-zinc-700 hover:text-zinc-500 mt-1.5 transition-colors"
                           >
                             Go longer →
                           </button>
@@ -466,10 +492,17 @@ export default function EntryDetail({ initialEntry }: Props) {
 
               {/* In-progress streaming reply */}
               {streamingReply && (
-                <div className="mt-4">
+                <div
+                  className="mt-4 rounded-[16px] px-4 py-3"
+                  style={{
+                    background: 'rgba(74,222,128,0.04)',
+                    border: '1px solid rgba(74,222,128,0.12)',
+                    borderLeft: '2px solid rgba(74,222,128,0.25)',
+                  }}
+                >
                   <p className="text-sm italic leading-relaxed text-zinc-300">
                     {streamingReply}
-                    <span className="ml-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-zinc-400 align-middle" />
+                    <span className="ml-1 inline-block h-[13px] w-[2px] bg-green-400/60 align-middle animate-pulse" />
                   </p>
                 </div>
               )}
@@ -551,9 +584,23 @@ export default function EntryDetail({ initialEntry }: Props) {
               <button
                 onClick={handleGetReflection}
                 disabled={streaming}
-                className="flex h-12 w-full items-center justify-center rounded-xl bg-zinc-900 text-sm font-medium text-zinc-300 active:opacity-80"
+                className="flex h-12 w-full items-center justify-center rounded-[16px] text-sm font-semibold text-zinc-300 active:opacity-80 transition-all disabled:opacity-40"
+                style={{
+                  background: 'rgba(74,222,128,0.06)',
+                  border: '1px solid rgba(74,222,128,0.2)',
+                }}
               >
-                Get reflection
+                {streaming ? (
+                  <span className="flex items-center gap-2">
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                    Getting reflection…
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    <span className="text-green-700">✦</span>
+                    Get reflection
+                  </span>
+                )}
               </button>
             </>
           )}
@@ -566,7 +613,8 @@ export default function EntryDetail({ initialEntry }: Props) {
           onClick={() => setConfirmDelete(false)}
         >
           <div
-            className="mx-4 w-full max-w-sm rounded-2xl bg-zinc-900 p-6"
+            className="mx-4 w-full max-w-sm rounded-2xl p-6"
+            style={{ background: '#111113', border: '1px solid rgba(255,255,255,0.1)' }}
             onClick={(e) => e.stopPropagation()}
           >
             <p className="mb-1 text-base font-semibold">Delete entry?</p>
@@ -574,7 +622,8 @@ export default function EntryDetail({ initialEntry }: Props) {
             <div className="flex gap-3">
               <button
                 onClick={() => setConfirmDelete(false)}
-                className="flex h-12 flex-1 items-center justify-center rounded-xl bg-zinc-800 text-sm font-medium text-white active:opacity-80"
+                className="flex h-12 flex-1 items-center justify-center rounded-xl text-sm font-medium text-white active:opacity-80"
+                style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)' }}
               >
                 Cancel
               </button>
