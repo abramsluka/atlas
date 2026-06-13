@@ -86,38 +86,46 @@ export async function GET() {
   }
   const workoutCount7d = workoutDays7d.filter(Boolean).length
 
-  // Most recent training check-in — scan last 7, prefer evening over morning
-  type CheckinRow = { date: string; morning_planned_training: string | null; evening_actual_training: string | null }
+  // Most recent training check-in. NOTE: these columns are BOOLEANS (trained
+  // yes/no), not text — calling .trim() on them used to crash this route.
+  type CheckinRow = { date: string; morning_planned_training: boolean | null; evening_actual_training: boolean | null }
   const checkins = (checkinRes.data ?? []) as CheckinRow[]
-  const ci = checkins.find(c => (c.evening_actual_training?.trim() || c.morning_planned_training?.trim()))
-  const ciActivity = ci ? (ci.evening_actual_training?.trim() || ci.morning_planned_training?.trim() || null) : null
-  const recentTrainingCheckin = ci && ciActivity ? { date: ci.date, activity: ciActivity } : null
+  const ci = checkins.find(c => c.evening_actual_training != null || c.morning_planned_training != null)
+  let recentTrainingCheckin: BentoStats['recentTrainingCheckin'] = null
+  if (ci) {
+    const activity = ci.evening_actual_training != null
+      ? (ci.evening_actual_training ? 'Trained' : 'Rest day')
+      : ci.morning_planned_training
+        ? 'Training planned'
+        : null
+    if (activity) recentTrainingCheckin = { date: ci.date, activity }
+  }
 
   // Today's food totals
   const logs = (foodRes.data ?? []) as Array<{ calories: number | null; protein_g: number | null }>
   const todayCalories = Math.round(logs.reduce((s, l) => s + (l.calories ?? 0), 0))
   const todayProtein = Math.round(logs.reduce((s, l) => s + (l.protein_g ?? 0), 0))
 
-  // Recovery + sleep from wearable
-  let recoveryScore: number | null = null
+  // Recovery + sleep from wearable. Scan ALL rows (don't break early — both an
+  // Oura and a Whoop row can exist for the same day). Prefer Whoop recovery for
+  // the recovery score, fall back to Oura readiness; sleep score from Oura.
   let sleepScore: number | null = null
+  let ouraReadiness: number | null = null
+  let whoopRecovery: number | null = null
   const rows = (wearableRes.data ?? []) as Array<{ provider: string; data: Record<string, unknown> }>
   for (const row of rows) {
     const d = row.data
     if (row.provider === 'oura') {
       const oura = d as OuraData
-      if (oura.readiness?.score != null) recoveryScore = oura.readiness.score
+      if (oura.readiness?.score != null) ouraReadiness = oura.readiness.score
       if (oura.sleep?.score != null) sleepScore = oura.sleep.score
-      break
-    }
-    if (row.provider === 'whoop') {
+    } else if (row.provider === 'whoop') {
       const whoop = d as WhoopData
-      if ((whoop as unknown as { recovery?: { score?: number } }).recovery?.score != null) {
-        recoveryScore = (whoop as unknown as { recovery: { score: number } }).recovery.score
-      }
-      break
+      const rec = (whoop as unknown as { recovery?: { score?: number } }).recovery?.score
+      if (rec != null) whoopRecovery = rec
     }
   }
+  const recoveryScore: number | null = whoopRecovery ?? ouraReadiness
 
   // Last journal entry snippet
   const je = journalRes.data as { body: string; audio_transcript: string | null; created_at: string; mood: number | null } | null

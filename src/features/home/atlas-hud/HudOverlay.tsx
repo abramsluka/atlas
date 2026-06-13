@@ -184,11 +184,11 @@ export default function HudOverlay() {
       .catch(() => {})
   }, [])
 
-  // Prefer the data Luka actually has: recovery/sleep/check-in over formal logs.
-  const trainV = stats?.lastWorkout
-    ? `${stats.lastWorkout.name ?? 'Workout'} · ${daysAgo(stats.lastWorkout.completedAt)}`
-    : stats?.recentTrainingCheckin?.activity
-      ? stats.recentTrainingCheckin.activity
+  // Prefer the recent check-in (current habit) over a possibly-stale formal log.
+  const trainV = stats?.recentTrainingCheckin?.activity
+    ? `${stats.recentTrainingCheckin.activity} · ${daysAgo(stats.recentTrainingCheckin.date + 'T12:00:00')}`
+    : stats?.lastWorkout
+      ? `${stats.lastWorkout.name ?? 'Workout'} · ${daysAgo(stats.lastWorkout.completedAt)}`
       : (stats?.workoutCount7d ?? 0) > 0 ? `${stats!.workoutCount7d}× this week` : '—'
   const recoveryV = stats?.recoveryScore != null ? `${stats.recoveryScore}%` : '—'
   const sleepV = stats?.sleepScore != null ? `${stats.sleepScore}` : '—'
