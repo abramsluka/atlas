@@ -10,7 +10,7 @@ import type { WorkoutPoint, MealPoint } from './page'
 // ── Pharmacokinetic model ────────────────────────────────────────────────────
 const HALF_LIFE_H = 5.5
 const ABSORPTION_TAU = 0.8
-const ADENOSINE_RATE = 3.8
+const ADENOSINE_RATE = 1.8
 const CAF_SCALE = 0.13
 const DOSE_COLORS = ['#4ade80', '#60a5fa', '#fb923c', '#c084fc', '#f472b6', '#34d399']
 
@@ -32,8 +32,8 @@ function caffeineConc(t: number, mg: number): number {
 // ── A1: Circadian rhythm ──────────────────────────────────────────────────────
 // Natural 1–3pm dip (~−8pts) and 6–9pm second wind (~+6pts)
 function circadianOffset(hour: number): number {
-  const afternoonDip = -8  * Math.exp(-0.5 * ((hour - 14) / 1.2) ** 2)
-  const eveningWind  =  6  * Math.exp(-0.5 * ((hour - 19) / 1.5) ** 2)
+  const afternoonDip = -12 * Math.exp(-0.5 * ((hour - 14) / 1.2) ** 2)
+  const eveningWind  =  15 * Math.exp(-0.5 * ((hour - 19) / 1.5) ** 2)
   return afternoonDip + eveningWind
 }
 
@@ -142,7 +142,7 @@ function nowTimeString(): string {
 
 // ── Chart constants ───────────────────────────────────────────────────────────
 const SVG_W = 800
-const SVG_H = 160
+const SVG_H = 220
 const CHART_START_OFFSET = 1
 
 function hToX(h: number, wakeHour: number): number {
@@ -301,15 +301,24 @@ export default function CaffeineClient({ initialCaffeine, today, ouraData, whoop
     const cafTotal = doses.reduce((s, d) => s + caffeineConc(currentHour - d.hour, d.mg) * CAF_SCALE, 0)
     const circ = circadianOffset(currentHour)
     const workout = workoutBoostAt(currentHour, workouts)
-    const meal = mealDipAt(currentHour, meals)
+    const mealNow = mealDipAt(currentHour, meals)
     const adenosine = -(hoursAwake * ADENOSINE_RATE)
-    const items: { label: string; value: number; color: string }[] = []
-    if (cafTotal > 1)    items.push({ label: 'Caffeine',   value: Math.round(cafTotal),  color: '#4ade80' })
-    if (workout > 1)     items.push({ label: 'Workout',    value: Math.round(workout),   color: '#60a5fa' })
-    if (circ > 1)        items.push({ label: 'Second wind',value: Math.round(circ),      color: '#c084fc' })
-    if (circ < -1)       items.push({ label: 'Afternoon dip', value: Math.round(circ),  color: '#fb923c' })
-    if (meal < -1)       items.push({ label: 'Meal dip',   value: Math.round(meal),      color: '#f87171' })
-    items.push({          label: 'Adenosine', value: Math.round(adenosine),              color: '#52525b' })
+
+    // Find the peak meal dip across the whole day (so it shows even after the window passes)
+    let peakMealDip = 0
+    for (let h = wakeHour; h <= 24; h += 0.25) {
+      const d = mealDipAt(h, meals)
+      if (d < peakMealDip) peakMealDip = d
+    }
+    const mealValue = mealNow < -1 ? mealNow : peakMealDip // prefer live value, fall back to peak
+
+    const items: { label: string; value: number; color: string; past?: boolean }[] = []
+    if (cafTotal > 1)       items.push({ label: 'Caffeine',      value: Math.round(cafTotal),  color: '#4ade80' })
+    if (workout > 1)        items.push({ label: 'Workout',       value: Math.round(workout),   color: '#60a5fa' })
+    if (circ > 1)           items.push({ label: 'Second wind',   value: Math.round(circ),      color: '#c084fc' })
+    if (circ < -1)          items.push({ label: 'Afternoon dip', value: Math.round(circ),      color: '#fb923c' })
+    if (mealValue < -1)     items.push({ label: 'Meal dip',      value: Math.round(peakMealDip), color: '#f87171', past: mealNow > -1 })
+    items.push({             label: 'Adenosine',                  value: Math.round(adenosine), color: '#52525b' })
     return items
   }, [currentHour, wakeHour, doses, workouts, meals])
 
@@ -403,7 +412,7 @@ export default function CaffeineClient({ initialCaffeine, today, ouraData, whoop
   return (
     <main className="nebula-health min-h-screen pb-28 pt-4">
       {/* ── Header ── */}
-      <div className="px-4 mb-5">
+      <div className="px-4 mb-5" style={{ position: 'relative', zIndex: 10 }}>
         <Link
           href="/health"
           className="mb-3 inline-flex items-center gap-1.5 text-[10px] font-mono tracking-[0.12em] text-zinc-600 hover:text-zinc-400 transition-colors"
@@ -421,30 +430,110 @@ export default function CaffeineClient({ initialCaffeine, today, ouraData, whoop
 
           {/* Right cluster: dose chips + add button + date/oura */}
           <div className="flex flex-col items-end gap-2 pt-0.5">
-            {/* Change 3 & 4: dose chips + modal trigger */}
-            <div className="flex flex-wrap items-center justify-end gap-1.5">
-              {doses.map(d => (
-                <div
-                  key={d.id}
-                  className="flex items-center gap-1 rounded-full border border-white/[0.10] bg-white/[0.05] px-2 py-1"
-                >
-                  <span className="font-mono text-[11px] text-zinc-300">
-                    {formatHourShort(d.hour)} {d.mg}mg
-                  </span>
-                  <button
-                    onClick={() => deleteCaffeine.mutate(d.id)}
-                    className="text-zinc-600 hover:text-zinc-400 transition-colors leading-none ml-0.5"
+            {/* Dose chips + modal trigger — relative so dropdown anchors here */}
+            <div className="relative">
+              <div className="flex flex-wrap items-center justify-end gap-1.5">
+                {doses.map(d => (
+                  <div
+                    key={d.id}
+                    className="flex items-center gap-1 rounded-full border border-white/[0.10] bg-white/[0.05] px-2 py-1"
                   >
-                    ×
-                  </button>
-                </div>
-              ))}
-              <button
-                onClick={openModal}
-                className="rounded-full border border-green-500/40 bg-green-500/15 px-3 py-1 font-mono text-[11px] text-green-400 active:bg-green-500/25 transition-colors"
-              >
-                + DOSE
-              </button>
+                    <span className="font-mono text-[11px] text-zinc-300">
+                      {formatHourShort(d.hour)} {d.mg}mg
+                    </span>
+                    <button
+                      onClick={() => deleteCaffeine.mutate(d.id)}
+                      className="text-zinc-600 hover:text-zinc-400 transition-colors leading-none ml-0.5"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+                <button
+                  onClick={openModal}
+                  className="rounded-full border border-green-500/40 bg-green-500/15 px-3 py-1 font-mono text-[11px] text-green-400 active:bg-green-500/25 transition-colors"
+                >
+                  + DOSE
+                </button>
+              </div>
+
+              {/* Dropdown modal — fixed so stacking contexts can't trap it */}
+              {doseModalOpen && (
+                <>
+                  {/* click-away backdrop */}
+                  <div className="fixed inset-0 z-40" onClick={() => setDoseModalOpen(false)} />
+                  <div
+                    style={{
+                      position: 'fixed',
+                      top: 88,
+                      right: 16,
+                      zIndex: 9999,
+                      width: 288,
+                      background: '#0a0a0d',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      borderRadius: 16,
+                      padding: 16,
+                      boxShadow: '0 20px 60px rgba(0,0,0,0.98)',
+                      isolation: 'isolate',
+                      opacity: 1,
+                    }}
+                  >
+                    <p className="text-[9px] font-mono text-zinc-600 tracking-[0.2em] uppercase mb-3">Add Dose</p>
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-[9px] font-mono text-zinc-500 tracking-[0.15em] uppercase mb-1.5">Time</p>
+                        <input
+                          type="time"
+                          value={modalTime}
+                          onChange={e => setModalTime(e.target.value)}
+                          style={{ background: '#131316', colorScheme: 'dark' }}
+                          className="w-full rounded-[10px] border border-white/[0.08] px-3 py-2 text-sm font-mono text-white outline-none focus:border-white/25"
+                        />
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-mono text-zinc-500 tracking-[0.15em] uppercase mb-1.5">Caffeine (mg)</p>
+                        <select
+                          value={modalPresetIdx}
+                          onChange={e => handleModalPresetChange(Number(e.target.value))}
+                          style={{ background: '#131316' }}
+                          className="w-full rounded-[10px] border border-white/[0.08] px-3 py-2 text-sm text-white outline-none focus:border-white/25"
+                        >
+                          {MODAL_PRESETS.map((p, i) => (
+                            <option key={p.source} value={i} style={{ background: '#131316' }}>{p.source} · {p.amount_mg}mg</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-mono text-zinc-500 tracking-[0.15em] uppercase mb-1.5">Label</p>
+                        <input
+                          type="text"
+                          value={modalLabel}
+                          onChange={e => setModalLabel(e.target.value)}
+                          style={{ background: '#131316' }}
+                          className="w-full rounded-[10px] border border-white/[0.08] px-3 py-2 text-sm text-white placeholder-zinc-700 outline-none focus:border-white/25"
+                          placeholder="e.g. Coffee"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-2 mt-4">
+                      <button
+                        onClick={() => setDoseModalOpen(false)}
+                        style={{ background: '#1a1a1e' }}
+                        className="flex-1 rounded-[10px] border border-white/[0.08] py-2.5 text-sm font-semibold text-zinc-400 active:opacity-70"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleModalAdd}
+                        disabled={logCaffeine.isPending}
+                        className="flex-1 rounded-[10px] bg-green-500 py-2.5 text-sm font-bold text-black active:opacity-80 disabled:opacity-50"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Date + Oura */}
@@ -514,7 +603,7 @@ export default function CaffeineClient({ initialCaffeine, today, ouraData, whoop
             onMouseLeave={() => setScrubHour(null)}
             onTouchEnd={() => setScrubHour(null)}
           >
-            <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} preserveAspectRatio="none" className="w-full" style={{ height: 140, display: 'block' }}>
+            <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} preserveAspectRatio="none" className="w-full" style={{ height: 200, display: 'block' }}>
               <defs>
                 <linearGradient id="cafAreaGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#4ade80" stopOpacity="0.35" />
@@ -597,6 +686,9 @@ export default function CaffeineClient({ initialCaffeine, today, ouraData, whoop
                   >
                     {c.value >= 0 ? `+${c.value}` : c.value}
                   </span>
+                  {'past' in c && c.past && (
+                    <span className="text-[8px] font-mono text-zinc-600 ml-0.5">peak</span>
+                  )}
                 </div>
               ))}
             </div>
@@ -841,70 +933,6 @@ export default function CaffeineClient({ initialCaffeine, today, ouraData, whoop
         )}
       </div>
 
-      {/* ── Change 4: + DOSE modal ── */}
-      {doseModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-start justify-end pt-[72px] pr-4"
-          style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}
-          onClick={e => { if (e.target === e.currentTarget) setDoseModalOpen(false) }}
-        >
-          <div style={{ background: '#0f0f12', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 20, padding: 20, width: '100%', maxWidth: 400 }}>
-            <p className="text-[9px] font-mono text-zinc-600 tracking-[0.2em] uppercase mb-4">Add Dose</p>
-
-            <div className="space-y-3">
-              <div>
-                <p className="text-[9px] font-mono text-zinc-500 tracking-[0.15em] uppercase mb-1.5">Time</p>
-                <input
-                  type="time"
-                  value={modalTime}
-                  onChange={e => setModalTime(e.target.value)}
-                  className="w-full rounded-[10px] border border-white/[0.10] bg-black/30 px-3 py-2.5 text-sm font-mono text-white outline-none focus:border-white/30"
-                />
-              </div>
-
-              <div>
-                <p className="text-[9px] font-mono text-zinc-500 tracking-[0.15em] uppercase mb-1.5">Caffeine (mg)</p>
-                <select
-                  value={modalPresetIdx}
-                  onChange={e => handleModalPresetChange(Number(e.target.value))}
-                  className="w-full rounded-[10px] border border-white/[0.10] bg-black/30 px-3 py-2.5 text-sm text-white outline-none focus:border-white/30"
-                >
-                  {MODAL_PRESETS.map((p, i) => (
-                    <option key={p.source} value={i}>{p.source} · {p.amount_mg}mg</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <p className="text-[9px] font-mono text-zinc-500 tracking-[0.15em] uppercase mb-1.5">Label</p>
-                <input
-                  type="text"
-                  value={modalLabel}
-                  onChange={e => setModalLabel(e.target.value)}
-                  className="w-full rounded-[10px] border border-white/[0.10] bg-black/30 px-3 py-2.5 text-sm text-white placeholder-zinc-600 outline-none focus:border-white/30"
-                  placeholder="e.g. Coffee"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-2 mt-5">
-              <button
-                onClick={() => setDoseModalOpen(false)}
-                className="flex-1 rounded-[10px] border border-white/[0.10] py-3 text-sm font-semibold text-zinc-400 active:opacity-70 transition-opacity"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleModalAdd}
-                disabled={logCaffeine.isPending}
-                className="flex-1 rounded-[10px] bg-green-500 py-3 text-sm font-bold text-black active:opacity-80 disabled:opacity-50 transition-opacity"
-              >
-                Add
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </main>
   )
 }
