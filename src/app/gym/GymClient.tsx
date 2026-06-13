@@ -1092,34 +1092,26 @@ export default function GymClient({ today, initialConfig, initialExercises, init
               onClick={() => streamCoach('angel')}
               disabled={coachStreaming}
               whileTap={{ scale: 0.97 }}
-              className={`flex-1 flex flex-col items-center justify-center py-5 gap-2 transition-colors active:opacity-70 disabled:opacity-50 ${
-                coachMode === 'angel' ? 'bg-emerald-950/50' : 'bg-white/3'
+              className={`flex-1 flex flex-col items-center justify-center py-4 gap-1 transition-colors active:opacity-70 disabled:opacity-50 ${
+                coachMode === 'angel' ? 'bg-emerald-950/60' : 'bg-white/5'
               }`}
             >
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: coachMode === 'angel' ? 'rgba(74,222,128,0.15)' : 'rgba(255,255,255,0.06)', border: coachMode === 'angel' ? '1px solid rgba(74,222,128,0.25)' : '1px solid rgba(255,255,255,0.09)' }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={coachMode === 'angel' ? '#4ade80' : 'rgba(255,255,255,0.5)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-                </svg>
-              </div>
-              <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: coachMode === 'angel' ? '#4ade80' : 'rgba(255,255,255,0.35)' }}>
+              <span className="text-2xl">😇</span>
+              <span className="text-xs font-semibold tracking-widest text-emerald-400 uppercase">
                 {coachStreaming && coachMode === 'angel' ? 'Talking…' : 'Hype me up'}
               </span>
             </motion.button>
-            <div className="w-px bg-white/6" />
+            <div className="w-px bg-white/8" />
             <motion.button
               onClick={() => streamCoach('devil')}
               disabled={coachStreaming}
               whileTap={{ scale: 0.97 }}
-              className={`flex-1 flex flex-col items-center justify-center py-5 gap-2 transition-colors active:opacity-70 disabled:opacity-50 ${
-                coachMode === 'devil' ? 'bg-red-950/50' : 'bg-white/3'
+              className={`flex-1 flex flex-col items-center justify-center py-4 gap-1 transition-colors active:opacity-70 disabled:opacity-50 ${
+                coachMode === 'devil' ? 'bg-red-950/60' : 'bg-white/5'
               }`}
             >
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: coachMode === 'devil' ? 'rgba(248,113,113,0.15)' : 'rgba(255,255,255,0.06)', border: coachMode === 'devil' ? '1px solid rgba(248,113,113,0.25)' : '1px solid rgba(255,255,255,0.09)' }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={coachMode === 'devil' ? '#f87171' : 'rgba(255,255,255,0.5)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
-                </svg>
-              </div>
-              <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: coachMode === 'devil' ? '#f87171' : 'rgba(255,255,255,0.35)' }}>
+              <span className="text-2xl">😈</span>
+              <span className="text-xs font-semibold tracking-widest text-red-400 uppercase">
                 {coachStreaming && coachMode === 'devil' ? 'Talking…' : 'Yell at me'}
               </span>
             </motion.button>
@@ -1391,45 +1383,29 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   </div>
                 )}
 
-                {/* Reps grid */}
+                {/* Reps slider */}
                 <div className="mb-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30">Reps</span>
-                    <span className="text-[10px] text-white/20 font-mono">
-                      {repMin}–{repMax} target
-                    </span>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30">Reps</label>
+                    <span className="text-2xl font-bold tabular-nums">{selectedReps}</span>
                   </div>
-                  <div className="overflow-x-auto -mx-5 px-5 pb-0.5" style={{ scrollbarWidth: 'none' }}>
-                    <div className="flex gap-1.5 min-w-max">
-                      {Array.from({ length: 18 }, (_, i) => i + 3).map(n => {
-                        const inRange = n >= repMin && n <= repMax
-                        const isSelected = n === selectedReps
-                        return (
-                          <motion.button
-                            key={n}
-                            whileTap={{ scale: 0.82 }}
-                            onClick={() => setSelectedReps(n)}
-                            className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 transition-all duration-150"
-                            style={isSelected ? {
-                              background: 'rgba(74,222,128,0.18)',
-                              border: '1px solid rgba(74,222,128,0.45)',
-                              color: '#4ade80',
-                              boxShadow: '0 0 12px rgba(74,222,128,0.2)',
-                            } : inRange ? {
-                              background: 'rgba(74,222,128,0.06)',
-                              border: '1px solid rgba(74,222,128,0.18)',
-                              color: 'rgba(74,222,128,0.55)',
-                            } : {
-                              background: 'rgba(255,255,255,0.04)',
-                              border: '1px solid rgba(255,255,255,0.07)',
-                              color: 'rgba(255,255,255,0.2)',
-                            }}
-                          >
-                            {n}
-                          </motion.button>
-                        )
-                      })}
-                    </div>
+                  <input
+                    type="range"
+                    min={3}
+                    max={20}
+                    step={1}
+                    value={selectedReps}
+                    onChange={e => setSelectedReps(Number(e.target.value))}
+                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+                    style={{
+                      background: `linear-gradient(to right, #4ade80 ${((selectedReps - 3) / (20 - 3)) * 100}%, rgba(255,255,255,0.12) 0%)`,
+                      WebkitAppearance: 'none',
+                    }}
+                  />
+                  <div className="flex justify-between mt-1">
+                    <span className="text-xs text-white/20">3</span>
+                    <span className="text-xs text-white/20 font-mono">{repMin}–{repMax} target</span>
+                    <span className="text-xs text-white/20">20</span>
                   </div>
                 </div>
 
