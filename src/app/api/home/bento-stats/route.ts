@@ -8,6 +8,8 @@ import type { OuraData, WhoopData } from '@/features/health/types'
 export interface BentoStats {
   lastWorkout: { name: string; completedAt: string } | null
   workoutCount7d: number
+  workoutDays7d: boolean[]   // 7 items: index 0 = 6 days ago, index 6 = today
+  recentTrainingCheckin: { date: string; activity: string } | null
   todayCalories: number
   todayProtein: number
   recoveryScore: number | null   // oura readiness or whoop recovery
@@ -25,7 +27,7 @@ export async function GET() {
   const today = toLocalDate(tz)
   const sevenDaysAgo = subDays(new Date(), 7).toISOString()
 
-  const [lastWorkoutRes, workoutCountRes, foodRes, wearableRes, journalRes] = await Promise.all([
+  const [lastWorkoutRes, workoutDaysRes, foodRes, wearableRes, journalRes, checkinRes] = await Promise.all([
     db.from('workouts')
       .select('id, name, completed_at')
       .eq('user_id', user.id)
@@ -35,7 +37,7 @@ export async function GET() {
       .maybeSingle(),
 
     db.from('workouts')
-      .select('id', { count: 'exact', head: true })
+      .select('completed_at')
       .eq('user_id', user.id)
       .not('completed_at', 'is', null)
       .gte('completed_at', sevenDaysAgo),
@@ -57,6 +59,15 @@ export async function GET() {
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
+
+    db.from('daily_checkins')
+      .select('date, evening_actual_training')
+      .eq('user_id', user.id)
+      .not('evening_actual_training', 'is', null)
+      .neq('evening_actual_training', '')
+      .order('date', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ])
 
   // Last workout
@@ -65,8 +76,19 @@ export async function GET() {
     ? { name: (lw.name as string | null) ?? 'Workout', completedAt: lw.completed_at as string }
     : null
 
-  // Workout count last 7 days
-  const workoutCount7d = workoutCountRes.count ?? 0
+  // Workout days breakdown (last 7 days: index 0 = 6 days ago, index 6 = today)
+  const workoutRows = (workoutDaysRes.data ?? []) as Array<{ completed_at: string }>
+  const workoutDays7d: boolean[] = Array(7).fill(false)
+  const nowMs = Date.now()
+  for (const row of workoutRows) {
+    const daysAgo = Math.floor((nowMs - new Date(row.completed_at).getTime()) / (1000 * 60 * 60 * 24))
+    if (daysAgo >= 0 && daysAgo < 7) workoutDays7d[6 - daysAgo] = true
+  }
+  const workoutCount7d = workoutDays7d.filter(Boolean).length
+
+  // Most recent training check-in (fallback when no formal workout)
+  const ci = checkinRes.data as { date: string; evening_actual_training: string } | null
+  const recentTrainingCheckin = ci ? { date: ci.date, activity: ci.evening_actual_training } : null
 
   // Today's food totals
   const logs = (foodRes.data ?? []) as Array<{ calories: number | null; protein_g: number | null }>
@@ -109,6 +131,8 @@ export async function GET() {
   const stats: BentoStats = {
     lastWorkout,
     workoutCount7d,
+    workoutDays7d,
+    recentTrainingCheckin,
     todayCalories,
     todayProtein,
     recoveryScore,

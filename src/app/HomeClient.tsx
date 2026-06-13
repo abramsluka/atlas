@@ -276,6 +276,155 @@ function moodEmoji(mood: number | null): string {
   return ['', '😞', '😐', '🙂', '😊', '😄'][mood] ?? ''
 }
 
+// ── Card-specific visualizations ─────────────────────────────────────────────
+
+/** TRAIN: 7-day bar chart, one bar per day, today on the right */
+function TrainVisual({ days, color }: { days: boolean[]; color: string }) {
+  const barW = 5, barH = 32, gap = 4
+  const W = days.length * (barW + gap) - gap
+  return (
+    <svg viewBox={`0 0 ${W} ${barH + 4}`} width={W} height={barH + 4}
+      style={{ display: 'block', marginTop: 14, marginRight: 14 }}>
+      {days.map((active, i) => {
+        const h = active ? barH : Math.round(barH * 0.22)
+        const x = i * (barW + gap)
+        const y = barH - h + 2
+        return (
+          <rect key={i} x={x} y={y} width={barW} height={h} rx={2.5}
+            fill={active ? color : 'rgba(255,255,255,0.07)'}
+            style={active ? { filter: `drop-shadow(0 0 5px ${color}99)` } : {}}
+          />
+        )
+      })}
+    </svg>
+  )
+}
+
+/** FUEL: Glowing orb with one orbiting dot */
+function FuelOrb({ calories, color }: { calories: number; color: string }) {
+  const lit = calories > 0
+  return (
+    <div style={{ width: 68, height: 68, position: 'relative', marginTop: 4, marginRight: 4, flexShrink: 0 }}>
+      {lit && (
+        <div style={{
+          position: 'absolute', inset: 6, borderRadius: '50%',
+          background: color, filter: 'blur(18px)', opacity: 0.22,
+          animation: 'bentoGlow 3.5s ease-in-out infinite',
+        }} />
+      )}
+      <svg viewBox="0 0 68 68" width="68" height="68" style={{ position: 'absolute', inset: 0 }}>
+        {/* Orbit ring */}
+        <circle cx="34" cy="34" r="26" fill="none"
+          stroke={color} strokeWidth="0.7" opacity={lit ? 0.18 : 0.07}
+          strokeDasharray="3 5" />
+        {/* Central orb */}
+        {lit && (
+          <circle cx="34" cy="34" r="8" fill="none"
+            stroke={color} strokeWidth="1" opacity={0.35} />
+        )}
+        <circle cx="34" cy="34" r={lit ? 5 : 3}
+          fill={lit ? color : 'rgba(255,255,255,0.08)'}
+          opacity={lit ? 0.85 : 1}
+          style={lit ? { filter: `drop-shadow(0 0 6px ${color})` } : {}}
+        />
+        {/* Orbiting dot */}
+        {lit && (
+          <circle cx="60" cy="34" r="2.5" fill={color} opacity="0.7">
+            <animateTransform
+              attributeName="transform" attributeType="XML"
+              type="rotate" from="0 34 34" to="360 34 34"
+              dur="8s" repeatCount="indefinite" />
+          </circle>
+        )}
+        {/* Second faint dot, offset */}
+        {lit && (
+          <circle cx="34" cy="8" r="1.5" fill={color} opacity="0.35">
+            <animateTransform
+              attributeName="transform" attributeType="XML"
+              type="rotate" from="180 34 34" to="540 34 34"
+              dur="13s" repeatCount="indefinite" />
+          </circle>
+        )}
+      </svg>
+    </div>
+  )
+}
+
+/** VITALS: Radar/sonar scan — rotating sweep with concentric rings */
+function VitalsRadar({ score, color }: { score: number | null; color: string }) {
+  const lit = score != null
+  return (
+    <div style={{ width: 76, height: 76, position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
+      <svg viewBox="0 0 76 76" width="76" height="76" style={{ position: 'absolute', inset: 0 }}>
+        {[32, 22, 12].map(r => (
+          <circle key={r} cx="38" cy="38" r={r} fill="none"
+            stroke={color} strokeWidth="0.6"
+            opacity={lit ? 0.12 : 0.06} />
+        ))}
+        <line x1="6" y1="38" x2="70" y2="38" stroke={color} strokeWidth="0.5" opacity={lit ? 0.1 : 0.04} />
+        <line x1="38" y1="6" x2="38" y2="70" stroke={color} strokeWidth="0.5" opacity={lit ? 0.1 : 0.04} />
+        {lit && <circle cx="38" cy="38" r="2.5" fill={color} opacity="0.85"
+          style={{ filter: `drop-shadow(0 0 5px ${color})` }} />}
+      </svg>
+      {lit && (
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: `conic-gradient(from 0deg at 50% 50%, transparent 290deg, ${color}2a 360deg)`,
+          borderRadius: '50%',
+          animation: 'radarSweep 4s linear infinite',
+        }} />
+      )}
+    </div>
+  )
+}
+
+/** ENERGY: Mini circadian energy arc with current-position dot */
+function EnergyArc({ color }: { color: string }) {
+  const W = 82, H = 48
+  const now = new Date()
+  const hoursAwake = Math.max(0, now.getHours() + now.getMinutes() / 60 - 6.5)
+  const totalAwake = 17
+
+  function energyAt(t: number): number {
+    // Circadian model: peaks ~3h after wake, gentle afternoon dip, evening decline
+    const morning = 70 * Math.exp(-Math.pow(t - 3, 2) / 20)
+    const afternoon = 15 * Math.exp(-Math.pow(t - 7, 2) / 4)
+    const base = 35 - t * 1.8
+    return Math.max(5, Math.min(95, base + morning - afternoon))
+  }
+
+  const pts: Array<[number, number]> = []
+  for (let i = 0; i <= 24; i++) {
+    const t = (i / 24) * totalAwake
+    const e = energyAt(t)
+    pts.push([(i / 24) * (W - 4) + 2, H - 4 - (e / 100) * (H - 10)])
+  }
+  const path = 'M ' + pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' L ')
+
+  const curX = Math.min(W - 6, Math.max(2, (hoursAwake / totalAwake) * (W - 4) + 2))
+  const curT = (hoursAwake / totalAwake) * totalAwake
+  const curE = energyAt(curT)
+  const curY = H - 4 - (curE / 100) * (H - 10)
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H}
+      style={{ display: 'block', marginTop: 10, marginRight: 6 }}>
+      <defs>
+        <linearGradient id="eGrad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor={color} stopOpacity="0.08" />
+          <stop offset={`${Math.min(98, (hoursAwake / totalAwake) * 100).toFixed(0)}%`} stopColor={color} stopOpacity="0.65" />
+          <stop offset="100%" stopColor={color} stopOpacity="0.12" />
+        </linearGradient>
+      </defs>
+      <path d={path} fill="none" stroke="url(#eGrad)" strokeWidth="1.5" strokeLinejoin="round" />
+      <circle cx={curX.toFixed(1)} cy={curY.toFixed(1)} r="3.5" fill={color}
+        style={{ filter: `drop-shadow(0 0 6px ${color}cc)`, animation: 'bentoGlow 2.5s ease-in-out infinite' }} />
+    </svg>
+  )
+}
+
+// ── BentoCard shell ───────────────────────────────────────────────────────────
+
 interface BentoCardProps {
   href: string
   color: string
@@ -285,46 +434,52 @@ interface BentoCardProps {
   wide?: boolean
   loading?: boolean
   dim?: boolean
+  visual?: React.ReactNode
 }
 
-function BentoCard({ href, color, label, headline, sub, wide, loading, dim }: BentoCardProps) {
+function BentoCard({ href, color, label, headline, sub, wide, loading, dim, visual }: BentoCardProps) {
   const router = useRouter()
   return (
     <motion.button
       onClick={() => router.push(href)}
       whileTap={{ scale: 0.97 }}
       transition={{ duration: 0.15 }}
-      className={`text-left flex flex-col justify-between p-4 rounded-2xl relative overflow-hidden ${wide ? 'col-span-2' : ''}`}
+      className={`text-left flex flex-col relative overflow-hidden ${wide ? 'col-span-2' : ''}`}
       style={{
-        background: 'rgba(255,255,255,0.03)',
-        border: '1px solid rgba(255,255,255,0.07)',
-        borderLeft: `2px solid ${dim ? 'rgba(255,255,255,0.08)' : color}`,
-        minHeight: wide ? 76 : 92,
-        opacity: dim ? 0.55 : 1,
+        background: dim ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.03)',
+        border: `1px solid rgba(255,255,255,${dim ? '0.05' : '0.07'})`,
+        borderLeft: `2px solid ${dim ? 'rgba(255,255,255,0.06)' : color}`,
+        borderRadius: 18,
+        minHeight: wide ? 80 : 112,
+        opacity: dim ? 0.5 : 1,
+        padding: '14px 14px 14px 16px',
       }}
     >
-      {/* Subtle color wash behind content */}
+      {/* Color wash */}
       {!dim && (
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{ background: `radial-gradient(ellipse at 0% 50%, ${color}0a 0%, transparent 65%)` }}
-        />
+        <div className="absolute inset-0 pointer-events-none"
+          style={{ background: `radial-gradient(ellipse at 0% 60%, ${color}0e 0%, transparent 65%)` }} />
       )}
 
-      <div className="relative">
-        <span
-          className="text-[9px] font-extrabold tracking-[0.22em] uppercase"
-          style={{ color: dim ? 'rgba(255,255,255,0.25)' : color }}
-        >
-          {label}
-        </span>
-      </div>
+      {/* Visual — top right */}
+      {visual && !dim && (
+        <div className="absolute top-0 right-0 pointer-events-none flex items-start">
+          {visual}
+        </div>
+      )}
 
-      <div className="relative mt-1.5">
+      {/* Label */}
+      <span className="text-[9px] font-extrabold tracking-[0.22em] uppercase relative z-10 shrink-0"
+        style={{ color: dim ? 'rgba(255,255,255,0.2)' : color }}>
+        {label}
+      </span>
+
+      {/* Content — pushed to bottom */}
+      <div className="relative z-10 mt-auto">
         {loading ? (
           <div className="h-4 w-3/4 rounded bg-white/[0.06] animate-pulse" />
         ) : (
-          <span className="text-[13px] font-bold text-white leading-snug">{headline}</span>
+          <span className="text-[13px] font-bold text-white leading-snug block">{headline}</span>
         )}
         {sub && !loading && (
           <p className="text-[11px] text-zinc-500 mt-0.5 leading-snug">{sub}</p>
@@ -345,87 +500,77 @@ function BentoGrid() {
       .catch(() => setLoading(false))
   }, [])
 
-  // Train
-  const trainHeadline = stats?.lastWorkout?.name ?? (loading ? '' : 'No workout logged')
-  const trainSub = stats?.lastWorkout
-    ? `${fmtRelTime(stats.lastWorkout.completedAt)} · ${stats.workoutCount7d}x this week`
-    : stats ? `${stats.workoutCount7d} workouts this week` : ''
-  const trainDim = !loading && !stats?.lastWorkout && (stats?.workoutCount7d ?? 0) === 0
+  // Train — prefer recent check-in when no formal workout recently
+  const msPerDay = 1000 * 60 * 60 * 24
+  const workoutAgeDays = stats?.lastWorkout
+    ? Math.floor((Date.now() - new Date(stats.lastWorkout.completedAt).getTime()) / msPerDay)
+    : Infinity
+  const checkinAgeDays = stats?.recentTrainingCheckin
+    ? Math.floor((Date.now() - new Date(stats.recentTrainingCheckin.date + 'T12:00:00').getTime()) / msPerDay)
+    : Infinity
+  const useCheckin = checkinAgeDays < workoutAgeDays && checkinAgeDays <= 3
+
+  const trainHeadline = loading ? '' :
+    useCheckin ? stats!.recentTrainingCheckin!.activity :
+    stats?.lastWorkout?.name ?? 'No training logged'
+  const trainSub = loading ? '' :
+    useCheckin ? `${checkinAgeDays === 0 ? 'Today' : `${checkinAgeDays}d ago`} · ${stats!.workoutCount7d}x this week` :
+    stats?.lastWorkout
+      ? `${fmtRelTime(stats.lastWorkout.completedAt)} · ${stats.workoutCount7d}x this week`
+      : stats ? `${stats.workoutCount7d} workouts this week` : ''
+  const trainDim = !loading && !stats?.lastWorkout && (stats?.workoutCount7d ?? 0) === 0 && checkinAgeDays > 3
 
   // Fuel
-  const fuelHeadline = stats
-    ? stats.todayCalories > 0 ? `${stats.todayCalories} cal` : 'Nothing logged'
-    : ''
+  const fuelHeadline = loading ? '' :
+    stats!.todayCalories > 0 ? `${stats!.todayCalories.toLocaleString()} cal` : 'Nothing logged'
   const fuelSub = stats?.todayProtein ? `${stats.todayProtein}g protein` : ''
   const fuelDim = !loading && (stats?.todayCalories ?? 0) === 0
 
   // Vitals
-  const vitalsHeadline = stats?.recoveryScore != null
-    ? `${stats.recoveryScore} recovery`
-    : stats?.sleepScore != null
-    ? `${stats.sleepScore} sleep`
-    : loading ? '' : 'No device'
+  const vitalsHeadline = loading ? '' :
+    stats!.recoveryScore != null ? `${stats!.recoveryScore} recovery` :
+    stats!.sleepScore != null ? `${stats!.sleepScore} sleep` : 'No device'
   const vitalsSub = stats?.sleepScore != null && stats?.recoveryScore != null
-    ? `${stats.sleepScore} sleep score`
-    : ''
+    ? `${stats.sleepScore} sleep score` : ''
   const vitalsDim = !loading && stats?.recoveryScore == null && stats?.sleepScore == null
 
   // Journal
-  const journalEntry = stats?.lastJournal
-  const journalHeadline = journalEntry
-    ? journalEntry.snippet || 'Entry logged'
-    : loading ? '' : 'Nothing written'
-  const journalSub = journalEntry
-    ? `${fmtRelTime(journalEntry.createdAt)}${journalEntry.mood ? ' · ' + moodEmoji(journalEntry.mood) : ''}`
-    : ''
-  const journalDim = !loading && !journalEntry
+  const je = stats?.lastJournal
+  const journalHeadline = loading ? '' : je ? (je.snippet || 'Entry logged') : 'Nothing written'
+  const journalSub = je
+    ? `${fmtRelTime(je.createdAt)}${je.mood ? ' · ' + moodEmoji(je.mood) : ''}` : ''
+  const journalDim = !loading && !je
 
   return (
     <div className="grid grid-cols-2 gap-2.5 mb-4">
       <BentoCard
-        href="/gym"
-        color="#4ade80"
-        label="Train"
-        headline={trainHeadline}
-        sub={trainSub}
-        loading={loading}
-        dim={trainDim}
+        href="/gym" color="#4ade80" label="Train"
+        headline={trainHeadline} sub={trainSub}
+        loading={loading} dim={trainDim}
+        visual={<TrainVisual days={stats?.workoutDays7d ?? Array(7).fill(false)} color="#4ade80" />}
       />
       <BentoCard
-        href="/health"
-        color="#22d3ee"
-        label="Fuel"
-        headline={fuelHeadline}
-        sub={fuelSub}
-        loading={loading}
-        dim={fuelDim}
+        href="/health" color="#22d3ee" label="Fuel"
+        headline={fuelHeadline} sub={fuelSub}
+        loading={loading} dim={fuelDim}
+        visual={<FuelOrb calories={stats?.todayCalories ?? 0} color="#22d3ee" />}
       />
       <BentoCard
-        href="/health"
-        color="#a78bfa"
-        label="Vitals"
-        headline={vitalsHeadline}
-        sub={vitalsSub}
-        loading={loading}
-        dim={vitalsDim}
+        href="/health" color="#a78bfa" label="Vitals"
+        headline={vitalsHeadline} sub={vitalsSub}
+        loading={loading} dim={vitalsDim}
+        visual={<VitalsRadar score={stats?.recoveryScore ?? stats?.sleepScore ?? null} color="#a78bfa" />}
       />
       <BentoCard
-        href="/health/caffeine"
-        color="#fb923c"
-        label="Energy"
-        headline="See energy curve"
-        sub="Caffeine · circadian · meals"
-        loading={false}
-        dim={false}
+        href="/health/caffeine" color="#fb923c" label="Energy"
+        headline="Energy curve" sub="Caffeine · circadian · meals"
+        loading={false} dim={false}
+        visual={<EnergyArc color="#fb923c" />}
       />
       <BentoCard
-        href="/journal"
-        color="#fbbf24"
-        label="Journal"
-        headline={journalHeadline}
-        sub={journalSub}
-        loading={loading}
-        dim={journalDim}
+        href="/journal" color="#fbbf24" label="Journal"
+        headline={journalHeadline} sub={journalSub}
+        loading={loading} dim={journalDim}
         wide
       />
     </div>

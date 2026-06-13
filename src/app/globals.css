@@ -199,3 +199,12 @@ input[type="range"]::-moz-range-thumb {
 }
 .is-leaving  { animation: ticker-leave 0.45s cubic-bezier(0.55, 0, 0.55, 1) forwards; }
 .is-entering { animation: ticker-enter 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+
+@keyframes radarSweep {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes bentoGlow {
+  0%, 100% { opacity: 0.18; }
+  50%       { opacity: 0.35; }
+}

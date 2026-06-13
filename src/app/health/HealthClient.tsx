@@ -739,7 +739,7 @@ function AddStackForm({
               onFocus={() => { if (results.length > 0) setShowResults(true) }}
             />
             {showResults && (
-              <div className="absolute top-[calc(100%+6px)] left-0 w-[max(100%,320px)] bg-[rgba(15,15,18,0.96)] border border-white/[0.12] rounded-xl max-h-72 overflow-y-auto backdrop-blur-xl shadow-[0_16px_40px_rgba(0,0,0,0.65)] z-50 p-1.5">
+              <div className="absolute top-[calc(100%+6px)] left-0 w-[max(100%,320px)] bg-[rgba(15,15,18,0.96)] border border-white/[0.12] rounded-xl max-h-72 overflow-y-auto backdrop-blur-xl shadow-[0_16px_40px_rgba(0,0,0,0.65)] z-[200] p-1.5">
                 {results.map(s => {
                   const winMeta = STACK_WINDOWS.find(w => w.key === s.window) ?? STACK_WINDOWS[3]
                   return (
