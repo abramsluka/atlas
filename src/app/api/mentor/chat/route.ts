@@ -77,6 +77,7 @@ import { formatInTimeZone } from 'date-fns-tz'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
 import { getOuraContextRange, summarizeOuraForCoach } from '@/features/health/ouraContext'
+import { computePatterns } from '@/lib/computePatterns'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -211,6 +212,9 @@ export async function POST(req: NextRequest) {
   const sevenDaysAgo = formatInTimeZone(subDays(new Date(), 7), TZ, 'yyyy-MM-dd')
   const thirtyDaysAgo = formatInTimeZone(subDays(new Date(), 30), TZ, 'yyyy-MM-dd')
 
+  // Start pattern computation concurrently with data fetches (has its own internal queries)
+  const patternPromise = computePatterns(db, user.id, TZ, today)
+
   // Step 3 — fetch all data sources unconditionally
   const [
     gymLogData,
@@ -260,6 +264,11 @@ When journal data is present: look for mood trends across entries (not just toda
   }
   if (memories.length > 0) {
     parts.push(`CONTEXT FROM RECENT SESSIONS:\n${memories.map(m => `- ${m}`).join('\n')}`)
+  }
+
+  const patternText = await patternPromise
+  if (patternText) {
+    parts.push(patternText)
   }
 
   const systemPrompt = parts.join('\n\n')
