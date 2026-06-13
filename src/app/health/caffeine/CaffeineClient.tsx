@@ -714,22 +714,6 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
               {doses.map(d => (
                 <circle key={d.id} cx={hToX(d.hour, wakeHour)} cy={eToYScaled(computeEnergy(d.hour, wakeHour, sleepQuality, doses, workouts, meals), chartYMin, chartYMax)} r="4.5" fill="#050508" stroke="#4ade80" strokeWidth="2" />
               ))}
-              {/* Subjective rating dots */}
-              {ratings.map(r => {
-                const h = new Date(r.logged_at).getHours() + new Date(r.logged_at).getMinutes() / 60
-                const x = hToX(h, wakeHour)
-                const y = eToYScaled(r.rating, chartYMin, chartYMax)
-                return (
-                  <g key={r.id}>
-                    <line x1={x} x2={x} y1={y} y2={eToYScaled(computeEnergy(h, wakeHour, sleepQuality, doses, workouts, meals), chartYMin, chartYMax)}
-                      stroke="rgba(255,255,255,0.2)" strokeWidth="1" strokeDasharray="2,3" />
-                    <rect x={x - 4} y={y - 4} width="8" height="8" rx="2"
-                      fill="white" opacity="0.9"
-                      transform={`rotate(45 ${x} ${y})`}
-                      style={{ filter: 'drop-shadow(0 0 4px rgba(255,255,255,0.6))' }} />
-                  </g>
-                )
-              })}
               <line x1={nowX} x2={nowX} y1="0" y2={SVG_H} stroke="rgba(255,255,255,0.25)" strokeWidth="1.5" strokeDasharray="3,5" />
               {scrubX !== null && (
                 <>
@@ -814,7 +798,7 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
           <div className="flex items-center gap-4">
             {/* Left: label */}
             <div style={{ flexShrink: 0, width: '36%' }}>
-              <p style={{ fontFamily: 'Georgia, serif', fontStyle: 'italic', fontWeight: 700, fontSize: 15, color: 'white', lineHeight: 1.25 }}>
+              <p style={{ fontFamily: 'Georgia, serif', fontStyle: 'italic', fontWeight: 700, fontSize: 22, color: 'white', lineHeight: 1.2 }}>
                 How do you feel right now?
               </p>
               <p style={{ fontFamily: 'monospace', fontSize: 8, color: '#52525b', letterSpacing: '0.13em', marginTop: 4, textTransform: 'uppercase' }}>
