@@ -232,7 +232,7 @@ interface ExModalState {
   id?: string
   name: string
   gymId: string
-  dayId: string
+  dayIds: string[]
   bodyweight: boolean
   startWeight: number
   repMin: number
@@ -241,7 +241,7 @@ interface ExModalState {
 }
 
 const EMPTY_EX_MODAL: ExModalState = {
-  open: false, mode: 'add', name: '', gymId: 'g_default', dayId: '',
+  open: false, mode: 'add', name: '', gymId: 'g_default', dayIds: [],
   bodyweight: false, startWeight: 20, repMin: 6, repMax: 8, step: 2.5,
 }
 
@@ -311,7 +311,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
 
   const filteredExercises = useMemo(() => exercises.filter(ex => {
     const gymOk = ex.gym_id === 'both' || ex.gym_id === filterGym
-    const dayOk = !filterDay || ex.day_id === filterDay
+    const dayOk = !filterDay || (ex.day_ids ?? []).includes(filterDay)
     return gymOk && dayOk
   }), [exercises, filterGym, filterDay])
 
@@ -375,7 +375,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
       ...EMPTY_EX_MODAL,
       open: true, mode: 'add',
       gymId: filterGym,
-      dayId: filterDay,
+      dayIds: filterDay ? [filterDay] : [],
       repMax: 8,
     })
   }
@@ -387,7 +387,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
       id: currentEx.id,
       name: currentEx.name,
       gymId: currentEx.gym_id,
-      dayId: currentEx.day_id,
+      dayIds: currentEx.day_ids ?? [],
       bodyweight: currentEx.bodyweight,
       startWeight: currentEx.start_weight,
       repMin: currentEx.rep_min,
@@ -397,13 +397,13 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   }
 
   function saveEx() {
-    const { mode, id, name, gymId, dayId, bodyweight, startWeight, repMin, repMax, step } = exModal
-    if (!name.trim() || !gymId || !dayId) return
+    const { mode, id, name, gymId, dayIds, bodyweight, startWeight, repMin, repMax, step } = exModal
+    if (!name.trim() || !gymId || !dayIds.length) return
     if (mode === 'edit' && id) {
-      updateEx.mutate({ id, name: name.trim(), gym_id: gymId, day_id: dayId, bodyweight, start_weight: startWeight, rep_min: repMin, rep_max: repMax, step })
+      updateEx.mutate({ id, name: name.trim(), gym_id: gymId, day_ids: dayIds, bodyweight, start_weight: startWeight, rep_min: repMin, rep_max: repMax, step })
     } else {
       createEx.mutate(
-        { name: name.trim(), gym_id: gymId, day_id: dayId, bodyweight, start_weight: startWeight, rep_min: repMin, rep_max: repMax, step, order_index: exercises.length },
+        { name: name.trim(), gym_id: gymId, day_ids: dayIds, bodyweight, start_weight: startWeight, rep_min: repMin, rep_max: repMax, step, order_index: exercises.length },
         { onSuccess: (ex) => { setCurrentExId(ex.id); setWeightInput(ex.start_weight) } }
       )
     }
@@ -893,14 +893,26 @@ export default function GymClient({ today, initialConfig, initialExercises, init
               </div>
 
               <div>
-                <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Day</label>
+                <label className="text-xs text-white/40 uppercase tracking-wider block mb-1">Days</label>
+                <p className="text-[10px] text-white/25 mb-2">Select all days this exercise appears on</p>
                 <div className="flex gap-2 flex-wrap">
-                  {config.days.map(d => (
-                    <button key={d.id} onClick={() => setExModal(m => ({ ...m, dayId: d.id }))}
-                      className={`rounded-full px-3 py-1.5 text-xs border ${exModal.dayId === d.id ? 'bg-green-400 text-black border-transparent' : 'border-white/15 text-white/50'}`}>
-                      {d.name}
-                    </button>
-                  ))}
+                  {config.days.map(d => {
+                    const selected = exModal.dayIds.includes(d.id)
+                    return (
+                      <button
+                        key={d.id}
+                        onClick={() => setExModal(m => ({
+                          ...m,
+                          dayIds: selected
+                            ? m.dayIds.filter(id => id !== d.id)
+                            : [...m.dayIds, d.id],
+                        }))}
+                        className={`rounded-full px-3 py-1.5 text-xs border transition-colors ${selected ? 'bg-green-400 text-black border-transparent' : 'border-white/15 text-white/50'}`}
+                      >
+                        {selected && <span className="mr-1">✓</span>}{d.name}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
 
@@ -960,7 +972,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
               </button>
               <button
                 onClick={saveEx}
-                disabled={!exModal.name.trim() || !exModal.gymId || !exModal.dayId}
+                disabled={!exModal.name.trim() || !exModal.gymId || !exModal.dayIds.length}
                 className="flex-1 rounded-xl bg-white text-black font-bold py-3 text-sm active:opacity-70 disabled:opacity-40"
               >
                 Save

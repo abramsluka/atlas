@@ -30,7 +30,7 @@ export interface GymExercise {
   user_id?: string
   name: string
   gym_id: string   // gym id or 'both'
-  day_id: string
+  day_ids: string[]
   bodyweight: boolean
   start_weight: number
   rep_min: number
