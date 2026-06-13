@@ -879,7 +879,7 @@ function StackTracker({
   const deletePending = deleteSupplement.isPending
 
   return (
-    <section className="relative">
+    <section className="relative" style={{ zIndex: 2, isolation: 'isolate' }}>
       <StackTicker supplements={allSupplements} logs={allLogs} />
 
       {/* Header */}

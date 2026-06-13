@@ -350,30 +350,29 @@ function FuelOrb({ calories, color }: { calories: number; color: string }) {
   )
 }
 
-/** VITALS: Radar/sonar scan — rotating sweep with concentric rings */
-function VitalsRadar({ score, color }: { score: number | null; color: string }) {
-  const lit = score != null
+/** JOURNAL: Mood glow — pulsing orb colored by last mood */
+function JournalMood({ mood, color }: { mood: number | null; color: string }) {
+  const moodColors = [color, '#f87171', '#fb923c', '#fbbf24', '#4ade80', '#34d399']
+  const c = mood != null ? (moodColors[mood] ?? color) : color
+  const lit = mood != null
   return (
-    <div style={{ width: 76, height: 76, position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
-      <svg viewBox="0 0 76 76" width="76" height="76" style={{ position: 'absolute', inset: 0 }}>
-        {[32, 22, 12].map(r => (
-          <circle key={r} cx="38" cy="38" r={r} fill="none"
-            stroke={color} strokeWidth="0.6"
-            opacity={lit ? 0.12 : 0.06} />
-        ))}
-        <line x1="6" y1="38" x2="70" y2="38" stroke={color} strokeWidth="0.5" opacity={lit ? 0.1 : 0.04} />
-        <line x1="38" y1="6" x2="38" y2="70" stroke={color} strokeWidth="0.5" opacity={lit ? 0.1 : 0.04} />
-        {lit && <circle cx="38" cy="38" r="2.5" fill={color} opacity="0.85"
-          style={{ filter: `drop-shadow(0 0 5px ${color})` }} />}
-      </svg>
+    <div style={{ width: 56, height: 56, position: 'relative', marginTop: 6, marginRight: 8, flexShrink: 0 }}>
       {lit && (
         <div style={{
-          position: 'absolute', inset: 0,
-          background: `conic-gradient(from 0deg at 50% 50%, transparent 290deg, ${color}2a 360deg)`,
-          borderRadius: '50%',
-          animation: 'radarSweep 4s linear infinite',
+          position: 'absolute', inset: 8, borderRadius: '50%',
+          background: c, filter: 'blur(14px)', opacity: 0.28,
+          animation: 'bentoGlow 3s ease-in-out infinite',
         }} />
       )}
+      <svg viewBox="0 0 56 56" width="56" height="56" style={{ position: 'absolute', inset: 0 }}>
+        <circle cx="28" cy="28" r="20" fill="none" stroke={c} strokeWidth="0.7"
+          opacity={lit ? 0.15 : 0.06} strokeDasharray="2 4" />
+        <circle cx="28" cy="28" r="12" fill="none" stroke={c} strokeWidth="0.5"
+          opacity={lit ? 0.1 : 0.04} />
+        <circle cx="28" cy="28" r={lit ? 5 : 3} fill={lit ? c : 'rgba(255,255,255,0.07)'}
+          opacity={lit ? 0.9 : 1}
+          style={lit ? { filter: `drop-shadow(0 0 5px ${c})` } : {}} />
+      </svg>
     </div>
   )
 }
@@ -494,7 +493,7 @@ function BentoGrid() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/home/bento-stats')
+    fetch('/api/home/bento-stats', { cache: 'no-store' })
       .then(r => r.json())
       .then((d: BentoStats) => { setStats(d); setLoading(false) })
       .catch(() => setLoading(false))
@@ -526,14 +525,6 @@ function BentoGrid() {
   const fuelSub = stats?.todayProtein ? `${stats.todayProtein}g protein` : ''
   const fuelDim = !loading && (stats?.todayCalories ?? 0) === 0
 
-  // Vitals
-  const vitalsHeadline = loading ? '' :
-    stats!.recoveryScore != null ? `${stats!.recoveryScore} recovery` :
-    stats!.sleepScore != null ? `${stats!.sleepScore} sleep` : 'No device'
-  const vitalsSub = stats?.sleepScore != null && stats?.recoveryScore != null
-    ? `${stats.sleepScore} sleep score` : ''
-  const vitalsDim = !loading && stats?.recoveryScore == null && stats?.sleepScore == null
-
   // Journal
   const je = stats?.lastJournal
   const journalHeadline = loading ? '' : je ? (je.snippet || 'Entry logged') : 'Nothing written'
@@ -556,22 +547,16 @@ function BentoGrid() {
         visual={<FuelOrb calories={stats?.todayCalories ?? 0} color="#22d3ee" />}
       />
       <BentoCard
-        href="/health" color="#a78bfa" label="Vitals"
-        headline={vitalsHeadline} sub={vitalsSub}
-        loading={loading} dim={vitalsDim}
-        visual={<VitalsRadar score={stats?.recoveryScore ?? stats?.sleepScore ?? null} color="#a78bfa" />}
+        href="/journal" color="#fbbf24" label="Journal"
+        headline={journalHeadline} sub={journalSub}
+        loading={loading} dim={journalDim}
+        visual={<JournalMood mood={je?.mood ?? null} color="#fbbf24" />}
       />
       <BentoCard
         href="/health/caffeine" color="#fb923c" label="Energy"
         headline="Energy curve" sub="Caffeine · circadian · meals"
         loading={false} dim={false}
         visual={<EnergyArc color="#fb923c" />}
-      />
-      <BentoCard
-        href="/journal" color="#fbbf24" label="Journal"
-        headline={journalHeadline} sub={journalSub}
-        loading={loading} dim={journalDim}
-        wide
       />
     </div>
   )
