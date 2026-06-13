@@ -155,17 +155,15 @@ Luka wants the **planets** to bloom noticeably more than the **billboard label t
 | Satellite planets / atmospheres | ~**0.20** (same tier as Atlas, can be a touch lower) |
 | Billboard label text (GYM/HEALTH/…) | ~**0.1** — clearly calmer than the planets |
 
-`UnrealBloomPass` is **global** — one threshold/strength for the whole frame — so a single pass can't
-give labels less bloom than planets. Approaches, in order of preference:
+**RESOLVED — no post-processing.** `@react-three/postprocessing`'s `EffectComposer` caused a
+full-screen black-flash flicker on Luka's GPU (reproduced repeatedly; survived antialias-off, Strict
+Mode-off, and version checks — `postprocessing@6.39.1` does support `three@0.184`). Removing the
+composer killed the flicker instantly. So **we render WITHOUT EffectComposer/Bloom.**
 
-1. **Selective bloom (preferred).** With `@react-three/postprocessing`, put the planets on a bloom
-   layer at the planet-tier intensity and either exclude the label sprites from that selection or place
-   them on a second, much weaker bloom pass. True independent control; matches the ~0.25 vs ~0.1 ask.
-2. **Bake labels dimmer (cheap fallback).** Keep one global bloom at the *planet* tier and reduce the
-   label sprite's own brightness/`shadowBlur` in its canvas texture so the global bloom barely catches
-   it. Less precise but simple; good enough if selective bloom proves fiddly in r3f + Next 16.
-
-Whichever path, the two values must stay independently tunable during Phase 2/3 so Luka can dial them.
+Instead, glow is per-element **additive fresnel "atmosphere" shells** (a slightly larger back-side
+additive sphere around each planet, plus dim/no shell on labels). This is actually *better* than the
+global bloom for the two-tier goal: each element's glow is fully independent (planets bright, labels
+calm) with zero global pass — no selective-bloom gymnastics, no flicker. Tune per element.
 
 ## 10. Build phases
 

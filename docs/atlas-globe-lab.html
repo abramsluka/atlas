@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Atlas globe — design lab</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; color: #cfeeff; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+  #panel {
+    position: fixed; top: 14px; left: 14px; z-index: 10; width: 256px;
+    background: rgba(6,12,18,0.85); border: 1px solid rgba(80,200,255,0.18);
+    border-radius: 14px; padding: 14px 16px; backdrop-filter: blur(10px);
+    box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+  }
+  #panel h1 { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: #7fdfff; margin: 0 0 2px; }
+  #panel .sub { font-size: 10px; color: #5a7a8a; margin: 0 0 12px; line-height: 1.5; }
+  .row { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+  .row label { flex: 0 0 92px; font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: #6f93a4; }
+  .row input[type=range] { flex: 1; accent-color: #43c4ff; }
+  .row .val { width: 34px; text-align: right; font-size: 10px; color: #7fdfff; }
+  .toggles { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .toggles button { cursor: pointer; font: inherit; font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; padding: 6px 8px; color: #9fc6d6; background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(120,200,255,0.14); border-radius: 8px; }
+  .toggles button.on { color: #001016; background: linear-gradient(180deg,#9fe8ff,#43c4ff); border-color: #9fe8ff; }
+  .hint { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 10;
+    font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #3d5663; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="panel">
+  <h1>Atlas Globe · Lab</h1>
+  <p class="sub">Real continents · shaded · POI nodes · comet arcs. Drag to orbit.</p>
+  <div class="row"><label>Continents</label><input id="bright" type="range" min="0" max="2.2" step="0.05" value="1.0"><span class="val" id="bright-v">1.0</span></div>
+  <div class="row"><label>Dot density</label><input id="dots" type="range" min="120" max="340" step="10" value="270"><span class="val" id="dots-v">270</span></div>
+  <div class="row"><label>Dot size</label><input id="dotsize" type="range" min="0.2" max="0.48" step="0.01" value="0.36"><span class="val" id="dotsize-v">.36</span></div>
+  <div class="row"><label>Ocean dark</label><input id="ocean" type="range" min="0" max="0.4" step="0.01" value="0.18"><span class="val" id="ocean-v">.18</span></div>
+  <div class="row"><label>Spikes</label><input id="spikes" type="range" min="0" max="160" step="5" value="90"><span class="val" id="spikes-v">90</span></div>
+  <div class="row"><label>Arcs</label><input id="arcs" type="range" min="0" max="8" step="1" value="5"><span class="val" id="arcs-v">5</span></div>
+  <div class="toggles">
+    <button id="t-grid" class="on">Grid</button>
+    <button id="t-scan" class="on">Scan</button>
+    <button id="t-spin" class="on">Spin</button>
+    <button id="t-poi" class="on">POIs</button>
+    <button id="t-flip">Flip U</button>
+    <button id="t-invert">Invert L/S</button>
+  </div>
+</div>
+<div class="hint">Tune the continents shading / dot spacing / POI nodes to taste</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+
+const app = document.getElementById('app')
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+app.appendChild(renderer.domElement)
+
+const scene = new THREE.Scene()
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 100)
+camera.position.set(0, 0.4, 6.4)
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true; controls.enablePan = false
+
+// background starfield
+;(function () {
+  const N = 1200, pos = new Float32Array(N * 3)
+  for (let i = 0; i < N; i++) { const r = 26 + Math.random() * 40, t = Math.random() * 6.28, p = Math.acos(2 * Math.random() - 1)
+    pos[i*3] = r*Math.sin(p)*Math.cos(t); pos[i*3+1] = r*Math.sin(p)*Math.sin(t); pos[i*3+2] = r*Math.cos(p) }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0x88b0c8, size: 0.09, transparent: true, opacity: 0.7 })))
+})()
+
+// real Earth maps (CORS CDN; app uses local /textures copies)
+const loader = new THREE.TextureLoader(); loader.setCrossOrigin('anonymous')
+const landTex = loader.load('https://unpkg.com/three-globe/example/img/earth-water.png')
+const topoTex = loader.load('https://unpkg.com/three-globe/example/img/earth-topology.png')
+landTex.colorSpace = THREE.NoColorSpace; topoTex.colorSpace = THREE.NoColorSpace
+landTex.wrapS = topoTex.wrapS = THREE.RepeatWrapping
+
+const R = 1.5
+const NOISE = /* glsl */`
+  float h31(vec3 p){ p = fract(p*0.3183099+0.1); p*=17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
+  float vn3(vec3 x){ vec3 i=floor(x),f=fract(x); f=f*f*(3.0-2.0*f);
+    return mix(mix(mix(h31(i+vec3(0,0,0)),h31(i+vec3(1,0,0)),f.x),mix(h31(i+vec3(0,1,0)),h31(i+vec3(1,1,0)),f.x),f.y),
+               mix(mix(h31(i+vec3(0,0,1)),h31(i+vec3(1,0,1)),f.x),mix(h31(i+vec3(0,1,1)),h31(i+vec3(1,1,1)),f.x),f.y),f.z); }
+  float fbm3(vec3 p){ float v=0.0,a=0.5; for(int i=0;i<5;i++){ v+=a*vn3(p); p*=2.0; a*=0.5; } return v; }
+`
+
+const globeMat = new THREE.ShaderMaterial({
+  transparent: true, blending: THREE.NormalBlending, depthWrite: false, side: THREE.DoubleSide,
+  uniforms: {
+    uTime: { value: 0 }, uBright: { value: 1.0 }, uDotFreq: { value: 270 }, uDotSize: { value: 0.36 },
+    uOcean: { value: 0.18 }, uGrid: { value: 1 }, uScan: { value: 1 },
+    uFlipU: { value: 0 }, uInvert: { value: 0 },
+    uLand: { value: landTex }, uTopo: { value: topoTex },
+    uLightDir: { value: new THREE.Vector3(0.7, 0.35, 0.6).normalize() },
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv; varying vec3 vPos; varying vec3 vN; varying vec3 vWN; varying vec3 vV;
+    void main(){ vUv=uv; vPos=position;
+      vN=normalize(normalMatrix*normal); vWN=normalize(mat3(modelMatrix)*normal);
+      vec4 mv=modelViewMatrix*vec4(position,1.0); vV=normalize(-mv.xyz); gl_Position=projectionMatrix*mv; }`,
+  fragmentShader: NOISE + /* glsl */`
+    varying vec2 vUv; varying vec3 vPos; varying vec3 vN; varying vec3 vWN; varying vec3 vV;
+    uniform float uTime,uBright,uDotFreq,uDotSize,uOcean,uGrid,uScan,uFlipU,uInvert;
+    uniform sampler2D uLand, uTopo; uniform vec3 uLightDir;
+    void main(){
+      vec2 luv = vec2(mix(vUv.x, 1.0 - vUv.x, uFlipU), vUv.y);
+      float landRaw = texture2D(uLand, luv).r;
+      float landVal = mix(1.0 - landRaw, landRaw, uInvert);   // water=white in source → land = 1-r
+      float topo = texture2D(uTopo, luv).r;
+
+      vec2 g = vUv*vec2(56.0,28.0);
+      vec2 gr = abs(fract(g-0.5)-0.5)/fwidth(g);
+      float line = (1.0 - clamp(min(gr.x,gr.y),0.0,1.0)) * 0.5 * uGrid;
+
+      // continents from real Earth mask → halftone dots (uDotSize opens the spacing)
+      float land = smoothstep(0.42,0.55, landVal);
+      vec2 hp = vUv*vec2(uDotFreq, uDotFreq*0.5);
+      float dotv = smoothstep(uDotSize, uDotSize-0.14, length(fract(hp)-0.5));
+      float continents = dotv*land;
+      float coast = smoothstep(0.34,0.5,landVal) * (1.0 - smoothstep(0.5,0.66,landVal));
+
+      float fres = pow(1.0-max(dot(vN,vV),0.0),3.0);
+      float scan = smoothstep(0.02,0.0,abs(fract(vUv.y-uTime*0.04)-0.5)) * uScan;
+
+      // directional shading → continents have a lit (lighter) and shadowed (darker) side
+      float diff = max(dot(normalize(vWN), normalize(uLightDir)), 0.0);
+      float shade = 0.40 + 0.60 * diff;
+
+      // multi-tone blue palette
+      vec3 deepOcean = vec3(0.008,0.025,0.06);
+      vec3 midBlue   = vec3(0.05,0.22,0.46);
+      vec3 cyan      = vec3(0.32,0.78,1.0);
+      vec3 brightBlue= vec3(0.72,0.93,1.0);
+
+      float oceanN = fbm3(normalize(vPos)*2.2);
+      vec3 ocean  = mix(deepOcean, midBlue*0.5, oceanN*0.6);
+      vec3 dotCol = mix(cyan, brightBlue, clamp(topo*1.3 + oceanN*0.2, 0.0, 1.0));
+
+      vec3 col = ocean;
+      col += cyan      * line * 0.35;
+      col += dotCol    * continents * uBright * shade;
+      col += brightBlue* coast * 0.45 * shade;
+      col += cyan      * fres * 0.9;
+      col += brightBlue* scan * 0.4;
+
+      // translucent continents: a bit more see-through so front-over-back reads
+      float feat = clamp(line*0.35 + continents*0.78 + coast*0.4 + scan*0.4, 0.0, 1.0);
+      float alpha = clamp(uOcean + feat*0.78 + fres*0.55, 0.0, 0.96);
+      if(!gl_FrontFacing){ col*=0.40; alpha*=0.45; }
+      gl_FragColor = vec4(col, alpha);
+    }`,
+})
+
+const globeGroup = new THREE.Group(); scene.add(globeGroup)
+const globe = new THREE.Mesh(new THREE.SphereGeometry(R, 160, 160), globeMat)
+globeGroup.add(globe)
+
+// radial data-spikes (spin with globe)
+let spikes, spikeTips
+function buildSpikes(count) {
+  if (spikes) { globeGroup.remove(spikes); spikes.geometry.dispose() }
+  if (spikeTips) { globeGroup.remove(spikeTips); spikeTips.geometry.dispose() }
+  const pos = [], tips = []
+  for (let i = 0; i < count; i++) {
+    const t = Math.random() * 6.283, ph = Math.acos(2 * Math.random() - 1)
+    const dir = new THREE.Vector3(Math.sin(ph)*Math.cos(t), Math.sin(ph)*Math.sin(t), Math.cos(ph))
+    const len = R * (0.12 + Math.random() * 0.5)
+    const base = dir.clone().multiplyScalar(R * 1.01)
+    const tip = dir.clone().multiplyScalar(R * 1.01 + len)
+    pos.push(base.x, base.y, base.z, tip.x, tip.y, tip.z); tips.push(tip.x, tip.y, tip.z)
+  }
+  const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  spikes = new THREE.LineSegments(sg, new THREE.LineBasicMaterial({ color: 0x6fd8ff, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending }))
+  globeGroup.add(spikes)
+  const tg = new THREE.BufferGeometry(); tg.setAttribute('position', new THREE.Float32BufferAttribute(tips, 3))
+  spikeTips = new THREE.Points(tg, new THREE.PointsMaterial({ color: 0x9fe8ff, size: 0.04, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending }))
+  globeGroup.add(spikeTips)
+}
+buildSpikes(90)
+
+// ── POI markers (hex nodes on geography) + sky dots in the space around ──
+function hexSprite() {
+  const c = document.createElement('canvas'); c.width = c.height = 64
+  const x = c.getContext('2d'); x.translate(32, 32); x.strokeStyle = '#aee4ff'; x.lineWidth = 3; x.beginPath()
+  for (let i = 0; i <= 6; i++) { const a = i / 6 * Math.PI * 2 - Math.PI / 2; const px = Math.cos(a) * 18, py = Math.sin(a) * 18; i ? x.lineTo(px, py) : x.moveTo(px, py) }
+  x.stroke(); x.fillStyle = '#dff4ff'; x.beginPath(); x.arc(0, 0, 4, 0, 7); x.fill()
+  const tex = new THREE.CanvasTexture(c); return tex
+}
+const HEX_TEX = hexSprite()
+const poiGroup = new THREE.Group(); globeGroup.add(poiGroup)
+const poiMarkers = []
+for (let i = 0; i < 14; i++) {
+  const t = Math.random() * 6.283, ph = Math.acos(2 * Math.random() - 1)
+  const dir = new THREE.Vector3(Math.sin(ph)*Math.cos(t), Math.sin(ph)*Math.sin(t), Math.cos(ph))
+  const mat = new THREE.SpriteMaterial({ map: HEX_TEX, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.8 })
+  const s = new THREE.Sprite(mat); s.position.copy(dir.multiplyScalar(R * 1.06)); s.scale.setScalar(0.12)
+  poiGroup.add(s); poiMarkers.push({ s, mat, phase: Math.random() * 6.283 })
+}
+// faint sky dots floating around the globe
+const skyDots = (function () {
+  const N = 160, pos = new Float32Array(N * 3)
+  for (let i = 0; i < N; i++) { const r = R * (1.2 + Math.random() * 1.1), t = Math.random() * 6.283, ph = Math.acos(2 * Math.random() - 1)
+    pos[i*3] = r*Math.sin(ph)*Math.cos(t); pos[i*3+1] = r*Math.sin(ph)*Math.sin(t); pos[i*3+2] = r*Math.cos(ph) }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+  const p = new THREE.Points(g, new THREE.PointsMaterial({ color: 0x7fd0ff, size: 0.03, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending }))
+  scene.add(p); return p
+})()
+
+// dashed orbit arcs with a comet that traces the path
+const ARC_VERT = /* glsl */`attribute float aT; varying float vT;
+  void main(){ vT = aT; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`
+const ARC_FRAG = /* glsl */`precision mediump float; varying float vT; uniform vec3 uColor; uniform float uHead;
+  void main(){
+    float dashes = step(0.45, fract(vT * 70.0));
+    float dist = fract(uHead - vT);
+    float comet = smoothstep(0.16, 0.0, dist);
+    float b = dashes * 0.22 + comet * 1.5;
+    float a = dashes * 0.20 + comet * 0.95;
+    gl_FragColor = vec4(uColor * b, a);
+  }`
+const ARC_BLUES = [0x5fc8ff, 0x8fdcff, 0x4aa8ff, 0xaee4ff, 0x6fd0ff]
+let arcGroup = new THREE.Group(); scene.add(arcGroup)
+let arcRunners = []
+function buildArcs(count) {
+  scene.remove(arcGroup); arcGroup = new THREE.Group(); scene.add(arcGroup); arcRunners = []
+  for (let i = 0; i < count; i++) {
+    const rad = R * (1.12 + i * 0.12 + Math.random() * 0.05)
+    const segs = 256, pos = [], aT = []
+    for (let s = 0; s <= segs; s++) { const a = (s / segs) * 6.283; pos.push(Math.cos(a) * rad, 0, Math.sin(a) * rad); aT.push(s / segs) }
+    const ag = new THREE.BufferGeometry()
+    ag.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+    ag.setAttribute('aT', new THREE.Float32BufferAttribute(aT, 1))
+    const mat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      uniforms: { uColor: { value: new THREE.Color(ARC_BLUES[i % ARC_BLUES.length]) }, uHead: { value: Math.random() } },
+      vertexShader: ARC_VERT, fragmentShader: ARC_FRAG,
+    })
+    const line = new THREE.Line(ag, mat)
+    line.rotation.set(Math.random() * 1.2 - 0.6, Math.random() * 6.283, Math.random() * 1.2 - 0.6)
+    arcGroup.add(line)
+    arcRunners.push({ mat, speed: 0.06 + Math.random() * 0.10, dir: Math.random() < 0.5 ? 1 : -1 })
+  }
+}
+buildArcs(5)
+
+// ── controls ──
+const $ = (id) => document.getElementById(id)
+function slider(id, uni, fmt = (v) => v) { const el = $(id), v = $(id + '-v')
+  el.addEventListener('input', () => { const val = parseFloat(el.value); globeMat.uniforms[uni].value = val; v.textContent = fmt(val) }) }
+slider('bright', 'uBright'); slider('dots', 'uDotFreq')
+slider('dotsize', 'uDotSize', (v) => v.toFixed(2).slice(1)); slider('ocean', 'uOcean', (v) => v.toFixed(2).slice(1))
+$('spikes').addEventListener('input', () => { $('spikes-v').textContent = $('spikes').value; buildSpikes(+$('spikes').value) })
+$('arcs').addEventListener('input', () => { $('arcs-v').textContent = $('arcs').value; buildArcs(+$('arcs').value) })
+function toggle(id, fn) { const b = $(id); b.addEventListener('click', () => { b.classList.toggle('on'); fn(b.classList.contains('on')) }) }
+toggle('t-grid', (on) => globeMat.uniforms.uGrid.value = on ? 1 : 0)
+toggle('t-scan', (on) => globeMat.uniforms.uScan.value = on ? 1 : 0)
+let spin = true; toggle('t-spin', (on) => spin = on)
+toggle('t-poi', (on) => { poiGroup.visible = on; skyDots.visible = on })
+toggle('t-flip', (on) => globeMat.uniforms.uFlipU.value = on ? 1 : 0)
+toggle('t-invert', (on) => globeMat.uniforms.uInvert.value = on ? 1 : 0)
+
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight) })
+
+const clock = new THREE.Clock()
+function tick() {
+  const t = clock.getElapsedTime()
+  globeMat.uniforms.uTime.value = t
+  if (spin) globeGroup.rotation.y = t * 0.05
+  poiMarkers.forEach((m) => { const k = 0.5 + 0.5 * Math.sin(t * 2.0 + m.phase); m.mat.opacity = 0.35 + 0.55 * k; m.s.scale.setScalar(0.10 + 0.03 * k) })
+  skyDots.rotation.y = -t * 0.02
+  arcRunners.forEach((a) => { a.mat.uniforms.uHead.value = (a.mat.uniforms.uHead.value + a.dir * a.speed * 0.016 + 1) % 1 })
+  controls.update()
+  renderer.render(scene, camera)
+  requestAnimationFrame(tick)
+}
+tick()
+</script>
+</body>
+</html>

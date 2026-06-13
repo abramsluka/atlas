@@ -2,115 +2,23 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion } from 'framer-motion'
+import dynamic from 'next/dynamic'
 import { useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { useTodayCheckin } from '@/features/workouts/queries'
 import { useSaveEveningCheckin } from '@/features/workouts/mutations'
 import type { DailyCheckin } from '@/features/workouts/types'
-import type { ActivitySnapshot } from '@/features/mentor/types'
 import type { BentoStats } from '@/app/api/home/bento-stats/route'
+import { computeRing, CIRC, type RingState } from '@/features/home/dayRing'
+
+// Code-split the Three.js HUD so it never enters the main bundle — loads only
+// when the user opens map view. ssr:false because it's a WebGL/client-only view.
+const AtlasHUD = dynamic(() => import('@/features/home/atlas-hud/AtlasHUD'), {
+  ssr: false,
+  loading: () => <div className="fixed inset-0 bg-black" />,
+})
 
 // ─── Day Ring ────────────────────────────────────────────────────────────────
-
-const WAKE_HOUR  = 8
-const SLEEP_HOUR = 24
-const CIRC = 2 * Math.PI * 52
-
-const PALETTE: [number, [number, number, number]][] = [
-  [0,    [255, 216, 158]],
-  [12.5, [255, 205, 121]],
-  [25,   [255, 227, 143]],
-  [37.5, [255, 183, 106]],
-  [50,   [255, 149,  89]],
-  [62.5, [243, 111,  79]],
-  [75,   [226,  93, 122]],
-  [87.5, [123,  91, 176]],
-  [100,  [ 47,  58, 102]],
-]
-
-function lerp(a: number, b: number, t: number) { return a + (b - a) * t }
-
-function paletteAt(p: number): [number, number, number] {
-  if (p <= PALETTE[0][0]) return PALETTE[0][1]
-  const last = PALETTE[PALETTE.length - 1]
-  if (p >= last[0]) return last[1]
-  for (let i = 0; i < PALETTE.length - 1; i++) {
-    const [p0, c0] = PALETTE[i]
-    const [p1, c1] = PALETTE[i + 1]
-    if (p >= p0 && p <= p1) {
-      const t = (p - p0) / (p1 - p0)
-      return [lerp(c0[0], c1[0], t), lerp(c0[1], c1[1], t), lerp(c0[2], c1[2], t)]
-    }
-  }
-  return [255, 255, 255]
-}
-
-function toRgb([r, g, b]: [number, number, number]) {
-  return `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`
-}
-
-function fmtClock(d: Date) {
-  let h = d.getHours()
-  const m = d.getMinutes()
-  const ampm = h >= 12 ? 'PM' : 'AM'
-  h = h % 12 || 12
-  return `${h}:${String(m).padStart(2, '0')} ${ampm}`
-}
-
-function fmtRemaining(totalMin: number) {
-  const h = Math.floor(totalMin / 60)
-  const m = Math.floor(totalMin % 60)
-  return `${h}h ${m}m`
-}
-
-interface RingState {
-  percent: number | null
-  stroke: string
-  offset: number
-  phase: string
-  clock: string
-  status: string
-  remaining: string
-}
-
-function computeRing(): RingState {
-  const now  = new Date()
-  const hrs  = now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600
-  const clock = fmtClock(now)
-
-  if (hrs < WAKE_HOUR) {
-    return {
-      percent: null, stroke: '#4D4B47', offset: CIRC,
-      phase: 'SLEEPING', clock,
-      status: '😴 Still sleeping',
-      remaining: fmtRemaining((WAKE_HOUR - hrs) * 60) + ' until wake-up',
-    }
-  }
-  if (hrs >= SLEEP_HOUR) {
-    return {
-      percent: 100, stroke: '#E25D7A', offset: 0,
-      phase: 'PAST BEDTIME', clock,
-      status: '⚠️ Past bedtime',
-      remaining: 'Sleep!',
-    }
-  }
-
-  const pct = (hrs - WAKE_HOUR) / (SLEEP_HOUR - WAKE_HOUR) * 100
-  let phase: string, status: string
-  if      (pct < 25) { phase = 'MORNING';   status = '☀️ Morning — fresh start' }
-  else if (pct < 50) { phase = 'MIDDAY';    status = '⚡ Midday — keep moving'  }
-  else if (pct < 75) { phase = 'AFTERNOON'; status = '🔥 Afternoon — push it'   }
-  else if (pct < 90) { phase = 'EVENING';   status = '⏳ Evening — wrap up'     }
-  else               { phase = 'BEDTIME';   status = '🌙 Bedtime soon'          }
-
-  return {
-    percent: Math.floor(pct),
-    stroke: toRgb(paletteAt(pct)),
-    offset: CIRC * (1 - pct / 100),
-    phase, clock, status,
-    remaining: fmtRemaining((SLEEP_HOUR - hrs) * 60) + ' awake time left',
-  }
-}
 
 function DayRing() {
   const [ring, setRing] = useState<RingState | null>(null)
@@ -839,225 +747,6 @@ function BriefingCard() {
   )
 }
 
-// ─── Cosmic Map ───────────────────────────────────────────────────────────────
-
-interface MapNode {
-  id: string
-  label: string
-  href: string
-  color: string
-  glowColor: string
-  radius: number
-  size: number
-  period: number
-  angle: number
-}
-
-const MAP_NODES: MapNode[] = [
-  { id: 'gym',    label: 'Gym',    href: '/gym',    color: '#4ade80', glowColor: '#4ade80', radius: 135, size: 48, period: 25, angle: 0   },
-  { id: 'health', label: 'Health', href: '/health', color: '#22d3ee', glowColor: '#22d3ee', radius: 180, size: 44, period: 32, angle: 72  },
-  { id: 'journal',label: 'Journal',href: '/journal',color: '#fbbf24', glowColor: '#fbbf24', radius: 120, size: 42, period: 20, angle: 144 },
-  { id: 'mentor', label: 'Mentor', href: '/mentor', color: '#a3e635', glowColor: '#a3e635', radius: 210, size: 52, period: 38, angle: 216 },
-  { id: 'home',   label: 'Today',  href: '/',       color: '#f4f4f5', glowColor: '#ffffff', radius: 100, size: 38, period: 15, angle: 288 },
-]
-
-function CosmicMap({ activity }: { activity: ActivitySnapshot | null }) {
-  const router = useRouter()
-  const [entered, setEntered] = useState(false)
-  const systemRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const t = setTimeout(() => setEntered(true), 50)
-    return () => clearTimeout(t)
-  }, [])
-
-  // B3 — Ambient precession via RAF, zero React re-renders
-  useEffect(() => {
-    let raf: number
-    const tick = () => {
-      if (systemRef.current) {
-        const prec = Math.sin(Date.now() / 8000) * 3
-        systemRef.current.style.transform = `rotateX(15deg) rotateZ(${prec}deg)`
-      }
-      raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [])
-
-  function glowIntensity(nodeId: string): number {
-    if (!activity) return 0.3
-    const count = activity[nodeId as keyof ActivitySnapshot] ?? 0
-    if (count === 0) return 0.15
-    if (count >= 5) return 0.9
-    return 0.3 + count * 0.12
-  }
-
-  // B4 — 180 stable stars, ~20% with slow CSS drift
-  const stars = useRef(
-    Array.from({ length: 180 }, (_, i) => ({
-      x: ((i * 137.508) % 100),
-      y: ((i * 79.379) % 100),
-      size: i % 9 === 0 ? 2.5 : i % 4 === 0 ? 1.8 : 1,
-      opacity: 0.04 + (i % 11) * 0.04,
-      drift: i % 5 === 0,
-      driftDuration: 18 + (i % 28),
-      driftDelay: -(i % 22),
-    }))
-  ).current
-
-  const CENTER = 240
-
-  return (
-    <div className="relative w-full" style={{ height: '100svh', marginTop: -56, background: '#000' }}>
-      {/* B4 — Starfield */}
-      {stars.map((s, i) => (
-        <div
-          key={i}
-          className="absolute rounded-full bg-white"
-          style={{
-            left: `${s.x}%`,
-            top: `${s.y}%`,
-            width: s.size,
-            height: s.size,
-            opacity: s.opacity,
-            ...(s.drift ? {
-              animation: `starDrift${i % 6} ${s.driftDuration}s ${s.driftDelay}s ease-in-out infinite alternate`,
-            } : {}),
-          }}
-        />
-      ))}
-
-      {/* B3 — 3D perspective wrapper */}
-      <div className="absolute inset-0 flex items-center justify-center" style={{ perspective: '900px' }}>
-        <div
-          ref={systemRef}
-          className="relative"
-          style={{
-            width: CENTER * 2,
-            height: CENTER * 2,
-            transform: 'rotateX(15deg)',
-            transformStyle: 'preserve-3d',
-          }}
-        >
-          {/* Orbital rings */}
-          {MAP_NODES.map(node => (
-            <div
-              key={`ring-${node.id}`}
-              className="absolute rounded-full border"
-              style={{
-                width: node.radius * 2,
-                height: node.radius * 2,
-                top: CENTER - node.radius,
-                left: CENTER - node.radius,
-                borderColor: 'rgba(255,255,255,0.06)',
-              }}
-            />
-          ))}
-
-          {/* Center node */}
-          <div
-            className="absolute flex items-center justify-center rounded-full"
-            style={{
-              width: 68,
-              height: 68,
-              top: CENTER - 34,
-              left: CENTER - 34,
-              background: 'radial-gradient(circle at 38% 35%, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0.07) 50%, rgba(255,255,255,0.01) 100%)',
-              border: '1px solid rgba(255,255,255,0.18)',
-              boxShadow: '0 0 20px rgba(255,255,255,0.1), 0 0 40px rgba(255,255,255,0.05)',
-              animation: 'atlasGlow 8s ease-in-out infinite',
-            }}
-          >
-            <span className="text-[10px] font-bold tracking-[0.2em] text-white/80">ATLAS</span>
-          </div>
-
-          {/* Orbiting nodes */}
-          {MAP_NODES.map((node, idx) => {
-            const intensity = glowIntensity(node.id)
-            return (
-              <div
-                key={node.id}
-                className="absolute"
-                style={{
-                  width: node.radius * 2,
-                  height: node.radius * 2,
-                  top: CENTER - node.radius,
-                  left: CENTER - node.radius,
-                  animation: `orbit${idx} ${node.period}s linear infinite`,
-                  opacity: entered ? 1 : 0,
-                  transition: `opacity 600ms ease ${idx * 150}ms`,
-                  pointerEvents: 'none',
-                }}
-              >
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: -node.size / 2,
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    animation: `counterOrbit${idx} ${node.period}s linear infinite`,
-                    pointerEvents: 'auto',
-                  }}
-                >
-                  <motion.button
-                    onClick={() => router.push(node.href)}
-                    whileTap={{ scale: 1.25 }}
-                    transition={{ duration: 0.15 }}
-                    className="flex flex-col items-center gap-2 group"
-                  >
-                    {/* B3 — Sphere node with specular highlight */}
-                    <div
-                      className="rounded-full"
-                      style={{
-                        width: node.size,
-                        height: node.size,
-                        background: `radial-gradient(circle at 35% 30%, ${node.color}cc 0%, ${node.color}55 40%, ${node.color}18 70%, transparent 100%)`,
-                        border: `1px solid ${node.color}${Math.round(intensity * 200).toString(16).padStart(2, '0')}`,
-                        boxShadow: `0 0 ${Math.round(intensity * 28)}px ${node.glowColor}${Math.round(intensity * 160).toString(16).padStart(2, '0')}, inset 0 1px 0 ${node.color}44`,
-                        transition: 'box-shadow 0.3s',
-                      }}
-                    />
-                    <span
-                      className="text-[10px] font-bold tracking-widest uppercase opacity-60 group-hover:opacity-100 transition-opacity duration-200"
-                      style={{ color: node.color }}
-                    >
-                      {node.label}
-                    </span>
-                  </motion.button>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-
-      <style>{`
-        @keyframes atlasGlow {
-          0%, 100% { box-shadow: 0 0 20px rgba(255,255,255,0.1), 0 0 40px rgba(255,255,255,0.05); }
-          50% { box-shadow: 0 0 30px rgba(255,255,255,0.2), 0 0 60px rgba(255,255,255,0.1); }
-        }
-        @keyframes orbit0 { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @keyframes orbit1 { from { transform: rotate(72deg); } to { transform: rotate(432deg); } }
-        @keyframes orbit2 { from { transform: rotate(144deg); } to { transform: rotate(504deg); } }
-        @keyframes orbit3 { from { transform: rotate(216deg); } to { transform: rotate(576deg); } }
-        @keyframes orbit4 { from { transform: rotate(288deg); } to { transform: rotate(648deg); } }
-        @keyframes counterOrbit0 { from { transform: translateX(-50%) rotate(0deg); } to { transform: translateX(-50%) rotate(-360deg); } }
-        @keyframes counterOrbit1 { from { transform: translateX(-50%) rotate(-72deg); } to { transform: translateX(-50%) rotate(-432deg); } }
-        @keyframes counterOrbit2 { from { transform: translateX(-50%) rotate(-144deg); } to { transform: translateX(-50%) rotate(-504deg); } }
-        @keyframes counterOrbit3 { from { transform: translateX(-50%) rotate(-216deg); } to { transform: translateX(-50%) rotate(-576deg); } }
-        @keyframes counterOrbit4 { from { transform: translateX(-50%) rotate(-288deg); } to { transform: translateX(-50%) rotate(-648deg); } }
-        @keyframes starDrift0 { from { transform: translate(0,0); } to { transform: translate(3px,-4px); } }
-        @keyframes starDrift1 { from { transform: translate(0,0); } to { transform: translate(-4px,3px); } }
-        @keyframes starDrift2 { from { transform: translate(0,0); } to { transform: translate(2px,5px); } }
-        @keyframes starDrift3 { from { transform: translate(0,0); } to { transform: translate(-3px,-3px); } }
-        @keyframes starDrift4 { from { transform: translate(0,0); } to { transform: translate(5px,2px); } }
-        @keyframes starDrift5 { from { transform: translate(0,0); } to { transform: translate(-2px,4px); } }
-      `}</style>
-    </div>
-  )
-}
-
 // ─── Sunday Weekly Report Modal ───────────────────────────────────────────────
 
 function getMostRecentSunday(): string {
@@ -1149,19 +838,11 @@ export default function HomeClient({
   const { data: checkin } = useTodayCheckin(today)
 
   const [mapView, setMapView] = useState(false)
-  const [activity, setActivity] = useState<ActivitySnapshot | null>(null)
   const [showSundayModal, setShowSundayModal] = useState(false)
 
   useEffect(() => {
     const saved = localStorage.getItem('atlas_view_mode')
     if (saved === 'map') setMapView(true)
-  }, [])
-
-  useEffect(() => {
-    fetch('/api/home/activity-snapshot')
-      .then(r => r.json())
-      .then(setActivity)
-      .catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -1200,7 +881,7 @@ export default function HomeClient({
             <line x1="3" y1="18" x2="3.01" y2="18" />
           </svg>
         </motion.button>
-        <CosmicMap activity={activity} />
+        <AtlasHUD onExit={toggleMapView} />
         {showSundayModal && (
           <SundayModal onDismiss={() => {
             setShowSundayModal(false)
