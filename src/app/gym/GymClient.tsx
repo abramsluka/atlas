@@ -1,6 +1,9 @@
 'use client'
 
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+
+const EASE_OUT = [0.16, 1, 0.3, 1] as const
 import { useQueryClient } from '@tanstack/react-query'
 import { useGymConfig, useGymExercises, useAllGymLogs, useBodyWeights, useBodyMeasurements, useProgressPhotos } from '@/features/gym/queries'
 import { useHealthProfile } from '@/features/health/queries'
@@ -431,6 +434,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const [coachText, setCoachText] = useState('')
   const [coachStreaming, setCoachStreaming] = useState(false)
   const [coachMode, setCoachMode] = useState<'devil' | 'angel' | null>(null)
+  const [logSetFlash, setLogSetFlash] = useState(false)
 
   async function streamCoach(mode: 'devil' | 'angel') {
     setCoachMode(mode)
@@ -540,7 +544,12 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     if (!currentEx) return
     const reps = selectedReps
     const w = currentEx.bodyweight ? 0 : (parseFloat(weightInput) || 0)
-    logSet.mutate({ exercise_id: currentEx.id, weight: w, reps })
+    logSet.mutate({ exercise_id: currentEx.id, weight: w, reps }, {
+      onSuccess: () => {
+        setLogSetFlash(true)
+        setTimeout(() => setLogSetFlash(false), 400)
+      },
+    })
   }
 
   function openAddEx() {
@@ -866,9 +875,15 @@ export default function GymClient({ today, initialConfig, initialExercises, init
             className="flex items-center gap-2 rounded-full bg-white/8 border border-white/10 px-4 py-2 active:opacity-70"
           >
             <span className="text-xs text-white/50 font-mono tracking-widest">{todayDateLabel()}</span>
-            <span className={`text-xs font-bold tracking-widest`} style={{ color: isRest(split.name) ? '#7DD3FC' : '#4ade80' }}>
+            <motion.span
+              className="text-xs font-bold tracking-widest"
+              style={{ color: isRest(split.name) ? '#7DD3FC' : '#4ade80' }}
+              initial={{ opacity: 0, y: -12, scale: 0.96 }}
+              animate={{ opacity: isRest(split.name) ? 0.6 : 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.5, ease: EASE_OUT }}
+            >
               {splitLabel(split.name)}
-            </span>
+            </motion.span>
           </button>
           <button
             onClick={openSettings}
@@ -894,7 +909,13 @@ export default function GymClient({ today, initialConfig, initialExercises, init
       <div className="px-4 space-y-4 pt-2">
 
         {/* ── Body Weight Tracker ────────────────────────────────────── */}
-        <section className="rounded-2xl bg-white/5 border border-white/8 overflow-hidden">
+        <motion.section
+          className="rounded-2xl bg-white/5 border border-white/8 overflow-hidden"
+          style={{ backdropFilter: 'blur(8px)' }}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: EASE_OUT, delay: 0.3 }}
+        >
           <div className="px-5 pt-5 pb-3">
             <div className="flex items-end justify-between mb-1">
               <div>
@@ -1037,23 +1058,35 @@ export default function GymClient({ today, initialConfig, initialExercises, init
               </div>
             )}
           </div>
-        </section>
+        </motion.section>
 
         {/* ── Progress Photos Card ──────────────────────────────────── */}
-        <button
-          onClick={() => { setShowPhotos(true); setPhotoMode('grid') }}
-          className="w-full rounded-2xl bg-[#111113] border px-5 py-[18px] flex items-center justify-between"
-          style={{ borderColor: 'rgba(110,231,183,0.10)' }}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: EASE_OUT, delay: 0.35 }}
         >
-          <div className="text-left">
-            <p className="text-xs text-white/40 uppercase tracking-[0.20em] font-semibold mb-1">Progress Photos</p>
-            <p className="text-sm font-medium">{photos.length} photo{photos.length !== 1 ? 's' : ''}</p>
-          </div>
-          <span style={{ color: '#6ee7b7', fontSize: 20 }}>→</span>
-        </button>
+          <button
+            onClick={() => { setShowPhotos(true); setPhotoMode('grid') }}
+            className="w-full rounded-2xl bg-[#111113] border px-5 py-[18px] flex items-center justify-between"
+            style={{ borderColor: 'rgba(110,231,183,0.10)', backdropFilter: 'blur(8px)' }}
+          >
+            <div className="text-left">
+              <p className="text-xs text-white/40 uppercase tracking-[0.20em] font-semibold mb-1">Progress Photos</p>
+              <p className="text-sm font-medium">{photos.length} photo{photos.length !== 1 ? 's' : ''}</p>
+            </div>
+            <span style={{ color: '#6ee7b7', fontSize: 20 }}>→</span>
+          </button>
+        </motion.div>
 
         {/* ── Coach ─────────────────────────────────────────────────── */}
-        <section className="rounded-2xl overflow-hidden border border-white/8">
+        <motion.section
+          className="rounded-2xl overflow-hidden"
+          style={{ background: 'rgba(74,222,128,0.03)', backdropFilter: 'blur(8px)', border: '1px solid rgba(74,222,128,0.15)' }}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: EASE_OUT, delay: 0.2 }}
+        >
           <div className="flex">
             <button
               onClick={() => streamCoach('angel')}
@@ -1081,17 +1114,52 @@ export default function GymClient({ today, initialConfig, initialExercises, init
               </span>
             </button>
           </div>
-          {coachText && (
-            <div className={`px-5 py-4 border-t border-white/8 ${
-              coachMode === 'devil' ? 'bg-red-950/30' : 'bg-emerald-950/30'
-            }`}>
-              <p className="text-sm leading-relaxed text-white/90">{coachText}</p>
-            </div>
-          )}
-        </section>
+          <AnimatePresence mode="wait">
+            {coachStreaming && !coachText && (
+              <motion.div
+                key="orb"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="px-5 py-4 border-t border-white/8"
+              >
+                <div className="inline-flex items-center gap-2 rounded-full px-4 py-2.5" style={{ background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)' }}>
+                  {[0, 0.2, 0.4].map((delay, i) => (
+                    <motion.span
+                      key={i}
+                      className="block rounded-full"
+                      style={{ width: 7, height: 7, background: '#4ade80', boxShadow: '0 0 6px rgba(74,222,128,0.35)' }}
+                      animate={{ opacity: [0.25, 1, 0.25], scale: [0.75, 1, 0.75] }}
+                      transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut', delay }}
+                    />
+                  ))}
+                  <span className="text-xs font-mono text-green-400 tracking-wider ml-1">Atlas is thinking</span>
+                </div>
+              </motion.div>
+            )}
+            {coachText && (
+              <motion.div
+                key="text"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.3 }}
+                className={`px-5 py-4 border-t border-white/8 ${coachMode === 'devil' ? 'bg-red-950/30' : 'bg-emerald-950/30'}`}
+              >
+                <p className="text-sm leading-relaxed text-white/90">{coachText}</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.section>
 
         {/* ── PO Coach ──────────────────────────────────────────────── */}
-        <section className="rounded-2xl bg-white/5 border border-white/8 overflow-hidden">
+        <motion.section
+          className="rounded-2xl bg-white/5 border border-white/8 overflow-hidden"
+          style={{ backdropFilter: 'blur(8px)' }}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: EASE_OUT, delay: 0.1 }}
+        >
           <div className="px-5 pt-5 pb-4">
             <p className="text-xs text-white/40 uppercase tracking-widest mb-4">Progressive Overload Coach</p>
 
@@ -1099,9 +1167,12 @@ export default function GymClient({ today, initialConfig, initialExercises, init
             <div className="flex items-center gap-3 mb-3">
               <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30 w-10 flex-shrink-0">GYM</span>
               <div className="flex-1 flex rounded-xl bg-white/5 border border-white/8 p-1 gap-1">
-                {config.gyms.map(g => (
-                  <button
+                {config.gyms.map((g, i) => (
+                  <motion.button
                     key={g.id}
+                    initial={{ opacity: 0, x: -12 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.32, ease: EASE_OUT, delay: 0.15 + i * 0.06 }}
                     onClick={() => setFilterGym(g.id)}
                     className={`flex-1 rounded-lg py-2.5 text-sm font-semibold transition-colors ${
                       filterGym === g.id
@@ -1110,7 +1181,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     }`}
                   >
                     {g.name}
-                  </button>
+                  </motion.button>
                 ))}
               </div>
             </div>
@@ -1119,9 +1190,12 @@ export default function GymClient({ today, initialConfig, initialExercises, init
             <div className="flex items-center gap-3 mb-4">
               <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30 w-10 flex-shrink-0">DAY</span>
               <div className="flex-1 flex rounded-xl bg-white/5 border border-white/8 p-1 gap-1">
-                {config.days.map(d => (
-                  <button
+                {config.days.map((d, i) => (
+                  <motion.button
                     key={d.id}
+                    initial={{ opacity: 0, x: -12 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.32, ease: EASE_OUT, delay: 0.2 + i * 0.06 }}
                     onClick={() => setFilterDay(d.id)}
                     className={`flex-1 rounded-lg py-2.5 text-sm font-semibold transition-colors ${
                       filterDay === d.id
@@ -1130,7 +1204,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     }`}
                   >
                     {d.name}
-                  </button>
+                  </motion.button>
                 ))}
               </div>
             </div>
@@ -1172,7 +1246,28 @@ export default function GymClient({ today, initialConfig, initialExercises, init
             </div>
 
             {currentEx && (
-              <>
+              <motion.div
+                className="mt-2"
+                style={{
+                  background: 'rgba(255,255,255,0.03)',
+                  backdropFilter: 'blur(10px)',
+                  borderRadius: 16,
+                  padding: '16px',
+                  border: rx?.action === 'INCREASE' ? '1px solid rgba(74,222,128,0.15)' : '1px solid rgba(255,255,255,0.08)',
+                }}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{
+                  opacity: 1,
+                  y: 0,
+                  boxShadow: rx?.action === 'INCREASE'
+                    ? ['0 0 0px rgba(74,222,128,0)', '0 0 16px rgba(74,222,128,0.15)', '0 0 0px rgba(74,222,128,0)']
+                    : '0 0 0px rgba(0,0,0,0)',
+                }}
+                transition={rx?.action === 'INCREASE'
+                  ? { opacity: { duration: 0.4, ease: EASE_OUT }, y: { duration: 0.4, ease: EASE_OUT }, boxShadow: { duration: 3, repeat: Infinity, ease: 'easeInOut' } }
+                  : { duration: 0.4, ease: EASE_OUT }
+                }
+              >
                 {/* Last set banner */}
                 {lastLog && (
                   <div className="rounded-xl bg-white/5 border border-white/8 px-4 py-3 mb-4 flex items-center gap-3">
@@ -1242,13 +1337,16 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 </div>
 
                 {/* Log Set button */}
-                <button
+                <motion.button
                   onClick={handleLogSet}
                   disabled={logSet.isPending}
-                  className="w-full rounded-xl bg-green-400 text-black font-bold py-4 text-base active:scale-[0.98] transition-transform disabled:opacity-50"
+                  whileTap={{ scale: 0.94 }}
+                  animate={{ background: logSetFlash ? 'rgba(74,222,128,0.2)' : '#4ade80' }}
+                  transition={{ duration: 0.4, ease: EASE_OUT }}
+                  className="w-full rounded-xl text-black font-bold py-4 text-base disabled:opacity-50"
                 >
                   Log Set
-                </button>
+                </motion.button>
 
                 {/* Prescription card */}
                 {rx && (
@@ -1290,13 +1388,19 @@ export default function GymClient({ today, initialConfig, initialExercises, init
 
                 {/* Sparkline */}
                 {exLogs.length >= 2 && (
-                  <div className="mt-4 rounded-xl bg-white/5 border border-white/8 overflow-hidden">
+                  <motion.div
+                    className="mt-4 rounded-xl bg-white/5 border border-white/8 overflow-hidden"
+                    initial={{ opacity: 0, y: 12 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.4, ease: EASE_OUT }}
+                  >
                     <p className="text-xs text-white/30 uppercase tracking-widest px-3 pt-3 pb-1">Trend (last 15 sets)</p>
                     <PoSparkline logs={exLogs} bodyweight={currentEx.bodyweight} />
-                  </div>
+                  </motion.div>
                 )}
 
-              </>
+              </motion.div>
             )}
 
             {filteredExercises.length === 0 && (
@@ -1311,12 +1415,12 @@ export default function GymClient({ today, initialConfig, initialExercises, init
               </div>
             )}
           </div>
-        </section>
+        </motion.section>
 
         {/* ── Today's Workout ───────────────────────────────────── */}
         {todayAllLogs.length > 0 && (
           <section>
-            <div className="rounded-2xl bg-white/5 border border-white/8 overflow-hidden">
+            <div className="rounded-2xl bg-white/5 border border-white/8 overflow-hidden" style={{ backdropFilter: 'blur(8px)' }}>
               {/* Header — div not button to avoid nesting issue with Finish Workout button */}
               <div
                 role="button"
@@ -1404,6 +1508,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
             <button
               onClick={() => setPastExpanded(e => !e)}
               className="w-full rounded-2xl bg-white/5 border border-white/8 px-5 py-4 flex items-center justify-between active:opacity-70"
+              style={{ backdropFilter: 'blur(8px)' }}
             >
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium text-white/70">Past workouts</span>
@@ -1421,7 +1526,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   const dt = new Date(y, m - 1, d)
                   const label = DOWS[dt.getDay()] + ', ' + MONS[m - 1] + ' ' + d
                   return (
-                    <div key={date} className="rounded-2xl bg-white/5 border border-white/8 overflow-hidden">
+                    <div key={date} className="rounded-2xl bg-white/5 border border-white/8 overflow-hidden" style={{ backdropFilter: 'blur(8px)' }}>
                       {/* Day header */}
                       <div className="flex items-center justify-between px-5 py-3 border-b border-white/6">
                         <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">{label}</span>
