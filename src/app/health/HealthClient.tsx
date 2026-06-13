@@ -804,11 +804,29 @@ function AddStackForm({
 function StackTracker({
   initialSupplements,
   initialLogs,
+  today,
 }: {
   initialSupplements: Supplement[]
   initialLogs: SupplementLog[]
+  today: string
 }) {
-  const [stackDate] = useState(getStackDate)
+  // Start with the server's date so the query key matches initialLogs.
+  // On mount, immediately correct to the browser's local date (server may
+  // use UTC which can be a day ahead for US timezones after ~5pm).
+  // On visibility restore (bfcache, tab switch) repeat so yesterday's logs
+  // never bleed into today.
+  const [stackDate, setStackDate] = useState(() => today)
+  useEffect(() => {
+    // Correct on first mount
+    setStackDate(rolledDate())
+    // Re-correct whenever the page becomes visible (handles bfcache)
+    const update = () => {
+      if (document.visibilityState === 'visible') setStackDate(rolledDate())
+    }
+    document.addEventListener('visibilitychange', update)
+    return () => document.removeEventListener('visibilitychange', update)
+  }, [])
+
   const { data: supplements } = useSupplements(initialSupplements)
   const { data: logs } = useSupplementLogs(stackDate, initialLogs)
   const logDose = useLogSupplementDose(stackDate)
@@ -2655,7 +2673,7 @@ export default function HealthClient({
         burned={whoopKcalBurned}
       />
       <FoodSection profile={profileData} />
-      <StackTracker initialSupplements={supplements} initialLogs={todayLogs} />
+      <StackTracker initialSupplements={supplements} initialLogs={todayLogs} today={today} />
       <WaterSection
         initialWater={todayWater}
         initialCaffeine={todayCaffeine}
