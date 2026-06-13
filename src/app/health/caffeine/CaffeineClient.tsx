@@ -798,7 +798,7 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
           <div className="flex items-center gap-4">
             {/* Left: label */}
             <div style={{ flexShrink: 0, width: '36%' }}>
-              <p style={{ fontFamily: 'Georgia, serif', fontStyle: 'italic', fontWeight: 700, fontSize: 22, color: 'white', lineHeight: 1.2 }}>
+              <p style={{ fontFamily: 'Georgia, serif', fontStyle: 'italic', fontWeight: 700, fontSize: 19, color: 'white', lineHeight: 1.2 }}>
                 How do you feel right now?
               </p>
               <p style={{ fontFamily: 'monospace', fontSize: 8, color: '#52525b', letterSpacing: '0.13em', marginTop: 4, textTransform: 'uppercase' }}>
