@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useRef, type ReactNode, useCallback } from 'react'
+import { useState, useEffect, useRef, type ReactNode, useCallback, useMemo } from 'react'
+import Link from 'next/link'
 import {
   useSupplements,
   useSupplementLogs,
@@ -49,6 +50,7 @@ import {
 } from '@/features/health/supplementDb'
 import { SUBSTANCE_DB } from '@/features/health/substanceDb'
 import DebloatSection from './DebloatSection'
+import { rolledDate } from '@/features/food/date'
 
 interface Props {
   supplements: Supplement[]
@@ -84,13 +86,7 @@ function formatTime(iso: string): string {
 }
 
 function getStackDate(): string {
-  const now = new Date()
-  if (now.getHours() < 6) {
-    const yesterday = new Date(now)
-    yesterday.setDate(yesterday.getDate() - 1)
-    return yesterday.toISOString().split('T')[0]
-  }
-  return now.toISOString().split('T')[0]
+  return rolledDate()
 }
 
 // ─── Wearables Section ──────────────────────────────────────────────────────
@@ -881,7 +877,7 @@ function StackTracker({
   const deletePending = deleteSupplement.isPending
 
   return (
-    <section>
+    <section className="relative">
       <StackTicker supplements={allSupplements} logs={allLogs} />
 
       {/* Header */}
@@ -1140,13 +1136,16 @@ function WaterSection({
   const [caffeineMode, setCaffeineMode] = useState<'auto' | 'manual'>('auto')
   const [activityManualOverride, setActivityManualOverride] = useState(false)
 
-  const { data: waterLogs } = useWaterLogs(today, initialWater)
+  // Use rolledDate() (6am rollover) so water resets on the same schedule as supplements
+  const [waterDate] = useState(() => rolledDate())
+
+  const { data: waterLogs } = useWaterLogs(waterDate, initialWater)
   const { data: profileData } = useHealthProfile(initialProfile)
   const { data: history } = useWaterHistory()
-  const { data: whoopForWater } = useWhoopData(today, hasWhoop ?? false, undefined)
-  const { data: caffeineLogs } = useCaffeineLogs(today, initialCaffeine)
-  const logWater = useLogWater(today)
-  const deleteWater = useDeleteWaterLog(today)
+  const { data: whoopForWater } = useWhoopData(waterDate, hasWhoop ?? false, undefined)
+  const { data: caffeineLogs } = useCaffeineLogs(waterDate, initialCaffeine)
+  const logWater = useLogWater(waterDate)
+  const deleteWater = useDeleteWaterLog(waterDate)
   const updateProfile = useUpdateHealthProfile()
   const whoopKcal = whoopForWater?.cycle?.kilojoule != null
     ? Math.round(whoopForWater.cycle.kilojoule * 0.239)
@@ -1629,14 +1628,38 @@ function WaterSection({
   )
 }
 
-// ─── Caffeine Section ─────────────────────────────────────────────────────────
+// ─── Caffeine Card (compact nav tile → /health/caffeine) ──────────────────────
 
-const CAFFEINE_PRESETS = [
-  { source: 'Coffee', amount_mg: 90 },
-  { source: 'Pre-workout', amount_mg: 200 },
-  { source: 'Energy drink', amount_mg: 150 },
-  { source: 'Espresso', amount_mg: 60 },
-] as const
+// Inline energy model for the compact card orb — same constants as CaffeineClient
+const _HALF_LIFE_H = 5.5
+const _ABSORPTION_TAU = 0.8
+const _ADENOSINE_RATE = 3.8
+const _CAF_SCALE = 0.13
+const _WAKE_HOUR = 7
+
+function _cafConc(t: number, mg: number): number {
+  if (t <= 0) return 0
+  return mg * (1 - Math.exp(-t / _ABSORPTION_TAU)) * Math.exp(-t * Math.LN2 / _HALF_LIFE_H)
+}
+
+function _currentEnergy(logs: CaffeineLog[]): number {
+  const now = new Date()
+  const h = now.getHours() + now.getMinutes() / 60
+  const hoursAwake = Math.max(0, h - _WAKE_HOUR)
+  const baseline = 40 + 75 * 0.28 // default sleep quality 75
+  let caf = 0
+  for (const l of logs) {
+    const doseH = new Date(l.logged_at).getHours() + new Date(l.logged_at).getMinutes() / 60
+    caf += _cafConc(h - doseH, l.amount_mg) * _CAF_SCALE
+  }
+  return Math.max(0, Math.min(100, baseline + caf - hoursAwake * _ADENOSINE_RATE))
+}
+
+function _energyColor(e: number): string {
+  if (e >= 65) return '#4ade80'
+  if (e >= 45) return '#fb923c'
+  return '#f87171'
+}
 
 function CaffeineSection({
   initialCaffeine,
@@ -1646,64 +1669,74 @@ function CaffeineSection({
   today: string
 }) {
   const { data: caffeineLogs } = useCaffeineLogs(today, initialCaffeine)
-  const logCaffeine = useLogCaffeine(today)
-  const deleteCaffeine = useDeleteCaffeineLog(today)
 
-  const totalCaffeine = caffeineLogs?.reduce((sum, l) => sum + l.amount_mg, 0) ?? 0
-  const overLimit = totalCaffeine > 400
+  const totalMg = caffeineLogs?.reduce((sum, l) => sum + l.amount_mg, 0) ?? 0
+
+  // Live energy score
+  const [energy, setEnergy] = useState(() => _currentEnergy(initialCaffeine))
+  useEffect(() => {
+    setEnergy(_currentEnergy(caffeineLogs ?? initialCaffeine))
+    const id = setInterval(() => setEnergy(_currentEnergy(caffeineLogs ?? initialCaffeine)), 60_000)
+    return () => clearInterval(id)
+  }, [caffeineLogs, initialCaffeine])
+
+  const color = _energyColor(energy)
+  const circumference = 2 * Math.PI * 28
+  const ringOffset = circumference * (1 - energy / 100)
+
+  const energyStateLabel = energy >= 80 ? 'Peak' : energy >= 65 ? 'High' : energy >= 50 ? 'Moderate' : energy >= 35 ? 'Low' : 'Crash'
 
   return (
     <section>
       <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-zinc-500">
         Caffeine
       </h2>
-      <div className="rounded-xl bg-zinc-900 p-4">
-        <div className="mb-3 flex items-end gap-2">
-          <p className={`text-3xl font-bold ${overLimit ? 'text-red-400' : 'text-white'}`}>
-            {Math.round(totalCaffeine)}
-          </p>
-          <p className="mb-0.5 text-lg text-zinc-400">mg</p>
-          {overLimit && (
-            <span className="mb-0.5 ml-auto text-xs font-semibold text-red-400">
-              Over 400mg
-            </span>
-          )}
-        </div>
-
-        <div className="mb-4 flex flex-wrap gap-2">
-          {CAFFEINE_PRESETS.map((preset) => (
-            <button
-              key={preset.source}
-              onClick={() =>
-                logCaffeine.mutate({ source: preset.source, amount_mg: preset.amount_mg })
-              }
-              disabled={logCaffeine.isPending}
-              className="rounded-full bg-zinc-800 px-3 py-1.5 text-xs font-medium text-white active:bg-zinc-700 disabled:opacity-50"
-            >
-              {preset.source}{' '}
-              <span className="text-zinc-400">{preset.amount_mg}mg</span>
-            </button>
-          ))}
-        </div>
-
-        {caffeineLogs && caffeineLogs.length > 0 && (
-          <div className="space-y-1.5">
-            {[...caffeineLogs].reverse().map((log) => (
-              <div key={log.id} className="flex items-center gap-3">
-                <span className="w-16 text-xs text-zinc-500">{formatTime(log.logged_at)}</span>
-                <span className="flex-1 text-xs text-zinc-300">{log.source}</span>
-                <span className="text-xs text-zinc-500">{log.amount_mg}mg</span>
-                <button
-                  onClick={() => deleteCaffeine.mutate(log.id)}
-                  className="px-1 text-sm text-zinc-600 active:text-zinc-400"
-                >
-                  ×
-                </button>
-              </div>
-            ))}
+      <Link
+        href="/health/caffeine"
+        className="cosmic-card block p-4 active:scale-[0.99] transition-transform"
+      >
+        <div className="flex items-center gap-4">
+          {/* Orb ring */}
+          <div className="relative w-[62px] h-[62px] flex-shrink-0">
+            {/* Glow */}
+            <div
+              className="absolute inset-0 rounded-full opacity-30 blur-md"
+              style={{ background: color, animation: 'cosmicPulseGlow 3s ease-in-out infinite' }}
+            />
+            <svg viewBox="0 0 70 70" className="relative w-full h-full">
+              <circle cx="35" cy="35" r="28" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="4"/>
+              <circle
+                cx="35" cy="35" r="28"
+                fill="none"
+                stroke={color}
+                strokeWidth="4"
+                strokeLinecap="round"
+                strokeDasharray={circumference.toFixed(1)}
+                strokeDashoffset={ringOffset.toFixed(1)}
+                transform="rotate(-90 35 35)"
+                style={{ transition: 'stroke-dashoffset 600ms cubic-bezier(.16,1,.3,1), stroke 400ms' }}
+              />
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <span className="font-serif italic text-lg leading-none" style={{ color }}>
+                {Math.round(energy)}
+              </span>
+            </div>
           </div>
-        )}
-      </div>
+
+          {/* Info */}
+          <div className="flex-1 min-w-0">
+            <p className="text-[9px] font-mono text-zinc-600 tracking-[0.15em] uppercase mb-0.5">Energy</p>
+            <p className="text-base font-semibold text-white">{energyStateLabel}</p>
+            <p className="text-[10px] text-zinc-500 mt-0.5">
+              {totalMg > 0 ? `${Math.round(totalMg)}mg today` : 'No doses yet'}
+            </p>
+          </div>
+
+          {/* Arrow */}
+          <div className="text-zinc-600 text-lg">→</div>
+        </div>
+      </Link>
     </section>
   )
 }
@@ -2130,15 +2163,7 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
   const labelHintRef = useRef(false)
   const updateProfile = useUpdateHealthProfile()
 
-  const today = (() => {
-    const now = new Date()
-    if (now.getHours() < 6) {
-      const d = new Date(now)
-      d.setDate(d.getDate() - 1)
-      return d.toISOString().split('T')[0]
-    }
-    return now.toISOString().split('T')[0]
-  })()
+  const today = rolledDate()
 
   const totals = (meals ?? []).reduce(
     (acc, m) => ({
@@ -2221,6 +2246,7 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
         const resized = await resizeImage(f, 1024)
         fd.append('photo', resized, 'meal.jpg')
       }
+      fd.append('date', rolledDate())
       if (description.trim()) fd.append('description', description.trim())
       const newMeal = await logFood.mutateAsync(fd)
       setNewlyLoggedId(newMeal.id)

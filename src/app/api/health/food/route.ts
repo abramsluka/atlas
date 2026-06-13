@@ -46,6 +46,8 @@ export async function POST(request: NextRequest) {
   const photos = photoEntries.filter(f => f instanceof File && f.size > 0).slice(0, 3)
   if (photos.length === 0) return NextResponse.json({ error: 'No photo provided' }, { status: 400 })
   const description = (formData.get('description') as string | null)?.trim() ?? ''
+  // Client sends its local rolled date so we store under the user's actual day, not the server's UTC day
+  const clientDate = (formData.get('date') as string | null) ?? null
 
   const photoData = await Promise.all(
     photos.map(async (photo) => {
@@ -126,7 +128,7 @@ export async function POST(request: NextRequest) {
     }
 
     const now = new Date()
-    const date = rolledDate(now)
+    const date = clientDate ?? rolledDate(now)
     const primaryPhoto = photoData[0]
     const ext = primaryPhoto.mimeType.split('/')[1] ?? 'jpg'
     const storagePath = `${user.id}/${date}_${now.getTime()}.${ext}`
