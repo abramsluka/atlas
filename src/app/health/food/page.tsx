@@ -26,6 +26,7 @@ export default async function FoodHistoryPage() {
 
   const withUrls = await Promise.all(
     (logs ?? []).map(async (log) => {
+      if (!log.storage_path) return { ...log, photo_url: null }
       const { data } = await db.storage.from('food-photos').createSignedUrl(log.storage_path, 3600)
       return { ...log, photo_url: data?.signedUrl ?? null }
     }),
