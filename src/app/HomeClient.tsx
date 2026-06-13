@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion } from 'framer-motion'
+import dynamic from 'next/dynamic'
 import { useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { useTodayCheckin } from '@/features/workouts/queries'
@@ -9,6 +10,13 @@ import { useSaveEveningCheckin } from '@/features/workouts/mutations'
 import type { DailyCheckin } from '@/features/workouts/types'
 import type { ActivitySnapshot } from '@/features/mentor/types'
 import type { BentoStats } from '@/app/api/home/bento-stats/route'
+
+// Code-split the Three.js HUD so it never enters the main bundle — loads only
+// when the user opens map view. ssr:false because it's a WebGL/client-only view.
+const AtlasHUD = dynamic(() => import('@/features/home/atlas-hud/AtlasHUD'), {
+  ssr: false,
+  loading: () => <div className="fixed inset-0 bg-black" />,
+})
 
 // ─── Day Ring ────────────────────────────────────────────────────────────────
 
@@ -1200,7 +1208,7 @@ export default function HomeClient({
             <line x1="3" y1="18" x2="3.01" y2="18" />
           </svg>
         </motion.button>
-        <CosmicMap activity={activity} />
+        <AtlasHUD />
         {showSundayModal && (
           <SundayModal onDismiss={() => {
             setShowSundayModal(false)

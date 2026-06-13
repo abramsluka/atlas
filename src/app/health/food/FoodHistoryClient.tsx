@@ -2,7 +2,7 @@
 
 import { useState, useRef } from 'react'
 import { useFoodLogs, useFoodHistory } from '@/features/food/queries'
-import { useUpdateFoodLog, useDeleteFoodLog } from '@/features/food/mutations'
+import { useUpdateFoodLog, useDeleteFoodLog, useRepeatFoodLog } from '@/features/food/mutations'
 import type { FoodLog } from '@/features/food/types'
 
 function MealEditSheet({
@@ -108,6 +108,23 @@ export default function FoodHistoryClient({
   const { data: history } = useFoodHistory(14)
   const updateMeal = useUpdateFoodLog()
   const deleteMeal = useDeleteFoodLog()
+  const repeatMeal = useRepeatFoodLog()
+  const [repeatingId, setRepeatingId] = useState<string | null>(null)
+  const [addedId, setAddedId] = useState<string | null>(null)
+
+  async function addToToday(meal: FoodLog) {
+    if (repeatMeal.isPending) return
+    setRepeatingId(meal.id)
+    try {
+      await repeatMeal.mutateAsync({ id: meal.id })
+      setAddedId(meal.id)
+      setTimeout(() => setAddedId(prev => (prev === meal.id ? null : prev)), 2000)
+    } catch {
+      // transient; user can tap again
+    } finally {
+      setRepeatingId(null)
+    }
+  }
 
   const displayMeals = selectedDate === today ? (meals ?? initialLogs) : (meals ?? [])
   const totals = displayMeals.reduce(
@@ -215,6 +232,19 @@ export default function FoodHistoryClient({
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   <span className="text-sm font-bold text-white">{meal.calories?.toLocaleString()} cal</span>
+                  {selectedDate !== today && (
+                    <button
+                      onClick={e => { e.stopPropagation(); addToToday(meal) }}
+                      disabled={repeatMeal.isPending}
+                      className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold whitespace-nowrap transition-colors disabled:opacity-50 ${
+                        addedId === meal.id
+                          ? 'border-emerald-300/40 bg-emerald-300/10 text-emerald-300'
+                          : 'border-white/[0.12] bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08]'
+                      }`}
+                    >
+                      {addedId === meal.id ? 'Added ✓' : repeatingId === meal.id ? 'Adding…' : '+ Today'}
+                    </button>
+                  )}
                   <button onClick={e => { e.stopPropagation(); setConfirmDeleteId(meal.id) }} className="text-zinc-600 hover:text-red-400 transition-colors text-base px-1">×</button>
                 </div>
               </div>

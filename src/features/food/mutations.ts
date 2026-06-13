@@ -70,6 +70,27 @@ export function useLogManualFood() {
   })
 }
 
+export function useRepeatFoodLog() {
+  const qc = useQueryClient()
+  return useMutation<FoodLog & { water_logged: boolean }, Error, { id: string }>({
+    mutationFn: async ({ id }) => {
+      const res = await fetch(`/api/health/food/${id}/repeat`, { method: 'POST' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(err.error ?? 'Failed to add meal to today')
+      }
+      return res.json()
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['food-logs', data.date] })
+      qc.invalidateQueries({ queryKey: ['food-history'] })
+      if (data.water_logged) {
+        qc.invalidateQueries({ queryKey: ['health', 'water'] })
+      }
+    },
+  })
+}
+
 export function useUpdateFoodLog() {
   const qc = useQueryClient()
   return useMutation<
