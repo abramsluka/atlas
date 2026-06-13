@@ -6,15 +6,18 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await authClient.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { date, source, amount_mg } = await req.json()
+  const { date, source, amount_mg, logged_at } = await req.json()
   if (!date || !source || typeof amount_mg !== 'number') {
     return NextResponse.json({ error: 'date, source, and amount_mg are required' }, { status: 400 })
   }
 
   const db = createServiceClient()
+  const insertRow: Record<string, unknown> = { user_id: user.id, date, source, amount_mg }
+  if (logged_at) insertRow.logged_at = logged_at
+
   const { data, error } = await db
     .from('caffeine_logs')
-    .insert({ user_id: user.id, date, source, amount_mg })
+    .insert(insertRow)
     .select()
     .single()
 

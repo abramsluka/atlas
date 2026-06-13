@@ -135,7 +135,7 @@ export function useUpdateHealthProfile() {
 export function useLogCaffeine(today: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (input: { source: string; amount_mg: number }) => {
+    mutationFn: async (input: { source: string; amount_mg: number; logged_at?: string }) => {
       const res = await fetch('/api/health/caffeine', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

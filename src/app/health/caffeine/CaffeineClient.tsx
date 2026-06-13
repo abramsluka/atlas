@@ -7,10 +7,11 @@ import { useLogCaffeine, useDeleteCaffeineLog } from '@/features/health/mutation
 import type { CaffeineLog, OuraData, WhoopData } from '@/features/health/types'
 
 // ── Pharmacokinetic model ────────────────────────────────────────────────────
-const HALF_LIFE_H = 5.5      // caffeine half-life in hours
-const ABSORPTION_TAU = 0.8   // absorption time constant (~45min to peak)
-const ADENOSINE_RATE = 3.8   // sleep pressure units per hour awake
-const CAF_SCALE = 0.13       // mg → energy units at peak
+const HALF_LIFE_H = 5.5
+const ABSORPTION_TAU = 0.8
+const ADENOSINE_RATE = 3.8
+const CAF_SCALE = 0.13
+const DOSE_COLORS = ['#4ade80', '#60a5fa', '#fb923c', '#c084fc', '#f472b6', '#34d399']
 
 interface DosePoint {
   id: string
@@ -27,21 +28,13 @@ function caffeineConc(t: number, mg: number): number {
   return mg * absorption * decay
 }
 
-function computeEnergy(
-  hour: number,
-  wakeHour: number,
-  sleepQuality: number,
-  doses: DosePoint[]
-): number {
+function computeEnergy(hour: number, wakeHour: number, sleepQuality: number, doses: DosePoint[]): number {
   if (hour < wakeHour - 1) return 0
   const hoursAwake = Math.max(0, hour - wakeHour)
   const baseline = 40 + sleepQuality * 0.28
   let cafEnergy = 0
-  for (const d of doses) {
-    cafEnergy += caffeineConc(hour - d.hour, d.mg) * CAF_SCALE
-  }
-  const pressure = hoursAwake * ADENOSINE_RATE
-  return Math.max(0, Math.min(100, baseline + cafEnergy - pressure))
+  for (const d of doses) cafEnergy += caffeineConc(hour - d.hour, d.mg) * CAF_SCALE
+  return Math.max(0, Math.min(100, baseline + cafEnergy - hoursAwake * ADENOSINE_RATE))
 }
 
 function energyLabel(e: number): string {
@@ -58,6 +51,17 @@ function energyColor(e: number): string {
   return '#f87171'
 }
 
+// Change 1: formatHourShort now includes minutes when non-zero
+function formatHourShort(h: number): string {
+  const hr = Math.floor(h)
+  const min = Math.round((h - hr) * 60)
+  const displayH = hr === 0 ? 12 : hr > 12 ? hr - 12 : hr
+  const suffix = hr < 12 ? 'a' : 'p'
+  return min > 0
+    ? `${displayH}:${String(min).padStart(2, '0')}${suffix}`
+    : `${displayH}${suffix}`
+}
+
 function formatHour(h: number): string {
   const hr = Math.floor(h)
   const min = Math.round((h - hr) * 60)
@@ -66,13 +70,6 @@ function formatHour(h: number): string {
   return min > 0
     ? `${displayH}:${String(min).padStart(2, '0')}${suffix}`
     : `${displayH}${suffix}`
-}
-
-function formatHourShort(h: number): string {
-  const hr = Math.floor(h)
-  const displayH = hr === 0 ? 12 : hr > 12 ? hr - 12 : hr
-  const suffix = hr < 12 ? 'a' : 'p'
-  return `${displayH}${suffix}`
 }
 
 function formatHourRange(start: number, end: number): string {
@@ -93,10 +90,15 @@ function formatTime(iso: string): string {
   return `${h}:${String(min).padStart(2, '0')}${suffix}`
 }
 
+function nowTimeString(): string {
+  const now = new Date()
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+}
+
 // ── Chart constants ───────────────────────────────────────────────────────────
 const SVG_W = 800
 const SVG_H = 160
-const CHART_START_OFFSET = 1 // show 1h before wake
+const CHART_START_OFFSET = 1
 
 function hToX(h: number, wakeHour: number): number {
   const startH = wakeHour - CHART_START_OFFSET
@@ -107,7 +109,17 @@ function eToY(e: number): number {
   return SVG_H - (e / 100) * SVG_H
 }
 
-// ── Dose presets ──────────────────────────────────────────────────────────────
+// ── Dose modal presets ────────────────────────────────────────────────────────
+const MODAL_PRESETS = [
+  { source: 'Espresso', amount_mg: 75 },
+  { source: 'Coffee', amount_mg: 100 },
+  { source: 'Large coffee', amount_mg: 150 },
+  { source: 'Double shot', amount_mg: 200 },
+  { source: 'Tea', amount_mg: 80 },
+  { source: 'Energy drink', amount_mg: 150 },
+]
+
+// ── Quick-log presets (bottom card) ──────────────────────────────────────────
 const CAFFEINE_PRESETS = [
   { source: 'Coffee', amount_mg: 90 },
   { source: 'Pre-workout', amount_mg: 200 },
@@ -123,34 +135,23 @@ interface Props {
   whoopData: WhoopData | null
 }
 
-export default function CaffeineClient({
-  initialCaffeine,
-  today,
-  ouraData,
-  whoopData,
-}: Props) {
-  // Normalize HRV to 0-100 scale (20ms = poor, 100ms = excellent)
+export default function CaffeineClient({ initialCaffeine, today, ouraData, whoopData }: Props) {
+  // ── Model inputs ──────────────────────────────────────────────────────────
   function normalizeHrv(hrv: number | null | undefined): number | null {
     if (hrv == null) return null
     return Math.min(100, Math.max(0, (hrv - 20) / 80 * 100))
   }
 
-  // Derive sleep quality: blend composite score (70%) with HRV signal (30%)
-  // Using whichever wearable has data, with 75 as the fallback.
   const sleepQuality = (() => {
     const ouraScore = ouraData?.sleep?.score
     const ouraHrv = normalizeHrv(ouraData?.sleep?.average_hrv)
-    if (ouraScore != null) {
-      return ouraHrv != null ? ouraScore * 0.7 + ouraHrv * 0.3 : ouraScore
-    }
+    if (ouraScore != null) return ouraHrv != null ? ouraScore * 0.7 + ouraHrv * 0.3 : ouraScore
     const whoopScore = whoopData?.recovery?.score
     const whoopHrv = normalizeHrv(whoopData?.recovery?.hrv_rmssd_milli)
-    if (whoopScore != null) {
-      return whoopHrv != null ? whoopScore * 0.7 + whoopHrv * 0.3 : whoopScore
-    }
+    if (whoopScore != null) return whoopHrv != null ? whoopScore * 0.7 + whoopHrv * 0.3 : whoopScore
     return 75
   })()
-  // Derive wake hour from Oura bedtime_end (ISO 8601), fall back to 7am
+
   const wakeHour = (() => {
     const be = ouraData?.sleep?.bedtime_end
     if (be) {
@@ -160,7 +161,7 @@ export default function CaffeineClient({
     return 7
   })()
 
-  // Live clock — updates every minute
+  // ── Live clock ────────────────────────────────────────────────────────────
   const [currentHour, setCurrentHour] = useState(() => {
     const now = new Date()
     return now.getHours() + now.getMinutes() / 60
@@ -173,127 +174,80 @@ export default function CaffeineClient({
     return () => clearInterval(id)
   }, [])
 
-  // Data
+  // ── Data ─────────────────────────────────────────────────────────────────
   const { data: caffeineLogs } = useCaffeineLogs(today, initialCaffeine)
   const logCaffeine = useLogCaffeine(today)
   const deleteCaffeine = useDeleteCaffeineLog(today)
 
-  // Convert logs → dose points
   const doses: DosePoint[] = useMemo(
     () =>
       (caffeineLogs ?? [])
-        .map(l => ({
-          id: l.id,
-          hour: isoToHour(l.logged_at),
-          mg: l.amount_mg,
-          source: l.source,
-          loggedAt: l.logged_at,
-        }))
+        .map(l => ({ id: l.id, hour: isoToHour(l.logged_at), mg: l.amount_mg, source: l.source, loggedAt: l.logged_at }))
         .sort((a, b) => a.hour - b.hour),
     [caffeineLogs]
   )
 
   const totalMg = doses.reduce((s, d) => s + d.mg, 0)
+
   const currentEnergy = useMemo(
     () => computeEnergy(currentHour, wakeHour, sleepQuality, doses),
     [currentHour, wakeHour, sleepQuality, doses]
   )
 
-  // ── Chart curve paths ──────────────────────────────────────────────────────
+  // ── Chart paths ───────────────────────────────────────────────────────────
   const { areaPath, linePts, timeLabelHours } = useMemo(() => {
     const startH = wakeHour - CHART_START_OFFSET
     const pts: [number, number][] = []
     for (let h = startH; h <= 24; h += 0.25) {
-      const e = computeEnergy(h, wakeHour, sleepQuality, doses)
-      pts.push([hToX(h, wakeHour), eToY(e)])
+      pts.push([hToX(h, wakeHour), eToY(computeEnergy(h, wakeHour, sleepQuality, doses))])
     }
-
-    const linePts = pts
-      .map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`)
-      .join(' ')
-
-    const first = pts[0]
-    const last = pts[pts.length - 1]
+    const linePts = pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
+    const first = pts[0], last = pts[pts.length - 1]
     let areaPath = `M ${first[0].toFixed(1)} ${SVG_H} L ${first[0].toFixed(1)} ${first[1].toFixed(1)}`
-    for (let i = 1; i < pts.length; i++) {
-      areaPath += ` L ${pts[i][0].toFixed(1)} ${pts[i][1].toFixed(1)}`
-    }
+    for (let i = 1; i < pts.length; i++) areaPath += ` L ${pts[i][0].toFixed(1)} ${pts[i][1].toFixed(1)}`
     areaPath += ` L ${last[0].toFixed(1)} ${SVG_H} Z`
-
     const timeLabelHours: number[] = []
     for (let h = Math.ceil(startH); h <= 24; h += 3) timeLabelHours.push(h)
-
     return { areaPath, linePts, timeLabelHours }
   }, [wakeHour, sleepQuality, doses])
 
-  // ── Peak windows ───────────────────────────────────────────────────────────
+  // ── Peak windows ─────────────────────────────────────────────────────────
   const peakWindows = useMemo(() => {
     const THRESHOLD = 62
     const wins: { start: number; end: number; peak: number; peakH: number }[] = []
-    let inWin = false,
-      winStart = 0,
-      winPeak = 0,
-      winPeakH = 0
-
+    let inWin = false, winStart = 0, winPeak = 0, winPeakH = 0
     for (let h = wakeHour; h <= 24; h += 0.25) {
       const e = computeEnergy(h, wakeHour, sleepQuality, doses)
-      if (e >= THRESHOLD && !inWin) {
-        inWin = true
-        winStart = h
-        winPeak = e
-        winPeakH = h
-      } else if (e >= THRESHOLD && inWin) {
-        if (e > winPeak) {
-          winPeak = e
-          winPeakH = h
-        }
-      } else if (e < THRESHOLD && inWin) {
+      if (e >= THRESHOLD && !inWin) { inWin = true; winStart = h; winPeak = e; winPeakH = h }
+      else if (e >= THRESHOLD && inWin) { if (e > winPeak) { winPeak = e; winPeakH = h } }
+      else if (e < THRESHOLD && inWin) {
         inWin = false
-        if (h - winStart > 0.5)
-          wins.push({
-            start: winStart,
-            end: h,
-            peak: Math.round(winPeak),
-            peakH: winPeakH,
-          })
+        if (h - winStart > 0.5) wins.push({ start: winStart, end: h, peak: Math.round(winPeak), peakH: winPeakH })
       }
     }
-    if (inWin)
-      wins.push({ start: winStart, end: 24, peak: Math.round(winPeak), peakH: winPeakH })
+    if (inWin) wins.push({ start: winStart, end: 24, peak: Math.round(winPeak), peakH: winPeakH })
     return wins.sort((a, b) => b.peak - a.peak).slice(0, 3)
   }, [wakeHour, sleepQuality, doses])
 
-  // ── Smart timing ───────────────────────────────────────────────────────────
+  // ── Smart timing ─────────────────────────────────────────────────────────
   const { crashHour, lastCoffeeHour, peakFocusWindow } = useMemo(() => {
-    // Predicted crash: next time energy drops below 50 after the next peak
-    let crashHour: number | null = null
-    let pastPeak = false
-    let peakE = 0
+    let crashHour: number | null = null, pastPeak = false, peakE = 0
     for (let h = currentHour; h <= 24; h += 0.25) {
       const e = computeEnergy(h, wakeHour, sleepQuality, doses)
       if (!pastPeak && e > peakE) peakE = e
       else if (!pastPeak && e < peakE - 5) pastPeak = true
-      if (pastPeak && e < 50) {
-        crashHour = h
-        break
-      }
+      if (pastPeak && e < 50) { crashHour = h; break }
     }
-
-    // Last coffee by: binary search for latest dose time keeping caffeine < 25mg at 11pm
-    let lo = wakeHour,
-      hi = 23
+    let lo = wakeHour, hi = 23
     for (let i = 0; i < 30; i++) {
       const mid = (lo + hi) / 2
-      if (caffeineConc(23 - mid, 100) < 25) lo = mid
-      else hi = mid
+      if (caffeineConc(23 - mid, 100) < 25) lo = mid; else hi = mid
     }
-
     const peakFocusWindow = peakWindows.find(w => w.end > currentHour) ?? null
-
     return { crashHour, lastCoffeeHour: lo, peakFocusWindow }
   }, [wakeHour, sleepQuality, doses, currentHour, peakWindows])
 
-  // ── Chart scrub ────────────────────────────────────────────────────────────
+  // ── Chart scrub ───────────────────────────────────────────────────────────
   const chartRef = useRef<HTMLDivElement>(null)
   const [scrubHour, setScrubHour] = useState<number | null>(null)
 
@@ -309,20 +263,76 @@ export default function CaffeineClient({
   )
 
   const displayHour = scrubHour ?? currentHour
-  const displayEnergy =
-    scrubHour !== null
-      ? computeEnergy(scrubHour, wakeHour, sleepQuality, doses)
-      : currentEnergy
+  const displayEnergy = scrubHour !== null ? computeEnergy(scrubHour, wakeHour, sleepQuality, doses) : currentEnergy
   const color = energyColor(displayEnergy)
   const circumference = 2 * Math.PI * 38
   const ringOffset = circumference * (1 - displayEnergy / 100)
 
   const nowX = hToX(currentHour, wakeHour)
   const scrubX = scrubHour !== null ? hToX(scrubHour, wakeHour) : null
-  const scrubY =
-    scrubHour !== null
-      ? eToY(computeEnergy(scrubHour, wakeHour, sleepQuality, doses))
-      : null
+  const scrubY = scrubHour !== null ? eToY(computeEnergy(scrubHour, wakeHour, sleepQuality, doses)) : null
+  const scrubXPct = scrubX !== null ? (scrubX / SVG_W) * 100 : null
+
+  // ── Dose modal state ──────────────────────────────────────────────────────
+  const [doseModalOpen, setDoseModalOpen] = useState(false)
+  const [modalTime, setModalTime] = useState(nowTimeString)
+  const [modalPresetIdx, setModalPresetIdx] = useState(1) // Coffee 100mg default
+  const [modalLabel, setModalLabel] = useState('Coffee')
+
+  function openModal() {
+    setModalTime(nowTimeString())
+    setModalPresetIdx(1)
+    setModalLabel(MODAL_PRESETS[1].source)
+    setDoseModalOpen(true)
+  }
+
+  function handleModalPresetChange(idx: number) {
+    setModalPresetIdx(idx)
+    setModalLabel(MODAL_PRESETS[idx].source)
+  }
+
+  function handleModalAdd() {
+    const [hStr, mStr] = modalTime.split(':')
+    const h = parseInt(hStr, 10), m = parseInt(mStr, 10)
+    if (isNaN(h) || isNaN(m)) return
+    const now = new Date()
+    const logged = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0)
+    logCaffeine.mutate({
+      source: modalLabel || MODAL_PRESETS[modalPresetIdx].source,
+      amount_mg: MODAL_PRESETS[modalPresetIdx].amount_mg,
+      logged_at: logged.toISOString(),
+    })
+    setDoseModalOpen(false)
+  }
+
+  // ── Dose timeline data ────────────────────────────────────────────────────
+  const timelineStartH = wakeHour
+  const timelineEndH = 24
+  const totalActiveMg = doses.reduce((s, d) => s + caffeineConc(currentHour - d.hour, d.mg), 0)
+  const maxPossibleMg = Math.max(totalMg, 1)
+
+  // ── Dose stack paths ──────────────────────────────────────────────────────
+  const STACK_SVG_H = 120
+  const doseStackPaths = useMemo(() => {
+    if (doses.length === 0) return []
+    const startH = wakeHour - CHART_START_OFFSET
+    const maxMg = Math.max(...doses.map(d => d.mg), 1)
+    return doses.map((d, i) => {
+      const pts: [number, number][] = []
+      for (let h = startH; h <= 24; h += 0.25) {
+        const mg = caffeineConc(h - d.hour, d.mg)
+        const x = hToX(h, wakeHour)
+        const y = STACK_SVG_H - (mg / maxMg) * STACK_SVG_H
+        pts.push([x, y])
+      }
+      const linePts = pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
+      const first = pts[0], last = pts[pts.length - 1]
+      let areaPath = `M ${first[0].toFixed(1)} ${STACK_SVG_H} L ${first[0].toFixed(1)} ${first[1].toFixed(1)}`
+      for (let j = 1; j < pts.length; j++) areaPath += ` L ${pts[j][0].toFixed(1)} ${pts[j][1].toFixed(1)}`
+      areaPath += ` L ${last[0].toFixed(1)} ${STACK_SVG_H} Z`
+      return { linePts, areaPath, color: DOSE_COLORS[i % DOSE_COLORS.length], dose: d }
+    })
+  }, [doses, wakeHour])
 
   return (
     <main className="nebula-health min-h-screen pb-28 pt-4">
@@ -334,28 +344,54 @@ export default function CaffeineClient({
         >
           ← HEALTH
         </Link>
-        <div className="flex items-start justify-between">
+
+        {/* Title row */}
+        <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[9px] font-mono text-green-400 tracking-[0.18em] mb-1">
-              CAFFEINE · ENERGY
-            </p>
+            {/* Change 6: renamed subtitle */}
+            <p className="text-[9px] font-mono text-green-400 tracking-[0.18em] mb-1">ENERGY</p>
             <h1 className="text-2xl font-bold text-white">Today&apos;s Curve</h1>
           </div>
-          <div className="text-right">
-            <p className="text-[9px] text-zinc-600 font-mono tracking-wider">
-              {new Date()
-                .toLocaleDateString('en-US', {
-                  weekday: 'short',
-                  month: 'short',
-                  day: 'numeric',
-                })
-                .toUpperCase()}
-            </p>
-            {ouraData?.sleep?.score != null && (
-              <p className="text-[10px] text-zinc-500 mt-0.5 font-mono">
-                Sleep {ouraData.sleep.score} · Oura
+
+          {/* Right cluster: dose chips + add button + date/oura */}
+          <div className="flex flex-col items-end gap-2 pt-0.5">
+            {/* Change 3 & 4: dose chips + modal trigger */}
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
+              {doses.map(d => (
+                <div
+                  key={d.id}
+                  className="flex items-center gap-1 rounded-full border border-white/[0.10] bg-white/[0.05] px-2 py-1"
+                >
+                  <span className="font-mono text-[11px] text-zinc-300">
+                    {formatHourShort(d.hour)} {d.mg}mg
+                  </span>
+                  <button
+                    onClick={() => deleteCaffeine.mutate(d.id)}
+                    className="text-zinc-600 hover:text-zinc-400 transition-colors leading-none ml-0.5"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              <button
+                onClick={openModal}
+                className="rounded-full border border-green-500/40 bg-green-500/15 px-3 py-1 font-mono text-[11px] text-green-400 active:bg-green-500/25 transition-colors"
+              >
+                + DOSE
+              </button>
+            </div>
+
+            {/* Date + Oura */}
+            <div className="text-right">
+              <p className="text-[9px] text-zinc-600 font-mono tracking-wider">
+                {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase()}
               </p>
-            )}
+              {ouraData?.sleep?.score != null && (
+                <p className="text-[10px] text-zinc-500 font-mono">
+                  Sleep {ouraData.sleep.score} · Oura
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -363,62 +399,35 @@ export default function CaffeineClient({
       <div className="px-4 space-y-3">
         {/* ── Energy curve card ── */}
         <div className="cosmic-card p-4">
-          {/* Score row */}
           <div className="flex items-start gap-4 mb-4">
             {/* Ring */}
             <div className="relative w-[76px] h-[76px] flex-shrink-0">
               <svg viewBox="0 0 90 90" className="w-full h-full">
+                <circle cx="45" cy="45" r="38" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="5" />
                 <circle
-                  cx="45" cy="45" r="38"
-                  fill="none"
-                  stroke="rgba(255,255,255,0.06)"
-                  strokeWidth="5"
-                />
-                <circle
-                  cx="45" cy="45" r="38"
-                  fill="none"
-                  stroke={color}
-                  strokeWidth="5"
-                  strokeLinecap="round"
-                  strokeDasharray={circumference.toFixed(1)}
-                  strokeDashoffset={ringOffset.toFixed(1)}
+                  cx="45" cy="45" r="38" fill="none"
+                  stroke={color} strokeWidth="5" strokeLinecap="round"
+                  strokeDasharray={circumference.toFixed(1)} strokeDashoffset={ringOffset.toFixed(1)}
                   transform="rotate(-90 45 45)"
-                  style={{
-                    transition:
-                      'stroke-dashoffset 400ms cubic-bezier(.16,1,.3,1), stroke 300ms',
-                  }}
+                  style={{ transition: 'stroke-dashoffset 400ms cubic-bezier(.16,1,.3,1), stroke 300ms' }}
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span
-                  className="font-serif italic text-[22px] leading-none"
-                  style={{ color }}
-                >
+                <span className="font-serif italic text-[22px] leading-none" style={{ color }}>
                   {Math.round(displayEnergy)}
                 </span>
-                <span className="text-[8px] font-mono text-zinc-600 tracking-wider mt-0.5">
-                  ENERGY
-                </span>
+                <span className="text-[8px] font-mono text-zinc-600 tracking-wider mt-0.5">ENERGY</span>
               </div>
             </div>
 
             {/* State label */}
             <div className="pt-1 flex-1">
-              <p className="text-lg font-semibold text-white">
-                {energyLabel(displayEnergy)}
-              </p>
+              <p className="text-lg font-semibold text-white">{energyLabel(displayEnergy)}</p>
               <div className="flex items-center gap-1.5 mt-1">
-                <div
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{ background: color }}
-                />
-                <p className="text-[10px] text-zinc-400 font-mono">
-                  {formatHour(displayHour)}
-                </p>
+                <div className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />
+                <p className="text-[10px] text-zinc-400 font-mono">{formatHour(displayHour)}</p>
                 {scrubHour !== null && (
-                  <span className="text-[9px] text-zinc-600 font-mono">
-                    · Scrubbing
-                  </span>
+                  <span className="text-[9px] text-zinc-600 font-mono">· Scrubbing</span>
                 )}
               </div>
             </div>
@@ -439,115 +448,77 @@ export default function CaffeineClient({
             onMouseLeave={() => setScrubHour(null)}
             onTouchEnd={() => setScrubHour(null)}
           >
-            <svg
-              viewBox={`0 0 ${SVG_W} ${SVG_H}`}
-              preserveAspectRatio="none"
-              className="w-full"
-              style={{ height: 140, display: 'block' }}
-            >
+            <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} preserveAspectRatio="none" className="w-full" style={{ height: 140, display: 'block' }}>
               <defs>
                 <linearGradient id="cafAreaGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#4ade80" stopOpacity="0.35" />
                   <stop offset="100%" stopColor="#4ade80" stopOpacity="0.02" />
                 </linearGradient>
               </defs>
-
-              {/* 50% threshold line */}
-              <line
-                x1="0" y1={SVG_H * 0.5}
-                x2={SVG_W} y2={SVG_H * 0.5}
-                stroke="rgba(255,255,255,0.06)"
-                strokeWidth="1"
-                strokeDasharray="4,6"
-              />
-
-              {/* Area fill */}
+              <line x1="0" y1={SVG_H * 0.5} x2={SVG_W} y2={SVG_H * 0.5} stroke="rgba(255,255,255,0.06)" strokeWidth="1" strokeDasharray="4,6" />
               <path d={areaPath} fill="url(#cafAreaGrad)" />
-
-              {/* Line */}
-              <polyline
-                points={linePts}
-                fill="none"
-                stroke="#4ade80"
-                strokeWidth="2.5"
-                strokeLinejoin="round"
-                strokeLinecap="round"
-              />
-
-              {/* Dose markers */}
-              {doses.map(d => {
-                const x = hToX(d.hour, wakeHour)
-                const e = computeEnergy(d.hour, wakeHour, sleepQuality, doses)
-                return (
-                  <circle
-                    key={d.id}
-                    cx={x}
-                    cy={eToY(e)}
-                    r="4"
-                    fill="#4ade80"
-                    stroke="#050508"
-                    strokeWidth="2"
-                  />
-                )
-              })}
-
-              {/* "Now" line */}
-              <line
-                x1={nowX} x2={nowX}
-                y1="0" y2={SVG_H}
-                stroke="rgba(255,255,255,0.3)"
-                strokeWidth="1.5"
-                strokeDasharray="2,4"
-              />
-
-              {/* Scrub line + dot */}
+              <polyline points={linePts} fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+              {doses.map(d => (
+                <circle key={d.id} cx={hToX(d.hour, wakeHour)} cy={eToY(computeEnergy(d.hour, wakeHour, sleepQuality, doses))} r="4" fill="#4ade80" stroke="#050508" strokeWidth="2" />
+              ))}
+              <line x1={nowX} x2={nowX} y1="0" y2={SVG_H} stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" strokeDasharray="2,4" />
               {scrubX !== null && (
                 <>
-                  <line
-                    x1={scrubX} x2={scrubX}
-                    y1="0" y2={SVG_H}
-                    stroke="rgba(255,255,255,0.5)"
-                    strokeWidth="1"
-                  />
+                  <line x1={scrubX} x2={scrubX} y1="0" y2={SVG_H} stroke="rgba(255,255,255,0.5)" strokeWidth="1" />
                   {scrubY !== null && (
-                    <circle
-                      cx={scrubX}
-                      cy={scrubY}
-                      r="5"
-                      fill={energyColor(displayEnergy)}
-                      stroke="#050508"
-                      strokeWidth="2"
-                      style={{
-                        filter: `drop-shadow(0 0 6px ${energyColor(displayEnergy)})`,
-                      }}
+                    <circle cx={scrubX} cy={scrubY} r="5" fill={energyColor(displayEnergy)} stroke="#050508" strokeWidth="2"
+                      style={{ filter: `drop-shadow(0 0 6px ${energyColor(displayEnergy)})` }}
                     />
                   )}
                 </>
               )}
             </svg>
 
-            {/* Time axis labels */}
+            {/* Change 7: floating scrub tooltip card */}
+            {scrubX !== null && scrubY !== null && scrubXPct !== null && (
+              <div
+                className="pointer-events-none absolute"
+                style={{
+                  ...(scrubXPct > 65
+                    ? { right: `${100 - scrubXPct}%`, transform: 'translateX(-12px) translateY(-50%)' }
+                    : { left: `${scrubXPct}%`, transform: 'translateX(12px) translateY(-50%)' }),
+                  top: `${(scrubY / SVG_H) * 100}%`,
+                }}
+              >
+                <div style={{
+                  background: 'rgba(10,10,14,0.92)',
+                  border: '1px solid rgba(255,255,255,0.10)',
+                  borderRadius: 12,
+                  padding: '6px 12px',
+                  backdropFilter: 'blur(8px)',
+                  minWidth: 68,
+                }}>
+                  <div style={{ fontFamily: 'Georgia, serif', fontStyle: 'italic', fontSize: 28, color: energyColor(displayEnergy), lineHeight: 1 }}>
+                    {Math.round(displayEnergy)}
+                  </div>
+                  <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 2 }}>
+                    {formatHour(scrubHour!)}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Time axis */}
             <div className="flex justify-between mt-1 px-0.5">
               {timeLabelHours.map(h => (
-                <span key={h} className="text-[9px] font-mono text-zinc-700">
-                  {formatHour(h)}
-                </span>
+                <span key={h} className="text-[9px] font-mono text-zinc-700">{formatHour(h)}</span>
               ))}
             </div>
           </div>
         </div>
 
-        {/* ── Peak windows ── */}
+        {/* ── Peak windows ── (Change 2: no number prefix) */}
         <div className="cosmic-card p-4">
           <div className="flex items-center gap-2 mb-3">
-            <span className="text-[9px] font-mono text-green-400 tracking-[0.15em]">03</span>
-            <span className="text-[9px] font-mono text-zinc-500 tracking-[0.2em] uppercase">
-              Peak Windows
-            </span>
+            <span className="text-[9px] font-mono text-zinc-500 tracking-[0.2em] uppercase">Peak Windows</span>
             <div className="flex-1 h-px bg-white/[0.06]" />
             <span className="text-[9px] font-mono text-zinc-700">TODAY</span>
           </div>
-
           <div className="space-y-2">
             {peakWindows.length === 0 ? (
               <p className="py-3 text-center text-[11px] font-mono text-zinc-600">
@@ -557,38 +528,16 @@ export default function CaffeineClient({
               peakWindows.map((w, i) => {
                 const isActive = currentHour >= w.start && currentHour <= w.end
                 const isPast = w.end < currentHour
-                const stateLabel = isActive
-                  ? '● IN IT NOW'
-                  : isPast
-                  ? 'PAST'
-                  : `PEAKS ${formatHour(w.peakH).toUpperCase()}`
-
+                const stateLabel = isActive ? '● IN IT NOW' : isPast ? 'PAST' : `PEAKS ${formatHour(w.peakH).toUpperCase()}`
                 return (
-                  <div
-                    key={i}
-                    className={`flex items-center rounded-xl px-4 py-3 border transition-colors ${
-                      isActive
-                        ? 'bg-green-400/[0.05] border-green-400/30'
-                        : 'bg-white/[0.03] border-white/[0.06]'
-                    } ${isPast ? 'opacity-45' : ''}`}
-                  >
+                  <div key={i} className={`flex items-center rounded-xl px-4 py-3 border transition-colors ${isActive ? 'bg-green-400/[0.05] border-green-400/30' : 'bg-white/[0.03] border-white/[0.06]'} ${isPast ? 'opacity-45' : ''}`}>
                     <div className="flex-1">
-                      <p className="font-serif italic text-xl text-green-400">
-                        {formatHourRange(w.start, w.end)}
-                      </p>
-                      <p
-                        className={`text-[9px] font-mono mt-0.5 tracking-[0.12em] ${
-                          isActive ? 'text-green-400' : 'text-zinc-500'
-                        }`}
-                      >
-                        {stateLabel}
-                      </p>
+                      <p className="font-serif italic text-xl text-green-400">{formatHourRange(w.start, w.end)}</p>
+                      <p className={`text-[9px] font-mono mt-0.5 tracking-[0.12em] ${isActive ? 'text-green-400' : 'text-zinc-500'}`}>{stateLabel}</p>
                     </div>
                     <div className="text-right">
                       <p className="text-[9px] font-mono text-zinc-600 tracking-[0.12em]">PEAK</p>
-                      <p className="font-serif italic text-2xl text-white leading-none">
-                        {w.peak}
-                      </p>
+                      <p className="font-serif italic text-2xl text-white leading-none">{w.peak}</p>
                     </div>
                   </div>
                 )
@@ -597,59 +546,32 @@ export default function CaffeineClient({
           </div>
         </div>
 
-        {/* ── Smart timing ── */}
+        {/* ── Smart timing ── (Change 2: no number prefix) */}
         <div className="cosmic-card p-4">
           <div className="flex items-center gap-2 mb-3">
-            <span className="text-[9px] font-mono text-green-400 tracking-[0.15em]">04</span>
-            <span className="text-[9px] font-mono text-zinc-500 tracking-[0.2em] uppercase">
-              Smart Timing
-            </span>
+            <span className="text-[9px] font-mono text-zinc-500 tracking-[0.2em] uppercase">Smart Timing</span>
             <div className="flex-1 h-px bg-white/[0.06]" />
           </div>
-
           <div className="grid grid-cols-3 gap-2">
-            {/* Peak focus */}
             <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3">
-              <p className="text-[8px] font-mono text-zinc-600 tracking-[0.15em] uppercase mb-1.5">
-                Peak Focus
-              </p>
+              <p className="text-[8px] font-mono text-zinc-600 tracking-[0.15em] uppercase mb-1.5">Peak Focus</p>
               <p className="font-serif italic text-base text-green-400 leading-tight">
-                {peakFocusWindow
-                  ? formatHourRange(peakFocusWindow.start, peakFocusWindow.end)
-                  : 'None left'}
+                {peakFocusWindow ? formatHourRange(peakFocusWindow.start, peakFocusWindow.end) : 'None left'}
               </p>
               <p className="text-[10px] text-zinc-500 mt-1">
                 {peakFocusWindow ? `Score ${peakFocusWindow.peak}` : 'All windows past'}
               </p>
             </div>
-
-            {/* Predicted crash */}
             <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3">
-              <p className="text-[8px] font-mono text-zinc-600 tracking-[0.15em] uppercase mb-1.5">
-                Predicted Crash
-              </p>
-              <p
-                className={`font-serif italic text-base leading-tight ${
-                  crashHour && crashHour - currentHour < 2
-                    ? 'text-orange-400'
-                    : 'text-white'
-                }`}
-              >
+              <p className="text-[8px] font-mono text-zinc-600 tracking-[0.15em] uppercase mb-1.5">Predicted Crash</p>
+              <p className={`font-serif italic text-base leading-tight ${crashHour && crashHour - currentHour < 2 ? 'text-orange-400' : 'text-white'}`}>
                 {crashHour ? `~${formatHour(crashHour)}` : 'After midnight'}
               </p>
               <p className="text-[10px] text-zinc-500 mt-1">Energy drops below 50</p>
             </div>
-
-            {/* Last coffee by */}
             <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3">
-              <p className="text-[8px] font-mono text-zinc-600 tracking-[0.15em] uppercase mb-1.5">
-                Last Coffee By
-              </p>
-              <p
-                className={`font-serif italic text-base leading-tight ${
-                  lastCoffeeHour < currentHour ? 'text-orange-400' : 'text-sky-400'
-                }`}
-              >
+              <p className="text-[8px] font-mono text-zinc-600 tracking-[0.15em] uppercase mb-1.5">Last Coffee By</p>
+              <p className={`font-serif italic text-base leading-tight ${lastCoffeeHour < currentHour ? 'text-orange-400' : 'text-sky-400'}`}>
                 {formatHour(lastCoffeeHour)}
               </p>
               <p className="text-[10px] text-zinc-500 mt-1">&lt;25mg at 11pm bedtime</p>
@@ -657,63 +579,241 @@ export default function CaffeineClient({
           </div>
         </div>
 
-        {/* ── Dose logger ── */}
+        {/* ── Change 8: Dose Timeline ── */}
+        {doses.length > 0 && (
+          <div className="cosmic-card p-4">
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-[9px] font-mono text-zinc-500 tracking-[0.2em] uppercase">Dose Timeline</span>
+              <div className="flex-1 h-px bg-white/[0.06]" />
+            </div>
+
+            {/* Timeline track */}
+            <div className="relative h-8 mb-1">
+              {/* Track line */}
+              <div className="absolute top-1/2 left-0 right-0 h-px bg-white/[0.10]" style={{ transform: 'translateY(-50%)' }} />
+              {/* Dose dots */}
+              {doses.map((d, i) => {
+                const pct = ((d.hour - timelineStartH) / (timelineEndH - timelineStartH)) * 100
+                const clampedPct = Math.max(0, Math.min(98, pct))
+                return (
+                  <div key={d.id} className="absolute top-0 flex flex-col items-center" style={{ left: `${clampedPct}%`, transform: 'translateX(-50%)' }}>
+                    <span className="text-[9px] font-mono whitespace-nowrap mb-0.5" style={{ color: DOSE_COLORS[i % DOSE_COLORS.length] }}>
+                      {d.source} · {d.mg}mg
+                    </span>
+                    <div className="w-2.5 h-2.5 rounded-full border-2 border-[#050508]" style={{ background: DOSE_COLORS[i % DOSE_COLORS.length] }} />
+                  </div>
+                )
+              })}
+              {/* NOW marker */}
+              {currentHour >= timelineStartH && currentHour <= timelineEndH && (
+                <div
+                  className="absolute top-0 bottom-0 flex flex-col items-center justify-end"
+                  style={{ left: `${((currentHour - timelineStartH) / (timelineEndH - timelineStartH)) * 100}%`, transform: 'translateX(-50%)' }}
+                >
+                  <div className="w-px h-full bg-white/30" />
+                  <span className="text-[8px] font-mono text-zinc-500 mt-0.5">NOW</span>
+                </div>
+              )}
+            </div>
+
+            {/* Time labels */}
+            <div className="flex justify-between mb-4">
+              {[wakeHour, 12, 15, 18, 21, 24].filter(h => h >= wakeHour).map(h => (
+                <span key={h} className="text-[9px] font-mono text-zinc-700">{formatHourShort(h)}</span>
+              ))}
+            </div>
+
+            {/* Active mg bars */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                <span className="w-24 text-[9px] font-mono text-zinc-500 uppercase tracking-wider shrink-0">Total Active</span>
+                <div className="flex-1 h-1.5 rounded-full bg-white/[0.05] overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-green-400 transition-all duration-1000"
+                    style={{ width: `${Math.min(100, (totalActiveMg / maxPossibleMg) * 100)}%` }}
+                  />
+                </div>
+                <span className="text-[10px] font-mono text-zinc-400 w-10 text-right">{Math.round(totalActiveMg)}mg</span>
+              </div>
+              {doses.map((d, i) => {
+                const active = caffeineConc(currentHour - d.hour, d.mg)
+                return (
+                  <div key={d.id} className="flex items-center gap-3">
+                    <span className="w-24 text-[9px] font-mono text-zinc-600 truncate shrink-0">
+                      {formatHourShort(d.hour)} · {d.source}
+                    </span>
+                    <div className="flex-1 h-1.5 rounded-full bg-white/[0.05] overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-1000"
+                        style={{ width: `${Math.min(100, (active / d.mg) * 100)}%`, background: DOSE_COLORS[i % DOSE_COLORS.length] }}
+                      />
+                    </div>
+                    <span className="text-[10px] font-mono text-zinc-600 w-10 text-right">{Math.round(active)}mg</span>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Warning banner */}
+            {currentHour > lastCoffeeHour && (
+              <div className="mt-4 rounded-xl border border-orange-500/25 bg-orange-500/[0.07] px-4 py-3">
+                <p className="text-[11px] font-mono text-orange-400">
+                  △ Past last coffee window ({formatHour(lastCoffeeHour)}) — a dose now may affect sleep
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Log Dose ── (Change 2: no number prefix) */}
         <div className="cosmic-card p-4">
           <div className="flex items-center gap-2 mb-3">
-            <span className="text-[9px] font-mono text-green-400 tracking-[0.15em]">02</span>
-            <span className="text-[9px] font-mono text-zinc-500 tracking-[0.2em] uppercase">
-              Log Dose
-            </span>
+            <span className="text-[9px] font-mono text-zinc-500 tracking-[0.2em] uppercase">Log Dose</span>
             <div className="flex-1 h-px bg-white/[0.06]" />
-            <span className="text-[9px] font-mono text-zinc-600">
-              {Math.round(totalMg)}mg total
-            </span>
+            <span className="text-[9px] font-mono text-zinc-600">{Math.round(totalMg)}mg total</span>
           </div>
-
           <div className="flex flex-wrap gap-2 mb-4">
             {CAFFEINE_PRESETS.map(preset => (
               <button
                 key={preset.source}
-                onClick={() =>
-                  logCaffeine.mutate({
-                    source: preset.source,
-                    amount_mg: preset.amount_mg,
-                  })
-                }
+                onClick={() => logCaffeine.mutate({ source: preset.source, amount_mg: preset.amount_mg })}
                 disabled={logCaffeine.isPending}
                 className="rounded-full bg-white/[0.06] border border-white/[0.08] px-3 py-1.5 text-xs font-medium text-white active:bg-white/10 disabled:opacity-50 transition-colors"
               >
-                {preset.source}{' '}
-                <span className="text-zinc-400">{preset.amount_mg}mg</span>
+                {preset.source} <span className="text-zinc-400">{preset.amount_mg}mg</span>
               </button>
             ))}
           </div>
-
           {(caffeineLogs?.length ?? 0) > 0 ? (
             <div className="space-y-2">
               {[...(caffeineLogs ?? [])].reverse().map(log => (
                 <div key={log.id} className="flex items-center gap-3">
-                  <span className="w-16 text-xs font-mono text-zinc-500">
-                    {formatTime(log.logged_at)}
-                  </span>
+                  <span className="w-16 text-xs font-mono text-zinc-500">{formatTime(log.logged_at)}</span>
                   <span className="flex-1 text-xs text-zinc-300">{log.source}</span>
                   <span className="text-xs text-zinc-500">{log.amount_mg}mg</span>
-                  <button
-                    onClick={() => deleteCaffeine.mutate(log.id)}
-                    className="px-1 text-sm text-zinc-600 active:text-zinc-400"
-                  >
-                    ×
-                  </button>
+                  <button onClick={() => deleteCaffeine.mutate(log.id)} className="px-1 text-sm text-zinc-600 active:text-zinc-400">×</button>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-[11px] font-mono text-zinc-700">
-              No doses logged today
-            </p>
+            <p className="text-[11px] font-mono text-zinc-700">No doses logged today</p>
           )}
         </div>
+
+        {/* ── Change 9: Dose Stack (Per-Dose Contribution) ── */}
+        {doses.length > 0 && (
+          <div className="cosmic-card p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-[9px] font-mono text-zinc-500 tracking-[0.2em] uppercase">Per-Dose Contribution</span>
+              <div className="flex-1 h-px bg-white/[0.06]" />
+            </div>
+
+            {/* Legend */}
+            <div className="flex flex-wrap gap-3 mb-3">
+              {doses.map((d, i) => (
+                <div key={d.id} className="flex items-center gap-1.5">
+                  <div className="w-2 h-2 rounded-full" style={{ background: DOSE_COLORS[i % DOSE_COLORS.length] }} />
+                  <span className="text-[10px] font-mono text-zinc-400">
+                    {formatHourShort(d.hour)} · {d.mg}mg {d.source}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Chart */}
+            <div className="relative">
+              <svg viewBox={`0 0 ${SVG_W} ${STACK_SVG_H}`} preserveAspectRatio="none" className="w-full" style={{ height: 100, display: 'block' }}>
+                <defs>
+                  {doseStackPaths.map((dp, i) => (
+                    <linearGradient key={i} id={`stackGrad${i}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={dp.color} stopOpacity="0.25" />
+                      <stop offset="100%" stopColor={dp.color} stopOpacity="0.02" />
+                    </linearGradient>
+                  ))}
+                </defs>
+                {/* Now line */}
+                <line x1={nowX} x2={nowX} y1="0" y2={STACK_SVG_H} stroke="rgba(255,255,255,0.2)" strokeWidth="1" strokeDasharray="2,4" />
+                {doseStackPaths.map((dp, i) => (
+                  <g key={i}>
+                    <path d={dp.areaPath} fill={`url(#stackGrad${i})`} />
+                    <polyline points={dp.linePts} fill="none" stroke={dp.color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+                  </g>
+                ))}
+              </svg>
+              <div className="flex justify-between mt-1 px-0.5">
+                {timeLabelHours.map(h => (
+                  <span key={h} className="text-[9px] font-mono text-zinc-700">{formatHour(h)}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* ── Change 4: + DOSE modal ── */}
+      {doseModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center pb-8 px-4"
+          style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}
+          onClick={e => { if (e.target === e.currentTarget) setDoseModalOpen(false) }}
+        >
+          <div style={{ background: '#0f0f12', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 20, padding: 20, width: '100%', maxWidth: 400 }}>
+            <p className="text-[9px] font-mono text-zinc-600 tracking-[0.2em] uppercase mb-4">Add Dose</p>
+
+            <div className="space-y-3">
+              <div>
+                <p className="text-[9px] font-mono text-zinc-500 tracking-[0.15em] uppercase mb-1.5">Time</p>
+                <input
+                  type="time"
+                  value={modalTime}
+                  onChange={e => setModalTime(e.target.value)}
+                  className="w-full rounded-[10px] border border-white/[0.10] bg-black/30 px-3 py-2.5 text-sm font-mono text-white outline-none focus:border-white/30"
+                />
+              </div>
+
+              <div>
+                <p className="text-[9px] font-mono text-zinc-500 tracking-[0.15em] uppercase mb-1.5">Caffeine (mg)</p>
+                <select
+                  value={modalPresetIdx}
+                  onChange={e => handleModalPresetChange(Number(e.target.value))}
+                  className="w-full rounded-[10px] border border-white/[0.10] bg-black/30 px-3 py-2.5 text-sm text-white outline-none focus:border-white/30"
+                >
+                  {MODAL_PRESETS.map((p, i) => (
+                    <option key={p.source} value={i}>{p.source} · {p.amount_mg}mg</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <p className="text-[9px] font-mono text-zinc-500 tracking-[0.15em] uppercase mb-1.5">Label</p>
+                <input
+                  type="text"
+                  value={modalLabel}
+                  onChange={e => setModalLabel(e.target.value)}
+                  className="w-full rounded-[10px] border border-white/[0.10] bg-black/30 px-3 py-2.5 text-sm text-white placeholder-zinc-600 outline-none focus:border-white/30"
+                  placeholder="e.g. Coffee"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-5">
+              <button
+                onClick={() => setDoseModalOpen(false)}
+                className="flex-1 rounded-[10px] border border-white/[0.10] py-3 text-sm font-semibold text-zinc-400 active:opacity-70 transition-opacity"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleModalAdd}
+                disabled={logCaffeine.isPending}
+                className="flex-1 rounded-[10px] bg-green-500 py-3 text-sm font-bold text-black active:opacity-80 disabled:opacity-50 transition-opacity"
+              >
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
