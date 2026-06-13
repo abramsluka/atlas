@@ -1649,13 +1649,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.45, ease: EASE_OUT, delay: 0.5 }}
         >
-          <ProtocolCard
-            config={config}
-            onViewInGym={() => {
-              setFilterDay('')
-              window.scrollTo({ top: 0, behavior: 'smooth' })
-            }}
-          />
+          <ProtocolCard today={today} />
         </motion.div>
 
         {/* ── Past Workouts ─────────────────────────────────────────── */}
