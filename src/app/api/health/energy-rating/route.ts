@@ -9,12 +9,15 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const db = createServiceClient()
 
-  // Count distinct days with logged ratings
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
+
+  // Count distinct days with logged ratings (last 30 days only)
   if (searchParams.get('count') === 'true') {
     const { data } = await db
       .from('energy_ratings')
       .select('date_key')
       .eq('user_id', user.id)
+      .gte('date_key', thirtyDaysAgo)
     const count = new Set(data?.map((r: { date_key: string }) => r.date_key) ?? []).size
     return NextResponse.json({ count })
   }
@@ -27,6 +30,7 @@ export async function GET(req: Request) {
     .select('*')
     .eq('user_id', user.id)
     .eq('date_key', date)
+    .gte('date_key', thirtyDaysAgo)
     .order('logged_at', { ascending: true })
 
   return NextResponse.json(data ?? [])

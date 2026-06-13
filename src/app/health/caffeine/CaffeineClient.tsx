@@ -310,15 +310,19 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
     const chartYMin = Math.max(0, dataMin - pad)
     const chartYMax = Math.min(100, dataMax + pad)
 
-    // 0.5h steps for path — coarser = no micro-wobble, still captures caffeine peak
-    const pts: [number, number][] = []
-    for (let h = startH; h <= 24; h += 0.5) {
+    // 0.5h grid + exact dose hours so the curve always passes through dose positions
+    const sampleSet = new Set<number>()
+    for (let h = startH; h <= 24; h += 0.5) sampleSet.add(Math.round(h * 1000) / 1000)
+    for (const d of doses) sampleSet.add(Math.round(d.hour * 1000) / 1000)
+    const sampleHours = Array.from(sampleSet).sort((a, b) => a - b)
+
+    const pts: [number, number][] = sampleHours.map(h => {
       const e = computeEnergy(h, wakeHour, sleepQuality, doses, workouts, meals)
-      pts.push([hToX(h, wakeHour), eToYScaled(e, chartYMin, chartYMax)])
-    }
+      return [hToX(h, wakeHour), eToYScaled(e, chartYMin, chartYMax)]
+    })
 
     // Catmull-Rom → smooth curve that passes through all points without overshooting
-    function catmullPath(points: [number, number][], close?: { x: number }) {
+    function catmullPath(points: [number, number][]) {
       let d = `M ${points[0][0].toFixed(1)} ${points[0][1].toFixed(1)}`
       for (let i = 0; i < points.length - 1; i++) {
         const p0 = points[Math.max(0, i - 1)]
@@ -331,7 +335,6 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
         const cp2y = p2[1] - (p3[1] - p1[1]) / 6
         d += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`
       }
-      if (close) d += ` L ${pts[pts.length - 1][0].toFixed(1)} ${SVG_H} L ${close.x.toFixed(1)} ${SVG_H} Z`
       return d
     }
 
@@ -807,51 +810,47 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
         )}
 
         {/* ── How do you feel? ── */}
-        <div style={{ background: '#0a0a0d', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: '18px 20px' }}>
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1 min-w-0">
-              <p style={{ fontFamily: 'Georgia, serif', fontStyle: 'italic', fontSize: 17, color: 'white', lineHeight: 1.2 }}>
+        <div style={{ background: '#0a0a0d', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: '14px 18px' }}>
+          <div className="flex items-center gap-4">
+            {/* Left: label */}
+            <div style={{ flexShrink: 0, width: '36%' }}>
+              <p style={{ fontFamily: 'Georgia, serif', fontStyle: 'italic', fontWeight: 700, fontSize: 15, color: 'white', lineHeight: 1.25 }}>
                 How do you feel right now?
               </p>
-              <p style={{ fontFamily: 'monospace', fontSize: 9, color: '#3f3f46', letterSpacing: '0.14em', marginTop: 5, textTransform: 'uppercase' }}>
+              <p style={{ fontFamily: 'monospace', fontSize: 8, color: '#52525b', letterSpacing: '0.13em', marginTop: 4, textTransform: 'uppercase' }}>
                 Currently building a more detailed analysis · {totalDays}/30 days
               </p>
-
-              {/* Slider track + thumb */}
-              <div className="relative flex items-center mt-4" style={{ height: 28 }}>
-                {/* Multicolor track */}
-                <div className="absolute inset-x-0" style={{ height: 6, borderRadius: 3, background: 'linear-gradient(to right, #ef4444, #f97316 35%, #eab308 65%, #4ade80)' }} />
-                {/* Thumb */}
-                <div
-                  className="absolute pointer-events-none"
-                  style={{
-                    left: `calc(${ratingSlider}% - 11px)`,
-                    width: 22, height: 22,
-                    borderRadius: '50%',
-                    background: 'white',
-                    boxShadow: '0 0 0 3px rgba(74,222,128,0.35), 0 0 14px rgba(74,222,128,0.55)',
-                    transition: 'left 0ms',
-                  }}
-                />
-                {/* Transparent range input on top */}
-                <input
-                  type="range" min={0} max={100} step={1}
-                  value={ratingSlider}
-                  onChange={e => handleRatingChange(Number(e.target.value))}
-                  className="absolute inset-0 w-full cursor-pointer opacity-0"
-                  style={{ height: '100%' }}
-                />
-              </div>
             </div>
 
-            {/* Score */}
-            <div className="flex flex-col items-end shrink-0 pt-0.5">
-              <span style={{ fontFamily: 'Georgia, serif', fontStyle: 'italic', fontSize: 32, color: 'white', lineHeight: 1 }}>
+            {/* Middle: gradient slider */}
+            <div className="relative flex items-center" style={{ flex: 1, height: 32 }}>
+              <div className="absolute inset-x-0" style={{ height: 7, borderRadius: 4, background: 'linear-gradient(to right, #ef4444, #f97316 35%, #eab308 65%, #4ade80)' }} />
+              <div
+                className="absolute pointer-events-none"
+                style={{
+                  left: `calc(${ratingSlider}% - 12px)`,
+                  width: 24, height: 24, borderRadius: '50%',
+                  background: 'white',
+                  boxShadow: '0 0 0 3px rgba(74,222,128,0.4), 0 0 16px rgba(74,222,128,0.6)',
+                }}
+              />
+              <input
+                type="range" min={0} max={100} step={1}
+                value={ratingSlider}
+                onChange={e => handleRatingChange(Number(e.target.value))}
+                className="absolute inset-0 w-full cursor-pointer"
+                style={{ height: '100%', opacity: 0 }}
+              />
+            </div>
+
+            {/* Right: percentage */}
+            <div style={{ flexShrink: 0, textAlign: 'right', minWidth: 52 }}>
+              <span style={{ fontFamily: 'Georgia, serif', fontStyle: 'italic', fontSize: 30, color: 'white', lineHeight: 1 }}>
                 {ratingSlider}%
               </span>
-              <span style={{ fontFamily: 'monospace', fontSize: 9, color: ratingSaved ? '#4ade80' : '#3f3f46', marginTop: 4, letterSpacing: '0.1em', transition: 'color 300ms' }}>
-                {ratingSaved ? 'SAVED' : energyLabel(ratingSlider).toUpperCase()}
-              </span>
+              {ratingSaved && (
+                <p style={{ fontFamily: 'monospace', fontSize: 8, color: '#4ade80', marginTop: 2, letterSpacing: '0.1em' }}>SAVED</p>
+              )}
             </div>
           </div>
         </div>
