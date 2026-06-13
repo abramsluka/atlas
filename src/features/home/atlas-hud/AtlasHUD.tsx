@@ -27,7 +27,7 @@ export default function AtlasHUD({ onExit }: { onExit: () => void }) {
     <div style={{ position: 'fixed', inset: 0, background: '#000' }}>
       <Canvas
         flat
-        camera={{ position: [0, 0.6, 10], fov: 45 }}
+        camera={{ position: [0, 0.7, 9.5], fov: 45 }}
         dpr={[1, 2]}
         gl={{ antialias: true }}
       >

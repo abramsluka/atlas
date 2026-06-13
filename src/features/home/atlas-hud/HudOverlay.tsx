@@ -109,37 +109,59 @@ function StatRow({ k, v, accent }: { k: string; v: string; accent?: string }) {
   )
 }
 
-// ── decorative: scrolling waveform (seamless sine, CSS-animated) ──
-function Waveform() {
-  const path = useMemo(() => {
-    const w = 200, f = (2 * Math.PI * 3) / w // 3 periods per tile → seamless
-    let d = `M0 20`
-    for (let x = 0; x <= w * 2; x += 4) d += ` L${x} ${(20 + Math.sin(x * f) * 9).toFixed(1)}`
-    return d
-  }, [])
-  return (
-    <svg viewBox="0 0 200 40" className="w-full h-9" preserveAspectRatio="none">
-      <g style={{ animation: 'hudWave 5s linear infinite' }}>
-        <path d={path} fill="none" stroke={CYAN} strokeWidth="1.1" opacity="0.7" />
-      </g>
-    </svg>
-  )
+// ── Energy curve — mirrors the circadian energy model from the Energy card,
+//    with a dot that travels the curve (movement) + a "now" marker. ──
+function energyAt(t: number) {
+  const morning = 70 * Math.exp(-((t - 3) ** 2) / 20)
+  const afternoon = 15 * Math.exp(-((t - 7) ** 2) / 4)
+  const base = 35 - t * 1.8
+  return Math.max(5, Math.min(95, base + morning - afternoon))
 }
 
-// ── decorative: telemetry bars that pulse ──
-function Bars() {
-  const bars = ['FLUX', 'SYNC', 'CORE']
+function EnergyCurve() {
+  const { line, area, nowX, nowY, nowPct } = useMemo(() => {
+    const W = 200, H = 46, total = 17
+    const pts: [number, number][] = []
+    for (let i = 0; i <= 48; i++) {
+      const t = (i / 48) * total
+      pts.push([(i / 48) * W, H - 5 - (energyAt(t) / 100) * (H - 12)])
+    }
+    const line = 'M ' + pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' L ')
+    const area = `${line} L ${W},${H} L 0,${H} Z`
+    const now = new Date()
+    const hoursAwake = Math.max(0, Math.min(total, now.getHours() + now.getMinutes() / 60 - 6.5))
+    const e = energyAt(hoursAwake)
+    return { line, area, nowX: (hoursAwake / total) * W, nowY: H - 5 - (e / 100) * (H - 12), nowPct: Math.round(e) }
+  }, [])
+
   return (
-    <div className="space-y-1.5">
-      {bars.map((b, i) => (
-        <div key={b} className="flex items-center gap-2">
-          <span className="font-mono text-[8.5px] tracking-wide text-zinc-500 w-7">{b}</span>
-          <div className="flex-1 h-[3px] rounded-full" style={{ background: 'rgba(127,223,255,0.12)' }}>
-            <div className="h-full rounded-full" style={{ background: CYAN, animation: `hudBar${i} ${2.4 + i * 0.6}s ease-in-out infinite` }} />
-          </div>
-        </div>
-      ))}
-    </div>
+    <>
+      <svg viewBox="0 0 200 46" className="w-full h-12">
+        <defs>
+          <linearGradient id="enFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={CYAN} stopOpacity="0.26" />
+            <stop offset="100%" stopColor={CYAN} stopOpacity="0" />
+          </linearGradient>
+          <path id="enPath" d={line} />
+        </defs>
+        <path d={area} fill="url(#enFill)" />
+        <use href="#enPath" fill="none" stroke={CYAN} strokeWidth="1.4" opacity="0.9" />
+        {/* traveling dot — the movement Luka likes */}
+        <circle r="2.3" fill="#dff4ff">
+          <animateMotion dur="7s" repeatCount="indefinite"><mpath href="#enPath" /></animateMotion>
+        </circle>
+        {/* current-time marker */}
+        <circle cx={nowX} cy={nowY} r="3" fill="none" stroke="#fff" strokeWidth="1" />
+        <circle cx={nowX} cy={nowY} r="1.4" fill="#fff" />
+      </svg>
+      <div className="flex items-center justify-between mt-1.5">
+        <span className="font-mono text-[10px] tracking-wide text-zinc-400">NOW <span className="text-white tabular-nums">{nowPct}%</span></span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: VERDICT.GREEN, boxShadow: `0 0 6px ${VERDICT.GREEN}` }} />
+          <span className="font-mono text-[9px] tracking-widest text-zinc-400">ONLINE</span>
+        </span>
+      </div>
+    </>
   )
 }
 
@@ -237,27 +259,13 @@ export default function HudOverlay() {
             <StatRow k="Fuel" v={fuelV} />
           </div>
         </Panel>
-        <Panel label="Telemetry" className="hidden sm:block">
-          <Waveform />
-          <div className="mt-2"><Bars /></div>
-          <div className="flex items-center justify-between mt-2.5">
-            <span className="font-mono text-[9px] tracking-wider text-zinc-500">39.7°N · 104.9°W</span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: VERDICT.GREEN, boxShadow: `0 0 6px ${VERDICT.GREEN}` }} />
-              <span className="font-mono text-[9px] tracking-widest text-zinc-400">ONLINE</span>
-            </span>
-          </div>
+        <Panel label="Energy" className="hidden sm:block">
+          <EnergyCurve />
         </Panel>
         <Panel label="Raw Data" className="hidden sm:block"><RawData /></Panel>
       </div>
 
-      <style>{`
-        @keyframes hudRadar { from { transform: rotate(0deg);} to { transform: rotate(360deg);} }
-        @keyframes hudWave { from { transform: translateX(0);} to { transform: translateX(-200px);} }
-        @keyframes hudBar0 { 0%,100% { width: 35%;} 50% { width: 85%;} }
-        @keyframes hudBar1 { 0%,100% { width: 60%;} 50% { width: 30%;} }
-        @keyframes hudBar2 { 0%,100% { width: 45%;} 50% { width: 72%;} }
-      `}</style>
+      <style>{`@keyframes hudRadar { from { transform: rotate(0deg);} to { transform: rotate(360deg);} }`}</style>
     </div>
   )
 }

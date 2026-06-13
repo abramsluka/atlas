@@ -61,15 +61,17 @@ export default function Scene({
         ))}
       </group>
 
-      {/* Drag to orbit. Pan disabled; gentle zoom; clamped so you can't flip under. */}
+      {/* Drag to orbit — lower rotate/zoom speed + lighter damping for smooth,
+          precise control. Pan disabled; gentle zoom; clamped so you can't flip under. */}
       <OrbitControls
         makeDefault
         enablePan={false}
         enableDamping
-        dampingFactor={0.08}
-        rotateSpeed={0.5}
-        minDistance={6}
-        maxDistance={15}
+        dampingFactor={0.05}
+        rotateSpeed={0.32}
+        zoomSpeed={0.55}
+        minDistance={6.5}
+        maxDistance={17}
         minPolarAngle={Math.PI * 0.16}
         maxPolarAngle={Math.PI * 0.84}
       />

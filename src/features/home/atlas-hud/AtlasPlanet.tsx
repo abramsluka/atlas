@@ -12,7 +12,7 @@ import * as THREE from 'three'
 // black-flashes on this GPU) — glow comes from additive lines/rim. Clicking the
 // globe exits the HUD back to the bento dashboard.
 
-const ATLAS_R = 1.4
+const ATLAS_R = 2.1
 const SPIN = 0.05
 
 const NOISE = /* glsl */ `
