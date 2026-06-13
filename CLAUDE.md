@@ -114,17 +114,15 @@ proxy.ts                            # Next.js 16 middleware (session refresh)
 
 ## What's Next
 
-1. **Cosmic map click fix** — orbiting node buttons are not receiving taps/clicks due to overlapping rotating container divs intercepting pointer events. Fix: `pointer-events: none` on the rotating container divs, `pointer-events: auto` on the buttons inside. See `CosmicMap` component in `src/app/HomeClient.tsx`.
+1. **Home page redesign (Phase 2)**
 
-2. **Home page redesign (Phase 2)**
+2. **Gym page redesign (Phase 2)**
 
-3. **Gym page redesign (Phase 2)**
+3. **Health page redesign (Phase 2)**
 
-4. **Health page redesign (Phase 2)**
+4. **Mentor + Journal visual polish (Phase 2)**
 
-5. **Mentor + Journal visual polish (Phase 2)**
-
-6. **Phase 3 — Polish and motion**
+5. **Phase 3 — Polish and motion**
 
 ## Deferred (don't build unless asked)
 

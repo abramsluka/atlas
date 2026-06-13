@@ -278,24 +278,34 @@ function moodEmoji(mood: number | null): string {
 
 // ── Card-specific visualizations ─────────────────────────────────────────────
 
-/** TRAIN: 7-day bar chart, one bar per day, today on the right */
-function TrainVisual({ days, color }: { days: boolean[]; color: string }) {
-  const barW = 5, barH = 32, gap = 4
-  const W = days.length * (barW + gap) - gap
+/** TRAIN: EKG / heartrate pulse line with a moving dot */
+function TrainVisual({ color }: { color: string }) {
+  const W = 76, H = 44, mid = H / 2
+  const d = `M2,${mid} L13,${mid} L17,${mid - 2} L20,${mid + 7} L24,${mid - 18} L28,${mid + 12} L32,${mid} L${W - 2},${mid}`
   return (
-    <svg viewBox={`0 0 ${W} ${barH + 4}`} width={W} height={barH + 4}
-      style={{ display: 'block', marginTop: 14, marginRight: 14 }}>
-      {days.map((active, i) => {
-        const h = active ? barH : Math.round(barH * 0.22)
-        const x = i * (barW + gap)
-        const y = barH - h + 2
-        return (
-          <rect key={i} x={x} y={y} width={barW} height={h} rx={2.5}
-            fill={active ? color : 'rgba(255,255,255,0.07)'}
-            style={active ? { filter: `drop-shadow(0 0 5px ${color}99)` } : {}}
-          />
-        )
-      })}
+    <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H}
+      style={{ display: 'block', marginTop: 12, marginRight: 10, overflow: 'visible' }}>
+      <defs>
+        <path id="ekgP" d={d} />
+        <linearGradient id="ekgFade" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor={color} stopOpacity="0.08" />
+          <stop offset="45%" stopColor={color} stopOpacity="0.75" />
+          <stop offset="100%" stopColor={color} stopOpacity="0.12" />
+        </linearGradient>
+      </defs>
+      {/* Glow blur copy */}
+      <use href="#ekgP" fill="none" stroke={color} strokeWidth="5"
+        opacity="0.09" style={{ filter: 'blur(3px)' }} />
+      {/* Main line */}
+      <use href="#ekgP" fill="none" stroke="url(#ekgFade)" strokeWidth="1.8"
+        strokeLinejoin="round" strokeLinecap="round" />
+      {/* Moving dot */}
+      <circle r="2.8" fill={color}
+        style={{ filter: `drop-shadow(0 0 7px ${color})` }}>
+        <animateMotion dur="2.8s" repeatCount="indefinite">
+          <mpath href="#ekgP" />
+        </animateMotion>
+      </circle>
     </svg>
   )
 }
@@ -451,7 +461,7 @@ function BentoCard({ href, color, label, headline, sub, wide, loading, dim, visu
         borderRadius: 18,
         minHeight: wide ? 80 : 112,
         opacity: dim ? 0.5 : 1,
-        padding: '14px 14px 14px 16px',
+        padding: `14px ${visual && !dim ? 90 : 14}px 14px 16px`,
       }}
     >
       {/* Color wash */}
@@ -468,20 +478,20 @@ function BentoCard({ href, color, label, headline, sub, wide, loading, dim, visu
       )}
 
       {/* Label */}
-      <span className="text-[9px] font-extrabold tracking-[0.22em] uppercase relative z-10 shrink-0"
+      <span className="text-[9px] font-extrabold tracking-[0.22em] uppercase relative z-10 shrink-0 truncate block"
         style={{ color: dim ? 'rgba(255,255,255,0.2)' : color }}>
         {label}
       </span>
 
       {/* Content — pushed to bottom */}
-      <div className="relative z-10 mt-auto">
+      <div className="relative z-10 mt-auto overflow-hidden">
         {loading ? (
           <div className="h-4 w-3/4 rounded bg-white/[0.06] animate-pulse" />
         ) : (
-          <span className="text-[13px] font-bold text-white leading-snug block">{headline}</span>
+          <span className="text-[13px] font-bold text-white leading-snug truncate block">{headline}</span>
         )}
         {sub && !loading && (
-          <p className="text-[11px] text-zinc-500 mt-0.5 leading-snug">{sub}</p>
+          <p className="text-[11px] text-zinc-500 mt-0.5 leading-snug truncate">{sub}</p>
         )}
       </div>
     </motion.button>
@@ -495,7 +505,10 @@ function BentoGrid() {
   useEffect(() => {
     fetch('/api/home/bento-stats', { cache: 'no-store' })
       .then(r => r.json())
-      .then((d: BentoStats) => { setStats(d); setLoading(false) })
+      .then((d: BentoStats & { error?: string }) => {
+        if (d.error) { setLoading(false); return }
+        setStats(d); setLoading(false)
+      })
       .catch(() => setLoading(false))
   }, [])
 
@@ -509,28 +522,31 @@ function BentoGrid() {
     : Infinity
   const useCheckin = checkinAgeDays < workoutAgeDays && checkinAgeDays <= 3
 
+  const hasTrainData = useCheckin || !!stats?.lastWorkout
   const trainHeadline = loading ? '' :
-    useCheckin ? stats!.recentTrainingCheckin!.activity :
-    stats?.lastWorkout?.name ?? 'No training logged'
+    useCheckin ? (stats?.recentTrainingCheckin?.activity ?? '') :
+    stats?.lastWorkout?.name ?? 'Workouts · splits · sessions'
   const trainSub = loading ? '' :
-    useCheckin ? `${checkinAgeDays === 0 ? 'Today' : `${checkinAgeDays}d ago`} · ${stats!.workoutCount7d}x this week` :
-    stats?.lastWorkout
-      ? `${fmtRelTime(stats.lastWorkout.completedAt)} · ${stats.workoutCount7d}x this week`
-      : stats ? `${stats.workoutCount7d} workouts this week` : ''
-  const trainDim = !loading && !stats?.lastWorkout && (stats?.workoutCount7d ?? 0) === 0 && checkinAgeDays > 3
+    useCheckin
+      ? `${checkinAgeDays === 0 ? 'Today' : `${checkinAgeDays}d ago`}${(stats?.workoutCount7d ?? 0) > 0 ? ` · ${stats!.workoutCount7d}x this week` : ''}`
+      : stats?.lastWorkout
+        ? `${fmtRelTime(stats.lastWorkout.completedAt)} · ${stats.workoutCount7d}x this week`
+        : 'Strength · cardio · performance'
+  const trainDim = false  // always lit
 
   // Fuel
   const fuelHeadline = loading ? '' :
-    stats!.todayCalories > 0 ? `${stats!.todayCalories.toLocaleString()} cal` : 'Nothing logged'
-  const fuelSub = stats?.todayProtein ? `${stats.todayProtein}g protein` : ''
-  const fuelDim = !loading && (stats?.todayCalories ?? 0) === 0
+    (stats?.todayCalories ?? 0) > 0 ? `${stats!.todayCalories.toLocaleString()} cal` : 'Macros · water · weight'
+  const fuelSub = (stats?.todayProtein ?? 0) > 0
+    ? `${stats!.todayProtein}g protein today`
+    : 'Food log · supplements'
+  const fuelDim = false  // always lit — fuel tab is always relevant
 
   // Journal
   const je = stats?.lastJournal
-  const journalHeadline = loading ? '' : je ? (je.snippet || 'Entry logged') : 'Nothing written'
-  const journalSub = je
-    ? `${fmtRelTime(je.createdAt)}${je.mood ? ' · ' + moodEmoji(je.mood) : ''}` : ''
-  const journalDim = !loading && !je
+  const journalHeadline = loading ? '' : je ? (je.snippet || 'Journal') : 'Entries · mood · reflections'
+  const journalSub = je ? fmtRelTime(je.createdAt) : 'Voice · text · AI reflection'
+  const journalDim = false  // always lit
 
   return (
     <div className="grid grid-cols-2 gap-2.5 mb-4">
@@ -538,7 +554,7 @@ function BentoGrid() {
         href="/gym" color="#4ade80" label="Train"
         headline={trainHeadline} sub={trainSub}
         loading={loading} dim={trainDim}
-        visual={<TrainVisual days={stats?.workoutDays7d ?? Array(7).fill(false)} color="#4ade80" />}
+        visual={<TrainVisual color="#4ade80" />}
       />
       <BentoCard
         href="/health" color="#22d3ee" label="Fuel"
@@ -662,11 +678,12 @@ function TodaysCallCard() {
   const [noData, setNoData] = useState(false)
   const fetched = useRef(false)
 
-  const fetch_ = useCallback(async () => {
+  const fetch_ = useCallback(async (refresh = false) => {
     if (loading) return
     setLoading(true)
     try {
-      const res = await fetch('/api/home/todays-call', { method: 'POST' })
+      const url = refresh ? '/api/home/todays-call?refresh=1' : '/api/home/todays-call'
+      const res = await fetch(url, { method: 'POST' })
       if (!res.ok) return
       const json = await res.json()
       if (json.noData) { setNoData(true); return }
@@ -696,16 +713,25 @@ function TodaysCallCard() {
     >
       <div className="flex items-center justify-between mb-3">
         <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/40">Today&apos;s Call</span>
-        {data ? (
-          <span
-            className="text-[11px] font-bold tracking-widest px-2 py-0.5 rounded-full"
-            style={{ color, background: `${color}18` }}
-          >
-            {data.color}
-          </span>
-        ) : (
-          <span className="text-[11px] text-white/20 animate-pulse">Loading…</span>
-        )}
+        <div className="flex items-center gap-2">
+          {data && !loading && (
+            <button
+              onClick={() => fetch_(true)}
+              className="text-[11px] text-white/20 hover:text-white/50 transition-colors"
+              title="Refresh"
+            >↺</button>
+          )}
+          {data ? (
+            <span
+              className="text-[11px] font-bold tracking-widest px-2 py-0.5 rounded-full"
+              style={{ color, background: `${color}18` }}
+            >
+              {data.color}
+            </span>
+          ) : (
+            <span className="text-[11px] text-white/20 animate-pulse">Loading…</span>
+          )}
+        </div>
       </div>
 
       {data ? (

@@ -33,9 +33,12 @@ async function generateCall(
   const lines: string[] = [`Readiness verdict: ${verdict}`]
 
   if (oura?.readiness?.score != null) lines.push(`Oura readiness score: ${oura.readiness.score}`)
+  if (oura?.readiness?.temperature_deviation != null) lines.push(`Oura temperature deviation: ${oura.readiness.temperature_deviation.toFixed(2)}°C`)
   if (oura?.sleep?.score != null) lines.push(`Oura sleep score: ${oura.sleep.score}`)
   if (oura?.sleep?.average_hrv != null) lines.push(`Oura HRV: ${Math.round(oura.sleep.average_hrv)}ms`)
   if (oura?.sleep?.resting_heart_rate != null) lines.push(`Oura RHR: ${Math.round(oura.sleep.resting_heart_rate)}bpm`)
+  if (oura?.activity?.steps != null) lines.push(`Oura steps yesterday: ${oura.activity.steps.toLocaleString()}`)
+  if (oura?.activity?.active_calories != null) lines.push(`Oura active calories yesterday: ${oura.activity.active_calories}`)
   if (whoop?.recovery?.score != null) lines.push(`Whoop recovery: ${whoop.recovery.score}%`)
   if (whoop?.recovery?.hrv_rmssd_milli != null) lines.push(`Whoop HRV: ${Math.round(whoop.recovery.hrv_rmssd_milli)}ms`)
   if (whoop?.cycle?.strain != null) lines.push(`Whoop strain yesterday: ${whoop.cycle.strain.toFixed(1)}`)
@@ -66,7 +69,7 @@ No hedging, no "consider", no "might". Direct statements only.`
   }
 }
 
-export async function POST() {
+export async function POST(req: Request) {
   const authClient = await createClient()
   const { data: { user } } = await authClient.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -75,15 +78,20 @@ export async function POST() {
   const tz = await getUserTimezone(user.id)
   const today = toLocalDate(tz)
 
-  // Return cached result if it exists for today
-  const { data: cached } = await db
-    .from('todays_call')
-    .select('color, headline, bullets')
-    .eq('user_id', user.id)
-    .eq('date', today)
-    .maybeSingle()
+  const url = new URL(req.url)
+  const forceRefresh = url.searchParams.get('refresh') === '1'
 
-  if (cached) return NextResponse.json(cached)
+  // Return cached result if it exists for today (unless forced refresh)
+  if (!forceRefresh) {
+    const { data: cached } = await db
+      .from('todays_call')
+      .select('color, headline, bullets')
+      .eq('user_id', user.id)
+      .eq('date', today)
+      .maybeSingle()
+
+    if (cached) return NextResponse.json(cached)
+  }
 
   // Fetch wearable data
   const [ouraRes, whoopRes] = await Promise.all([

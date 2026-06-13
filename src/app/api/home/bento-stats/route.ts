@@ -20,6 +20,7 @@ export interface BentoStats {
 }
 
 export async function GET() {
+  try {
   const authClient = await createClient()
   const { data: { user } } = await authClient.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -63,13 +64,10 @@ export async function GET() {
       .maybeSingle(),
 
     db.from('daily_checkins')
-      .select('date, evening_actual_training')
+      .select('date, morning_planned_training, evening_actual_training')
       .eq('user_id', user.id)
-      .not('evening_actual_training', 'is', null)
-      .neq('evening_actual_training', '')
       .order('date', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+      .limit(7),
   ])
 
   // Last workout
@@ -88,9 +86,12 @@ export async function GET() {
   }
   const workoutCount7d = workoutDays7d.filter(Boolean).length
 
-  // Most recent training check-in (fallback when no formal workout)
-  const ci = checkinRes.data as { date: string; evening_actual_training: string } | null
-  const recentTrainingCheckin = ci ? { date: ci.date, activity: ci.evening_actual_training } : null
+  // Most recent training check-in — scan last 7, prefer evening over morning
+  type CheckinRow = { date: string; morning_planned_training: string | null; evening_actual_training: string | null }
+  const checkins = (checkinRes.data ?? []) as CheckinRow[]
+  const ci = checkins.find(c => (c.evening_actual_training?.trim() || c.morning_planned_training?.trim()))
+  const ciActivity = ci ? (ci.evening_actual_training?.trim() || ci.morning_planned_training?.trim() || null) : null
+  const recentTrainingCheckin = ci && ciActivity ? { date: ci.date, activity: ciActivity } : null
 
   // Today's food totals
   const logs = (foodRes.data ?? []) as Array<{ calories: number | null; protein_g: number | null }>
@@ -143,4 +144,8 @@ export async function GET() {
   }
 
   return NextResponse.json(stats)
+  } catch (err) {
+    console.error('[bento-stats] error:', err)
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+  }
 }
