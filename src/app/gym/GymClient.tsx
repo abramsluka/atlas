@@ -15,6 +15,7 @@ import {
   useLogBodyWeight, useLogBodyMeasurement, useUploadPhoto, useDeletePhoto,
 } from '@/features/gym/mutations'
 import type { GymConfig, GymExercise, GymLog, BodyWeight, Prescription, ProgressPhoto } from '@/features/gym/types'
+import ProtocolCard from './ProtocolCard'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -1641,6 +1642,21 @@ export default function GymClient({ today, initialConfig, initialExercises, init
             </div>
           </section>
         )}
+
+        {/* ── Neck & Jaw Protocol Card ──────────────────────────────── */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, ease: EASE_OUT, delay: 0.5 }}
+        >
+          <ProtocolCard
+            config={config}
+            onViewInGym={() => {
+              setFilterDay('')
+              window.scrollTo({ top: 0, behavior: 'smooth' })
+            }}
+          />
+        </motion.div>
 
         {/* ── Past Workouts ─────────────────────────────────────────── */}
         {pastDates.length > 0 && (
