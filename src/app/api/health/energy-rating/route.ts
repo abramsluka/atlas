@@ -1,0 +1,42 @@
+import { NextResponse } from 'next/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
+
+export async function GET(req: Request) {
+  const authClient = await createClient()
+  const { data: { user } } = await authClient.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { searchParams } = new URL(req.url)
+  const date = searchParams.get('date')
+  if (!date) return NextResponse.json({ error: 'date required' }, { status: 400 })
+
+  const db = createServiceClient()
+  const { data } = await db
+    .from('energy_ratings')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('date_key', date)
+    .order('logged_at', { ascending: true })
+
+  return NextResponse.json(data ?? [])
+}
+
+export async function POST(req: Request) {
+  const authClient = await createClient()
+  const { data: { user } } = await authClient.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const body = await req.json()
+  const { rating, predicted, date_key } = body
+  if (rating == null || !date_key) return NextResponse.json({ error: 'rating and date_key required' }, { status: 400 })
+
+  const db = createServiceClient()
+  const { data, error } = await db
+    .from('energy_ratings')
+    .insert({ user_id: user.id, rating, predicted: predicted ?? null, date_key })
+    .select()
+    .single()
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json(data)
+}

@@ -36,7 +36,7 @@ export default async function CaffeinePage() {
   const todayStart = `${today}T00:00:00`
   const todayEnd   = `${today}T23:59:59`
 
-  const [caffeineResult, ouraTokenResult, whoopTokenResult, workoutsResult, foodResult] = await Promise.all([
+  const [caffeineResult, ouraTokenResult, whoopTokenResult, workoutsResult, foodResult, ratingsResult] = await Promise.all([
     db.from('caffeine_logs')
       .select('*')
       .eq('user_id', user.id)
@@ -60,6 +60,13 @@ export default async function CaffeinePage() {
       .eq('user_id', user.id)
       .eq('date', today)
       .order('taken_at', { ascending: true }),
+
+    // Fetch today's subjective energy ratings
+    db.from('energy_ratings')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('date_key', today)
+      .order('logged_at', { ascending: true }),
   ])
 
   const hasOura = !!ouraTokenResult.data
@@ -121,6 +128,7 @@ export default async function CaffeinePage() {
   return (
     <CaffeineClient
       initialCaffeine={caffeineResult.data ?? []}
+      initialRatings={ratingsResult.data ?? []}
       today={today}
       ouraData={ouraData}
       whoopData={whoopData}

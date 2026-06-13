@@ -2,10 +2,18 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import Link from 'next/link'
+import { useQueryClient, useQuery } from '@tanstack/react-query'
 import { useCaffeineLogs } from '@/features/health/queries'
 import { useLogCaffeine, useDeleteCaffeineLog } from '@/features/health/mutations'
 import type { CaffeineLog, OuraData, WhoopData } from '@/features/health/types'
 import type { WorkoutPoint, MealPoint } from './page'
+
+interface EnergyRating {
+  id: string
+  logged_at: string
+  rating: number
+  predicted: number | null
+}
 
 // ── Pharmacokinetic model ────────────────────────────────────────────────────
 const HALF_LIFE_H = 5.5
@@ -70,7 +78,8 @@ function computeEnergy(
 ): number {
   if (hour < wakeHour - 1) return 0
   const hoursAwake = Math.max(0, hour - wakeHour)
-  const baseline = 40 + sleepQuality * 0.28
+  // baseline: readiness 94 → ~82 (High), readiness 75 → ~69, readiness 50 → ~53
+  const baseline = 20 + sleepQuality * 0.65
   let cafEnergy = 0
   for (const d of doses) cafEnergy += caffeineConc(hour - d.hour, d.mg) * CAF_SCALE
   const raw = baseline
@@ -179,6 +188,7 @@ const CAFFEINE_PRESETS = [
 // ── Component ─────────────────────────────────────────────────────────────────
 interface Props {
   initialCaffeine: CaffeineLog[]
+  initialRatings: EnergyRating[]
   today: string
   ouraData: OuraData | null
   whoopData: WhoopData | null
@@ -186,7 +196,8 @@ interface Props {
   meals: MealPoint[]
 }
 
-export default function CaffeineClient({ initialCaffeine, today, ouraData, whoopData, workouts, meals }: Props) {
+export default function CaffeineClient({ initialCaffeine, initialRatings, today, ouraData, whoopData, workouts, meals }: Props) {
+  const qc = useQueryClient()
   // ── Model inputs ──────────────────────────────────────────────────────────
   function normalizeHrv(hrv: number | null | undefined): number | null {
     if (hrv == null) return null
@@ -194,6 +205,10 @@ export default function CaffeineClient({ initialCaffeine, today, ouraData, whoop
   }
 
   const sleepQuality = (() => {
+    // Oura readiness already integrates sleep + HRV + recovery — best single signal
+    const ouraReadiness = ouraData?.readiness?.score
+    if (ouraReadiness != null) return ouraReadiness
+    // Fall back to sleep score + HRV blend
     const ouraScore = ouraData?.sleep?.score
     const ouraHrv = normalizeHrv(ouraData?.sleep?.average_hrv)
     if (ouraScore != null) return ouraHrv != null ? ouraScore * 0.7 + ouraHrv * 0.3 : ouraScore
@@ -229,6 +244,31 @@ export default function CaffeineClient({ initialCaffeine, today, ouraData, whoop
   const { data: caffeineLogs } = useCaffeineLogs(today, initialCaffeine)
   const logCaffeine = useLogCaffeine(today)
   const deleteCaffeine = useDeleteCaffeineLog(today)
+
+  // ── Energy ratings ────────────────────────────────────────────────────────
+  const { data: ratings = initialRatings } = useQuery<EnergyRating[]>({
+    queryKey: ['energy-ratings', today],
+    queryFn: () => fetch(`/api/health/energy-rating?date=${today}`).then(r => r.json()),
+    initialData: initialRatings,
+    staleTime: 30_000,
+  })
+
+  const [ratingSlider, setRatingSlider] = useState(50)
+  const [ratingSubmitting, setRatingSubmitting] = useState(false)
+
+  async function submitRating() {
+    setRatingSubmitting(true)
+    try {
+      await fetch('/api/health/energy-rating', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rating: ratingSlider, predicted: Math.round(currentEnergy), date_key: today }),
+      })
+      qc.invalidateQueries({ queryKey: ['energy-ratings', today] })
+    } finally {
+      setRatingSubmitting(false)
+    }
+  }
 
   const doses: DosePoint[] = useMemo(
     () =>
@@ -655,6 +695,22 @@ export default function CaffeineClient({ initialCaffeine, today, ouraData, whoop
               {doses.map(d => (
                 <circle key={d.id} cx={hToX(d.hour, wakeHour)} cy={eToYScaled(computeEnergy(d.hour, wakeHour, sleepQuality, doses, workouts, meals), chartYMin, chartYMax)} r="4" fill="#4ade80" stroke="#050508" strokeWidth="2" style={{ filter: 'drop-shadow(0 0 4px rgba(74,222,128,0.8))' }} />
               ))}
+              {/* Subjective rating dots */}
+              {ratings.map(r => {
+                const h = new Date(r.logged_at).getHours() + new Date(r.logged_at).getMinutes() / 60
+                const x = hToX(h, wakeHour)
+                const y = eToYScaled(r.rating, chartYMin, chartYMax)
+                return (
+                  <g key={r.id}>
+                    <line x1={x} x2={x} y1={y} y2={eToYScaled(computeEnergy(h, wakeHour, sleepQuality, doses, workouts, meals), chartYMin, chartYMax)}
+                      stroke="rgba(255,255,255,0.2)" strokeWidth="1" strokeDasharray="2,3" />
+                    <rect x={x - 4} y={y - 4} width="8" height="8" rx="2"
+                      fill="white" opacity="0.9"
+                      transform={`rotate(45 ${x} ${y})`}
+                      style={{ filter: 'drop-shadow(0 0 4px rgba(255,255,255,0.6))' }} />
+                  </g>
+                )
+              })}
               <line x1={nowX} x2={nowX} y1="0" y2={SVG_H} stroke="rgba(255,255,255,0.25)" strokeWidth="1.5" strokeDasharray="3,5" />
               {scrubX !== null && (
                 <>
@@ -733,6 +789,71 @@ export default function CaffeineClient({ initialCaffeine, today, ouraData, whoop
             </div>
           </div>
         )}
+
+        {/* ── How do you feel? ── */}
+        <div className="cosmic-card p-4">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-[9px] font-mono text-zinc-500 tracking-[0.2em] uppercase">How do you feel right now?</span>
+            <div className="flex-1 h-px bg-white/[0.06]" />
+            <span className="text-[9px] font-mono text-zinc-700">MODEL: {Math.round(currentEnergy)}</span>
+          </div>
+
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] font-mono text-zinc-600">Crash</span>
+            <span className="text-lg font-semibold" style={{ color: energyColor(ratingSlider) }}>
+              {energyLabel(ratingSlider)} · {ratingSlider}
+            </span>
+            <span className="text-[10px] font-mono text-zinc-600">Peak</span>
+          </div>
+
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={ratingSlider}
+            onChange={e => setRatingSlider(Number(e.target.value))}
+            className="w-full h-1.5 rounded-full appearance-none cursor-pointer mb-4"
+            style={{
+              background: `linear-gradient(to right, ${energyColor(ratingSlider)} ${ratingSlider}%, rgba(255,255,255,0.1) 0%)`,
+              WebkitAppearance: 'none',
+            }}
+          />
+
+          <button
+            onClick={submitRating}
+            disabled={ratingSubmitting}
+            className="w-full rounded-xl py-2.5 text-sm font-semibold text-black active:opacity-80 disabled:opacity-50"
+            style={{ background: energyColor(ratingSlider) }}
+          >
+            {ratingSubmitting ? 'Logging…' : 'Log my energy'}
+          </button>
+
+          {ratings.length > 0 && (
+            <div className="mt-3 space-y-1.5">
+              <p className="text-[9px] font-mono text-zinc-600 uppercase tracking-widest">Today&apos;s check-ins</p>
+              {[...ratings].reverse().slice(0, 4).map(r => {
+                const h = new Date(r.logged_at)
+                const timeStr = `${h.getHours() % 12 || 12}:${String(h.getMinutes()).padStart(2, '0')}${h.getHours() < 12 ? 'am' : 'pm'}`
+                const delta = r.predicted != null ? r.rating - r.predicted : null
+                return (
+                  <div key={r.id} className="flex items-center gap-3">
+                    <span className="text-[10px] font-mono text-zinc-500 w-14">{timeStr}</span>
+                    <div className="flex-1 h-1 rounded-full bg-white/[0.06]">
+                      <div className="h-full rounded-full" style={{ width: `${r.rating}%`, background: energyColor(r.rating) }} />
+                    </div>
+                    <span className="text-[10px] font-mono w-6 text-right" style={{ color: energyColor(r.rating) }}>{r.rating}</span>
+                    {delta != null && (
+                      <span className="text-[9px] font-mono text-zinc-600 w-10 text-right">
+                        {delta > 0 ? '+' : ''}{delta} vs model
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
 
         {/* ── Peak windows ── (Change 2: no number prefix) */}
         <div className="cosmic-card p-4">
