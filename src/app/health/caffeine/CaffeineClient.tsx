@@ -11,7 +11,7 @@ import type { WorkoutPoint, MealPoint } from './page'
 const HALF_LIFE_H = 5.5
 const ABSORPTION_TAU = 0.8
 const ADENOSINE_RATE = 1.8
-const CAF_SCALE = 0.13
+const CAF_SCALE = 0.24
 const DOSE_COLORS = ['#4ade80', '#60a5fa', '#fb923c', '#c084fc', '#f472b6', '#34d399']
 
 interface DosePoint {
@@ -154,6 +154,10 @@ function eToY(e: number): number {
   return SVG_H - (e / 100) * SVG_H
 }
 
+function eToYScaled(e: number, yMin: number, yMax: number): number {
+  return SVG_H - ((e - yMin) / Math.max(1, yMax - yMin)) * SVG_H
+}
+
 // ── Dose modal presets ────────────────────────────────────────────────────────
 const MODAL_PRESETS = [
   { source: 'Espresso', amount_mg: 75 },
@@ -242,20 +246,43 @@ export default function CaffeineClient({ initialCaffeine, today, ouraData, whoop
   )
 
   // ── Chart paths ───────────────────────────────────────────────────────────
-  const { areaPath, linePts, timeLabelHours } = useMemo(() => {
+  const { areaPath, linePath, timeLabelHours, chartYMin, chartYMax } = useMemo(() => {
     const startH = wakeHour - CHART_START_OFFSET
-    const pts: [number, number][] = []
+    const allEnergies: number[] = []
     for (let h = startH; h <= 24; h += 0.25) {
-      pts.push([hToX(h, wakeHour), eToY(computeEnergy(h, wakeHour, sleepQuality, doses, workouts, meals))])
+      allEnergies.push(computeEnergy(h, wakeHour, sleepQuality, doses, workouts, meals))
     }
-    const linePts = pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
+    const dataMin = Math.min(...allEnergies)
+    const dataMax = Math.max(...allEnergies)
+    const pad = Math.max(6, (dataMax - dataMin) * 0.22)
+    const chartYMin = Math.max(0, dataMin - pad)
+    const chartYMax = Math.min(100, dataMax + pad)
+
+    const pts: [number, number][] = []
+    let idx = 0
+    for (let h = startH; h <= 24; h += 0.25) {
+      pts.push([hToX(h, wakeHour), eToYScaled(allEnergies[idx++], chartYMin, chartYMax)])
+    }
+
+    // Bezier line path
+    let linePath = `M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`
+    for (let i = 1; i < pts.length; i++) {
+      const cx = (pts[i - 1][0] + pts[i][0]) / 2
+      linePath += ` C ${cx.toFixed(1)} ${pts[i - 1][1].toFixed(1)}, ${cx.toFixed(1)} ${pts[i][1].toFixed(1)}, ${pts[i][0].toFixed(1)} ${pts[i][1].toFixed(1)}`
+    }
+
+    // Area path (same bezier control points)
     const first = pts[0], last = pts[pts.length - 1]
     let areaPath = `M ${first[0].toFixed(1)} ${SVG_H} L ${first[0].toFixed(1)} ${first[1].toFixed(1)}`
-    for (let i = 1; i < pts.length; i++) areaPath += ` L ${pts[i][0].toFixed(1)} ${pts[i][1].toFixed(1)}`
+    for (let i = 1; i < pts.length; i++) {
+      const cx = (pts[i - 1][0] + pts[i][0]) / 2
+      areaPath += ` C ${cx.toFixed(1)} ${pts[i - 1][1].toFixed(1)}, ${cx.toFixed(1)} ${pts[i][1].toFixed(1)}, ${pts[i][0].toFixed(1)} ${pts[i][1].toFixed(1)}`
+    }
     areaPath += ` L ${last[0].toFixed(1)} ${SVG_H} Z`
+
     const timeLabelHours: number[] = []
     for (let h = Math.ceil(startH); h <= 24; h += 3) timeLabelHours.push(h)
-    return { areaPath, linePts, timeLabelHours }
+    return { areaPath, linePath, timeLabelHours, chartYMin, chartYMax }
   }, [wakeHour, sleepQuality, doses, workouts, meals])
 
   // ── Peak windows ─────────────────────────────────────────────────────────
@@ -345,7 +372,7 @@ export default function CaffeineClient({ initialCaffeine, today, ouraData, whoop
 
   const nowX = hToX(currentHour, wakeHour)
   const scrubX = scrubHour !== null ? hToX(scrubHour, wakeHour) : null
-  const scrubY = scrubHour !== null ? eToY(computeEnergy(scrubHour, wakeHour, sleepQuality, doses, workouts, meals)) : null
+  const scrubY = scrubHour !== null ? eToYScaled(computeEnergy(scrubHour, wakeHour, sleepQuality, doses, workouts, meals), chartYMin, chartYMax) : null
   const scrubXPct = scrubX !== null ? (scrubX / SVG_W) * 100 : null
 
   // ── Dose modal state ──────────────────────────────────────────────────────
@@ -606,23 +633,31 @@ export default function CaffeineClient({ initialCaffeine, today, ouraData, whoop
             <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} preserveAspectRatio="none" className="w-full" style={{ height: 200, display: 'block' }}>
               <defs>
                 <linearGradient id="cafAreaGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#4ade80" stopOpacity="0.35" />
-                  <stop offset="100%" stopColor="#4ade80" stopOpacity="0.02" />
+                  <stop offset="0%" stopColor="#4ade80" stopOpacity="0.45" />
+                  <stop offset="60%" stopColor="#4ade80" stopOpacity="0.12" />
+                  <stop offset="100%" stopColor="#4ade80" stopOpacity="0.01" />
                 </linearGradient>
+                <filter id="lineGlow" x="-10%" y="-40%" width="120%" height="180%">
+                  <feGaussianBlur stdDeviation="3" result="blur" />
+                  <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+                </filter>
               </defs>
-              <line x1="0" y1={SVG_H * 0.5} x2={SVG_W} y2={SVG_H * 0.5} stroke="rgba(255,255,255,0.06)" strokeWidth="1" strokeDasharray="4,6" />
-              <path d={areaPath} fill="url(#cafAreaGrad)" />
-              <polyline points={linePts} fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
-              {doses.map(d => (
-                <circle key={d.id} cx={hToX(d.hour, wakeHour)} cy={eToY(computeEnergy(d.hour, wakeHour, sleepQuality, doses, workouts, meals))} r="4" fill="#4ade80" stroke="#050508" strokeWidth="2" />
+              {/* Subtle horizontal grid lines */}
+              {[0.25, 0.5, 0.75].map(f => (
+                <line key={f} x1="0" y1={SVG_H * f} x2={SVG_W} y2={SVG_H * f} stroke="rgba(255,255,255,0.04)" strokeWidth="1" />
               ))}
-              <line x1={nowX} x2={nowX} y1="0" y2={SVG_H} stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" strokeDasharray="2,4" />
+              <path d={areaPath} fill="url(#cafAreaGrad)" />
+              <path d={linePath} fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" filter="url(#lineGlow)" />
+              {doses.map(d => (
+                <circle key={d.id} cx={hToX(d.hour, wakeHour)} cy={eToYScaled(computeEnergy(d.hour, wakeHour, sleepQuality, doses, workouts, meals), chartYMin, chartYMax)} r="4" fill="#4ade80" stroke="#050508" strokeWidth="2" style={{ filter: 'drop-shadow(0 0 4px rgba(74,222,128,0.8))' }} />
+              ))}
+              <line x1={nowX} x2={nowX} y1="0" y2={SVG_H} stroke="rgba(255,255,255,0.25)" strokeWidth="1.5" strokeDasharray="3,5" />
               {scrubX !== null && (
                 <>
-                  <line x1={scrubX} x2={scrubX} y1="0" y2={SVG_H} stroke="rgba(255,255,255,0.5)" strokeWidth="1" />
+                  <line x1={scrubX} x2={scrubX} y1="0" y2={SVG_H} stroke="rgba(255,255,255,0.45)" strokeWidth="1" strokeDasharray="3,5" />
                   {scrubY !== null && (
                     <circle cx={scrubX} cy={scrubY} r="5" fill={energyColor(displayEnergy)} stroke="#050508" strokeWidth="2"
-                      style={{ filter: `drop-shadow(0 0 6px ${energyColor(displayEnergy)})` }}
+                      style={{ filter: `drop-shadow(0 0 8px ${energyColor(displayEnergy)})` }}
                     />
                   )}
                 </>

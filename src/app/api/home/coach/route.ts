@@ -266,11 +266,19 @@ Tone: direct, warm, grounded. Like someone who has been watching your data every
 
   const readable = new ReadableStream({
     async start(controller) {
+      let fullText = ''
       try {
         for await (const event of stream) {
           if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+            fullText += event.delta.text
             controller.enqueue(new TextEncoder().encode(event.delta.text))
           }
+        }
+        if (fullText) {
+          await db.from('daily_briefings').upsert(
+            { user_id: user.id, date: today, content: fullText, updated_at: new Date().toISOString() },
+            { onConflict: 'user_id,date' }
+          )
         }
       } finally {
         controller.close()

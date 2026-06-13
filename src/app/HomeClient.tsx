@@ -315,46 +315,39 @@ function FuelOrb({ calories, color }: { calories: number; color: string }) {
   const lit = calories > 0
   return (
     <div style={{ width: 68, height: 68, position: 'relative', marginTop: 4, marginRight: 4, flexShrink: 0 }}>
-      {lit && (
-        <div style={{
-          position: 'absolute', inset: 6, borderRadius: '50%',
-          background: color, filter: 'blur(18px)', opacity: 0.22,
-          animation: 'bentoGlow 3.5s ease-in-out infinite',
-        }} />
-      )}
+      <div style={{
+        position: 'absolute', inset: 6, borderRadius: '50%',
+        background: color, filter: 'blur(18px)', opacity: lit ? 0.22 : 0.06,
+        animation: 'bentoGlow 3.5s ease-in-out infinite',
+      }} />
       <svg viewBox="0 0 68 68" width="68" height="68" style={{ position: 'absolute', inset: 0 }}>
         {/* Orbit ring */}
         <circle cx="34" cy="34" r="26" fill="none"
-          stroke={color} strokeWidth="0.7" opacity={lit ? 0.18 : 0.07}
+          stroke={color} strokeWidth="0.7" opacity={lit ? 0.18 : 0.1}
           strokeDasharray="3 5" />
-        {/* Central orb */}
-        {lit && (
-          <circle cx="34" cy="34" r="8" fill="none"
-            stroke={color} strokeWidth="1" opacity={0.35} />
-        )}
-        <circle cx="34" cy="34" r={lit ? 5 : 3}
-          fill={lit ? color : 'rgba(255,255,255,0.08)'}
-          opacity={lit ? 0.85 : 1}
-          style={lit ? { filter: `drop-shadow(0 0 6px ${color})` } : {}}
+        {/* Central orb ring */}
+        <circle cx="34" cy="34" r="8" fill="none"
+          stroke={color} strokeWidth="1" opacity={lit ? 0.35 : 0.1} />
+        {/* Core dot */}
+        <circle cx="34" cy="34" r={lit ? 5 : 4}
+          fill={color}
+          opacity={lit ? 0.85 : 0.18}
+          style={{ filter: `drop-shadow(0 0 6px ${color})` }}
         />
         {/* Orbiting dot */}
-        {lit && (
-          <circle cx="60" cy="34" r="2.5" fill={color} opacity="0.7">
-            <animateTransform
-              attributeName="transform" attributeType="XML"
-              type="rotate" from="0 34 34" to="360 34 34"
-              dur="8s" repeatCount="indefinite" />
-          </circle>
-        )}
+        <circle cx="60" cy="34" r="2.5" fill={color} opacity={lit ? 0.7 : 0.15}>
+          <animateTransform
+            attributeName="transform" attributeType="XML"
+            type="rotate" from="0 34 34" to="360 34 34"
+            dur="8s" repeatCount="indefinite" />
+        </circle>
         {/* Second faint dot, offset */}
-        {lit && (
-          <circle cx="34" cy="8" r="1.5" fill={color} opacity="0.35">
-            <animateTransform
-              attributeName="transform" attributeType="XML"
-              type="rotate" from="180 34 34" to="540 34 34"
-              dur="13s" repeatCount="indefinite" />
-          </circle>
-        )}
+        <circle cx="34" cy="8" r="1.5" fill={color} opacity={lit ? 0.35 : 0.1}>
+          <animateTransform
+            attributeName="transform" attributeType="XML"
+            type="rotate" from="180 34 34" to="540 34 34"
+            dur="13s" repeatCount="indefinite" />
+        </circle>
       </svg>
     </div>
   )
@@ -367,21 +360,19 @@ function JournalMood({ mood, color }: { mood: number | null; color: string }) {
   const lit = mood != null
   return (
     <div style={{ width: 56, height: 56, position: 'relative', marginTop: 6, marginRight: 8, flexShrink: 0 }}>
-      {lit && (
-        <div style={{
-          position: 'absolute', inset: 8, borderRadius: '50%',
-          background: c, filter: 'blur(14px)', opacity: 0.28,
-          animation: 'bentoGlow 3s ease-in-out infinite',
-        }} />
-      )}
+      <div style={{
+        position: 'absolute', inset: 8, borderRadius: '50%',
+        background: c, filter: 'blur(14px)', opacity: lit ? 0.28 : 0.07,
+        animation: 'bentoGlow 3s ease-in-out infinite',
+      }} />
       <svg viewBox="0 0 56 56" width="56" height="56" style={{ position: 'absolute', inset: 0 }}>
         <circle cx="28" cy="28" r="20" fill="none" stroke={c} strokeWidth="0.7"
-          opacity={lit ? 0.15 : 0.06} strokeDasharray="2 4" />
+          opacity={lit ? 0.15 : 0.1} strokeDasharray="2 4" />
         <circle cx="28" cy="28" r="12" fill="none" stroke={c} strokeWidth="0.5"
-          opacity={lit ? 0.1 : 0.04} />
-        <circle cx="28" cy="28" r={lit ? 5 : 3} fill={lit ? c : 'rgba(255,255,255,0.07)'}
-          opacity={lit ? 0.9 : 1}
-          style={lit ? { filter: `drop-shadow(0 0 5px ${c})` } : {}} />
+          opacity={lit ? 0.1 : 0.07} />
+        <circle cx="28" cy="28" r={lit ? 5 : 4} fill={c}
+          opacity={lit ? 0.9 : 0.2}
+          style={{ filter: `drop-shadow(0 0 5px ${c})` }} />
       </svg>
     </div>
   )
@@ -759,6 +750,14 @@ function TodaysCallCard() {
 function BriefingCard() {
   const [coachText, setCoachText] = useState('')
   const [coachStreaming, setCoachStreaming] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/home/briefing')
+      .then(r => r.json())
+      .then(({ content }: { content: string | null }) => { if (content) setCoachText(content) })
+      .finally(() => setLoading(false))
+  }, [])
 
   async function streamBriefing() {
     if (coachStreaming) return
@@ -794,12 +793,19 @@ function BriefingCard() {
       }}
     >
       <p className="text-lg font-semibold text-white mb-2">Your briefing</p>
-      {!coachText && !coachStreaming && (
+      {loading && (
+        <div className="space-y-2 mb-4">
+          <div className="h-3 rounded bg-white/[0.06] animate-pulse w-full" />
+          <div className="h-3 rounded bg-white/[0.06] animate-pulse w-5/6" />
+          <div className="h-3 rounded bg-white/[0.06] animate-pulse w-4/6" />
+        </div>
+      )}
+      {!loading && !coachText && !coachStreaming && (
         <p className="text-sm text-zinc-500 mb-4 leading-relaxed">
           Get a read on where you stand across everything — gym, habits, health, journal.
         </p>
       )}
-      {coachText && (
+      {!loading && coachText && (
         <p className="text-sm text-zinc-300 leading-relaxed mb-4 whitespace-pre-wrap">
           {coachText}
           {coachStreaming && (
@@ -807,26 +813,28 @@ function BriefingCard() {
           )}
         </p>
       )}
-      {!coachText && coachStreaming && (
+      {!loading && !coachText && coachStreaming && (
         <p className="text-sm text-zinc-500 mb-4 leading-relaxed">
           Reading your data
           <span className="inline-block w-[2px] h-[14px] bg-zinc-400 ml-0.5 align-middle animate-pulse" />
         </p>
       )}
-      <button
-        onClick={streamBriefing}
-        disabled={coachStreaming}
-        className="flex h-12 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold disabled:opacity-50 active:opacity-80"
-        style={{
-          background: coachStreaming
-            ? 'rgba(255,255,255,0.08)'
-            : 'linear-gradient(180deg,#ffffff 0%,#e8e5dd 100%)',
-          boxShadow: coachStreaming ? 'none' : 'inset 0 1px 0 rgba(255,255,255,0.55),0 4px 14px rgba(0,0,0,0.40)',
-          color: coachStreaming ? '#71717a' : '#000',
-        }}
-      >
-        {coachStreaming ? 'Reading your data…' : coachText ? 'Refresh briefing' : 'Get my briefing'}
-      </button>
+      {!loading && (
+        <button
+          onClick={streamBriefing}
+          disabled={coachStreaming}
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold disabled:opacity-50 active:opacity-80"
+          style={{
+            background: coachStreaming
+              ? 'rgba(255,255,255,0.08)'
+              : 'linear-gradient(180deg,#ffffff 0%,#e8e5dd 100%)',
+            boxShadow: coachStreaming ? 'none' : 'inset 0 1px 0 rgba(255,255,255,0.55),0 4px 14px rgba(0,0,0,0.40)',
+            color: coachStreaming ? '#71717a' : '#000',
+          }}
+        >
+          {coachStreaming ? 'Reading your data…' : coachText ? 'Refresh briefing' : 'Get my briefing'}
+        </button>
+      )}
     </div>
   )
 }
