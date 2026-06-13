@@ -18,8 +18,8 @@ function getRefineData(meal: FoodLog) {
 
 const chipBase = 'rounded-xl border px-3 py-2.5 text-sm text-left transition-colors'
 const chipIdle = 'border-white/[0.12] bg-white/[0.03] text-zinc-300 active:opacity-70'
-const chipAnswered = 'border-white/[0.06] bg-white/[0.02] text-zinc-600 cursor-default'
-const chipAnsweredSelected = 'border-emerald-300/30 bg-emerald-300/[0.06] text-zinc-400 cursor-default'
+const chipAnswered = 'border-white/[0.06] bg-white/[0.02] text-zinc-600'
+const chipAnsweredSelected = 'border-emerald-300/30 bg-emerald-300/[0.06] text-zinc-400'
 
 export function PhotoMealCard({
   meal: initialMeal,
@@ -134,14 +134,54 @@ export function PhotoMealCard({
   }, [handleAnswer])
 
   const handleFavorite = async () => {
-    if (favorited) return
     try {
-      await favorite.mutateAsync({ id: meal.id })
-      setFavorited(true)
+      const result = await favorite.mutateAsync({ id: meal.id })
+      setFavorited(result.favorited)
     } catch {
       // silent
     }
   }
+
+  const handleReAnswer = useCallback(async (questionIndex: number, opt: string) => {
+    const q = questions[questionIndex]
+    if (!q || submitting) return
+    setAnswers(prev => prev.slice(0, questionIndex))
+    setQuestions(prev => prev.slice(0, questionIndex + 1))
+    setDone(false)
+    setSubmitting(true)
+    try {
+      const result = await refine.mutateAsync({
+        id: meal.id,
+        date: today,
+        question: q.question,
+        answer: opt,
+        rewindTo: questionIndex,
+      })
+      if (result.status === 'question') {
+        setAnswers(prev => [...prev, { question: q.question, answer: opt }])
+        setQuestions(prev => [...prev, result.question])
+      } else {
+        setAnswers(prev => [...prev, { question: q.question, answer: opt }])
+        setMeal(prev => ({
+          ...prev,
+          calories: result.calories,
+          protein_g: result.protein_g,
+          carbs_g: result.carbs_g,
+          fat_g: result.fat_g,
+          confidence: result.confidence as FoodLog['confidence'],
+          notes: result.notes,
+          refine_status: 'done',
+        }))
+        setDone(true)
+        coachFired.current = false
+        streamCoachFeedback(meal.id)
+      }
+    } catch {
+      // silent
+    } finally {
+      setSubmitting(false)
+    }
+  }, [submitting, questions, refine, meal.id, today, streamCoachFeedback])
 
   const handleSaveNote = async () => {
     try {
@@ -243,9 +283,14 @@ export function PhotoMealCard({
                         if (isAnswered) {
                           const isSelected = selectedAnswer === opt
                           return (
-                            <span key={opt} className={`${chipBase} ${isSelected ? chipAnsweredSelected : chipAnswered}`}>
+                            <button
+                              key={opt}
+                              disabled={submitting}
+                              onClick={() => { if (opt !== selectedAnswer) handleReAnswer(i, opt) }}
+                              className={`${chipBase} ${isSelected ? chipAnsweredSelected : chipAnswered} disabled:opacity-50`}
+                            >
                               {opt}
-                            </span>
+                            </button>
                           )
                         }
                         return (

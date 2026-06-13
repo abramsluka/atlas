@@ -36,7 +36,8 @@ FINAL:
 {"status":"final","calories":int,"protein_g":number,"carbs_g":number,"fat_g":number,"confidence":"low"|"medium"|"high","notes":string}
 
 Rules:
-- options: 3-5 short, realistic tappable choices. Never include "Other" — the app adds it.
+- options: 3-5 short, realistic tappable choices. Use intuitive size descriptions, not raw grams. For portions, use everyday comparisons like "palm-sized", "deck of cards", "fist-sized", "small / medium / large / XL", "half a plate", "side dish size". For proteins, use visual or restaurant-style references like "small breast", "medium fillet", "large steak". Never show raw gram weights as options.
+- Never include "Other" as an option — the app adds it automatically.
 - An answer of "[skipped]" means user doesn't know — use a sensible default.
 - FINAL should reflect all corrections from the answers. Adjust macros meaningfully.
 - Only ask if it would shift the estimate by >50 kcal and there's a genuinely ambiguous detail left.`
@@ -53,6 +54,7 @@ export async function POST(
   const body = await request.json()
   const answer = body.answer != null ? String(body.answer) : '[skipped]'
   const question = body.question ? String(body.question) : ''
+  const rewindTo: number | undefined = body.rewindTo != null ? Number(body.rewindTo) : undefined
 
   const db = createServiceClient()
 
@@ -64,16 +66,21 @@ export async function POST(
 
   if (fetchError || !logRow) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   if (logRow.user_id !== user.id) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  if (logRow.refine_status !== 'open') return NextResponse.json({ error: 'Refine not open' }, { status: 400 })
+  // Allow rewind even if refine is 'done' — user is changing a previous answer
+  if (logRow.refine_status !== 'open' && rewindTo == null) return NextResponse.json({ error: 'Refine not open' }, { status: 400 })
   if (!logRow.storage_path) return NextResponse.json({ error: 'No photo on this log' }, { status: 400 })
 
   const aiRaw = (logRow.ai_raw ?? {}) as AiRaw
   const initial = aiRaw.initial ?? {}
   const refineData = aiRaw.refine ?? { questions: [], answers: [] }
 
+  // If rewinding, truncate stored answers to the rewind index
+  const baseAnswers = rewindTo != null ? refineData.answers.slice(0, rewindTo) : refineData.answers
+  const baseQuestions = rewindTo != null ? refineData.questions.slice(0, rewindTo + 1) : refineData.questions
+
   // Append the new answer
   const newAnswer: PhotoRefineAnswer = { question, answer }
-  const updatedAnswers = [...refineData.answers, newAnswer]
+  const updatedAnswers = [...baseAnswers, newAnswer]
   const totalAnswers = updatedAnswers.length
 
   // Download photo from storage
@@ -143,7 +150,7 @@ export async function POST(
       const updatedAiRaw: AiRaw = {
         ...aiRaw,
         refine: {
-          questions: [...refineData.questions, nextQuestion],
+          questions: [...baseQuestions, nextQuestion],
           answers: updatedAnswers,
         },
       }
@@ -164,7 +171,7 @@ export async function POST(
     const updatedAiRaw: AiRaw = {
       ...aiRaw,
       refine: {
-        questions: refineData.questions,
+        questions: baseQuestions,
         answers: updatedAnswers,
       },
     }

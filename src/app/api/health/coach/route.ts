@@ -55,7 +55,7 @@ export async function POST(_request: NextRequest) {
     caffeineResult,
     waterResult,
     profileResult,
-    poLogsResult,
+    gymLogsResult,
   ] = await Promise.all([
     getOuraContextRange(db, user.id, thirtyDaysAgo, today),
     db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'whoop').eq('date', today).maybeSingle(),
@@ -64,10 +64,10 @@ export async function POST(_request: NextRequest) {
     db.from('caffeine_logs').select('*').eq('user_id', user.id).gte('date', sevenDaysAgo).order('logged_at'),
     db.from('water_logs').select('*').eq('user_id', user.id).gte('date', sevenDaysAgo),
     db.from('health_profile').select('*').eq('user_id', user.id).maybeSingle(),
-    db.from('po_logs')
-      .select('logged_at, weight, reps, po_exercises(name, bodyweight)')
+    db.from('gym_logs')
+      .select('logged_at, weight, reps, exercise_id, gym_exercises(name)')
       .eq('user_id', user.id)
-      .gte('logged_at', sevenDaysAgo + 'T00:00:00')
+      .gte('logged_at', subDays(now, 7).toISOString())
       .order('logged_at', { ascending: true }),
   ])
 
@@ -78,8 +78,8 @@ export async function POST(_request: NextRequest) {
   const caffeineLogs = caffeineResult.data ?? []
   const waterLogs = waterResult.data ?? []
   const profile = profileResult.data
-  type PoLog = { logged_at: string; weight: number; reps: number; po_exercises: { name: string; bodyweight: boolean }[] | null }
-  const poLogs = (poLogsResult.data ?? []) as unknown as PoLog[]
+  type GymLogRow = { logged_at: string; weight: number | null; reps: number | null; exercise_id: string; gym_exercises: { name: string } | null }
+  const gymLogs = (gymLogsResult.data ?? []) as unknown as GymLogRow[]
 
   // Build the body / Oura block — last 7 days shown per-day, 30-day baseline computed separately
   const recentOuraRows = ouraRows.filter(r => r.date >= sevenDaysAgo)
@@ -114,14 +114,13 @@ export async function POST(_request: NextRequest) {
     return formatInTimeZone(new Date(utcStr), TZ, 'yyyy-MM-dd')
   }
 
-  // Training load — group PO logs by user's local date, compute volume per day
+  // Training load — group gym logs by user's local date, compute volume per day
   const trainingByDay = new Map<string, { exercises: Set<string>; volume: number }>()
-  for (const log of poLogs) {
+  for (const log of gymLogs) {
     const dk = logDateTZ(log.logged_at)
     const entry = trainingByDay.get(dk) ?? { exercises: new Set(), volume: 0 }
-    const ex = Array.isArray(log.po_exercises) ? log.po_exercises[0] : log.po_exercises
-    entry.exercises.add(ex?.name ?? 'Unknown')
-    if (!ex?.bodyweight) entry.volume += log.weight * log.reps
+    entry.exercises.add(log.gym_exercises?.name ?? 'Unknown')
+    if (log.weight != null && log.reps != null) entry.volume += log.weight * log.reps
     trainingByDay.set(dk, entry)
   }
   // Fill in all 7 days (including rest days)

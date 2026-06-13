@@ -34,31 +34,28 @@ export async function POST(
     .maybeSingle()
 
   if (existing) {
-    await db
+    // Toggle: already favorited — remove it
+    const { error: deleteError } = await db
       .from('food_items')
-      .update({
-        use_count: existing.use_count + 1,
-        last_used_at: now,
-        calories: logRow.calories,
-        protein_g: logRow.protein_g,
-        carbs_g: logRow.carbs_g,
-        fat_g: logRow.fat_g,
-      })
+      .delete()
       .eq('id', existing.id)
-  } else {
-    const { error: insertError } = await db.from('food_items').insert({
-      user_id: user.id,
-      name,
-      source: 'photo',
-      calories: logRow.calories,
-      protein_g: logRow.protein_g ?? 0,
-      carbs_g: logRow.carbs_g ?? 0,
-      fat_g: logRow.fat_g,
-      portion_desc,
-      is_hydrating: false,
-    })
-    if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 })
+    if (deleteError) return NextResponse.json({ error: deleteError.message }, { status: 500 })
+    return NextResponse.json({ ok: true, favorited: false })
   }
 
-  return NextResponse.json({ ok: true })
+  // Not yet favorited — add it
+  const { error: insertError } = await db.from('food_items').insert({
+    user_id: user.id,
+    name,
+    source: 'photo',
+    calories: logRow.calories,
+    protein_g: logRow.protein_g ?? 0,
+    carbs_g: logRow.carbs_g ?? 0,
+    fat_g: logRow.fat_g,
+    portion_desc,
+    is_hydrating: false,
+  })
+  if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 })
+
+  return NextResponse.json({ ok: true, favorited: true })
 }

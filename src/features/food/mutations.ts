@@ -110,13 +110,13 @@ export function useRefinePhotoMeal() {
   return useMutation<
     PhotoRefineResponse,
     Error,
-    { id: string; date: string; question: string; answer: string }
+    { id: string; date: string; question: string; answer: string; rewindTo?: number }
   >({
-    mutationFn: async ({ id, question, answer }) => {
+    mutationFn: async ({ id, question, answer, rewindTo }) => {
       const res = await fetch(`/api/health/food/${id}/refine`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, answer }),
+        body: JSON.stringify({ question, answer, ...(rewindTo != null ? { rewindTo } : {}) }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }))
@@ -150,7 +150,7 @@ export function useRefinePhotoMeal() {
 
 export function useFavoriteFoodLog() {
   const qc = useQueryClient()
-  return useMutation<{ ok: boolean }, Error, { id: string }>({
+  return useMutation<{ ok: boolean; favorited: boolean }, Error, { id: string }>({
     mutationFn: async ({ id }) => {
       const res = await fetch(`/api/health/food/${id}/favorite`, { method: 'POST' })
       if (!res.ok) {
