@@ -95,6 +95,7 @@ export interface OuraData {
     latency: number | null
     efficiency: number | null
     resting_heart_rate: number | null
+    bedtime_end: string | null  // ISO 8601 — when the user woke up
   }
   readiness?: {
     score: number | null

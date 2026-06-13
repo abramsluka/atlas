@@ -135,6 +135,7 @@ export async function syncOuraToday(
       latency: num(sleepDetail?.latency),
       efficiency: num(sleepDetail?.efficiency),
       resting_heart_rate: num(sleepDetail?.lowest_heart_rate ?? sleepDetail?.average_heart_rate),
+      bedtime_end: typeof sleepDetail?.bedtime_end === 'string' ? sleepDetail.bedtime_end : null,
     },
     readiness: {
       score: num(readiness?.score),
