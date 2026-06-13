@@ -102,26 +102,33 @@ proxy.ts                            # Next.js 16 middleware (session refresh)
 
 - Auth (login, session refresh, redirect)
 - Daily check-in (morning/evening on home screen)
+- Home page with cosmic map (orbiting nodes for each module), activity snapshot, weekly report
 - Workout logger (create, add exercises, add sets with reps/weight/RPE, toggle complete, finish)
 - Workout history list grouped by week with total volume
-- Workout detail page (exercises, sets, total volume)
-- AI coach streaming (POST to /api/workouts/[id]/coach, uses last 4 weeks of history for context, saves to DB after streaming)
+- Workout detail page with inline editing and AI coach streaming
+- Gym page (progressive overload tracking, gym config)
+- Health page (Oura ring integration, food logging, water tracking, body weight, supplements, caffeine)
+- Journal (text + voice entries, mood tracking, AI reflection, follow-up conversation thread)
+- Mentor (cross-module AI coach — fetches all data sources on every message: workouts, Oura, food, water, weight, journal, check-ins, jots, health profile, PO logs, supplements)
+- Bottom tab bar navigation (Home, Gym, Health, Journal, Mentor)
 
-## What's Next (in order)
+## What's Next
 
-1. **Set input UI redesign** — replace plain number inputs in SetRow (in workouts/new/page.tsx) with:
-   - Reps: stepper (minus/number/plus), increments by 1
-   - Weight: stepper (minus 2.5/number/plus 2.5), increments by 2.5 lbs
-   - RPE: 10 tap chips labeled 1-10, tap to select/deselect
-   - Values still call onFieldChange(field, stringValue) — parent unchanged
+1. **Cosmic map click fix** — orbiting node buttons are not receiving taps/clicks due to overlapping rotating container divs intercepting pointer events. Fix: `pointer-events: none` on the rotating container divs, `pointer-events: auto` on the buttons inside. See `CosmicMap` component in `src/app/HomeClient.tsx`.
 
-2. **Edit past workouts** — detail page is read-only, should be editable inline
+2. **Home page redesign (Phase 2)**
 
-3. **Bottom tab bar navigation** — Home, Gym, Health, Journal, Goals
+3. **Gym page redesign (Phase 2)**
+
+4. **Health page redesign (Phase 2)**
+
+5. **Mentor + Journal visual polish (Phase 2)**
+
+6. **Phase 3 — Polish and motion**
 
 ## Deferred (don't build unless asked)
 
-Oura ring integration, supplement tracker, water intake tracker, caffeine tracking, progressive overload coach, body weight + photos, finances/subscriptions tab, goals module, journal module, Vercel deployment.
+Finances/subscriptions tab, goals module, Vercel deployment.
 
 ## Dev Server
 
