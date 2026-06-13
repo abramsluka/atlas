@@ -50,12 +50,12 @@ export async function syncOuraToday(
   if (cached) {
     const age = Date.now() - new Date(cached.fetched_at).getTime()
     const d = cached.data as OuraData
-    const hasData =
-      d?.sleep?.score != null ||
-      d?.sleep?.total_sleep_duration != null ||
-      d?.sleep?.average_hrv != null ||
-      d?.readiness?.score != null
-    if (age < 15 * 60 * 1000 && hasData) {
+    // Only use cache if it has sleep detail data (HRV or duration); if those are
+    // null the session was likely attributed to the wrong day on a previous sync.
+    const hasFullData =
+      (d?.sleep?.average_hrv != null || d?.sleep?.total_sleep_duration != null) &&
+      (d?.sleep?.score != null || d?.readiness?.score != null)
+    if (age < 15 * 60 * 1000 && hasFullData) {
       return d
     }
   }
@@ -116,7 +116,10 @@ export async function syncOuraToday(
         .sort((a, b) => String(b.bedtime_end ?? '').localeCompare(String(a.bedtime_end ?? '')))[0]
       ?? sleepDetailRecords
         .filter(r => r.day === scoreDay)
-        .sort((a, b) => String(b.bedtime_end ?? '').localeCompare(String(a.bedtime_end ?? '')))[0])
+        .sort((a, b) => String(b.bedtime_end ?? '').localeCompare(String(a.bedtime_end ?? '')))[0]
+      // Oura sometimes attributes a session to the previous calendar day (night it started);
+      // fall back to the most recent record regardless of day to avoid losing HRV/duration.
+      ?? pickLatest(sleepDetailRecords))
     : pickLatest(sleepDetailRecords)
 
   const num = (v: unknown): number | null => (typeof v === 'number' ? v : null)

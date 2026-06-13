@@ -174,9 +174,9 @@ function WearablesSection({
                   </p>
                 </div>
                 <div>
-                  <p className="text-[10px] uppercase tracking-wide text-zinc-500">Duration</p>
+                  <p className="text-[10px] uppercase tracking-wide text-zinc-500">RHR</p>
                   <p className="text-sm font-semibold text-white">
-                    {formatDuration(oura.sleep?.total_sleep_duration)}
+                    {oura.sleep?.resting_heart_rate != null ? `${Math.round(oura.sleep.resting_heart_rate)}bpm` : '--'}
                   </p>
                 </div>
               </div>
