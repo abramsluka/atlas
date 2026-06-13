@@ -1088,31 +1088,41 @@ export default function GymClient({ today, initialConfig, initialExercises, init
           transition={{ duration: 0.4, ease: EASE_OUT, delay: 0.2 }}
         >
           <div className="flex">
-            <button
+            <motion.button
               onClick={() => streamCoach('angel')}
               disabled={coachStreaming}
-              className={`flex-1 flex flex-col items-center justify-center py-4 gap-1 transition-colors active:opacity-70 disabled:opacity-50 ${
-                coachMode === 'angel' ? 'bg-emerald-950/60' : 'bg-white/5'
+              whileTap={{ scale: 0.97 }}
+              className={`flex-1 flex flex-col items-center justify-center py-5 gap-2 transition-colors active:opacity-70 disabled:opacity-50 ${
+                coachMode === 'angel' ? 'bg-emerald-950/50' : 'bg-white/3'
               }`}
             >
-              <span className="text-2xl">😇</span>
-              <span className="text-xs font-semibold tracking-widest text-emerald-400 uppercase">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: coachMode === 'angel' ? 'rgba(74,222,128,0.15)' : 'rgba(255,255,255,0.06)', border: coachMode === 'angel' ? '1px solid rgba(74,222,128,0.25)' : '1px solid rgba(255,255,255,0.09)' }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={coachMode === 'angel' ? '#4ade80' : 'rgba(255,255,255,0.5)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                </svg>
+              </div>
+              <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: coachMode === 'angel' ? '#4ade80' : 'rgba(255,255,255,0.35)' }}>
                 {coachStreaming && coachMode === 'angel' ? 'Talking…' : 'Hype me up'}
               </span>
-            </button>
-            <div className="w-px bg-white/8" />
-            <button
+            </motion.button>
+            <div className="w-px bg-white/6" />
+            <motion.button
               onClick={() => streamCoach('devil')}
               disabled={coachStreaming}
-              className={`flex-1 flex flex-col items-center justify-center py-4 gap-1 transition-colors active:opacity-70 disabled:opacity-50 ${
-                coachMode === 'devil' ? 'bg-red-950/60' : 'bg-white/5'
+              whileTap={{ scale: 0.97 }}
+              className={`flex-1 flex flex-col items-center justify-center py-5 gap-2 transition-colors active:opacity-70 disabled:opacity-50 ${
+                coachMode === 'devil' ? 'bg-red-950/50' : 'bg-white/3'
               }`}
             >
-              <span className="text-2xl">😈</span>
-              <span className="text-xs font-semibold tracking-widest text-red-400 uppercase">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: coachMode === 'devil' ? 'rgba(248,113,113,0.15)' : 'rgba(255,255,255,0.06)', border: coachMode === 'devil' ? '1px solid rgba(248,113,113,0.25)' : '1px solid rgba(255,255,255,0.09)' }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={coachMode === 'devil' ? '#f87171' : 'rgba(255,255,255,0.5)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                </svg>
+              </div>
+              <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: coachMode === 'devil' ? '#f87171' : 'rgba(255,255,255,0.35)' }}>
                 {coachStreaming && coachMode === 'devil' ? 'Talking…' : 'Yell at me'}
               </span>
-            </button>
+            </motion.button>
           </div>
           <AnimatePresence mode="wait">
             {coachStreaming && !coachText && (
@@ -1160,7 +1170,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease: EASE_OUT, delay: 0.1 }}
         >
-          <div className="px-5 pt-5 pb-4">
+          <div className="px-5 pt-5 pb-4 relative">
+            <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.04) 1px, transparent 1px)', backgroundSize: '22px 22px', borderRadius: 'inherit' }} />
             <p className="text-xs text-white/40 uppercase tracking-widest mb-4">Progressive Overload Coach</p>
 
             {/* Gym filter */}
@@ -1209,40 +1220,67 @@ export default function GymClient({ today, initialConfig, initialExercises, init
               </div>
             </div>
 
-            {/* Exercise select */}
-            <div className="flex gap-2 mb-4">
-              <div className="flex-1 relative">
-                <select
-                  value={currentEx?.id ?? ''}
-                  onChange={e => selectEx(e.target.value)}
-                  className="w-full rounded-xl bg-white/8 border border-white/10 px-4 py-3 text-sm text-white appearance-none focus:outline-none pr-8"
-                >
-                  {filteredExercises.length === 0 && (
-                    <option value="">No exercises — add one</option>
+            {/* Exercise chips */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2.5">
+                <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30">Exercise</span>
+                <div className="flex items-center gap-3">
+                  {currentEx && (
+                    <button onClick={openEditEx} className="text-[11px] text-white/30 font-mono active:opacity-50">
+                      edit
+                    </button>
                   )}
-                  {filteredExercises.map(ex => (
-                    <option key={ex.id} value={ex.id}>{ex.name}</option>
-                  ))}
-                </select>
-                <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-white/40" width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-                  <path d="M6 8L1 3h10z" />
-                </svg>
+                  <button onClick={openAddEx} className="text-[11px] font-semibold active:opacity-50" style={{ color: 'rgba(74,222,128,0.7)' }}>
+                    + add
+                  </button>
+                </div>
               </div>
-              <button
-                onClick={openEditEx}
-                disabled={!currentEx}
-                className="rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white/60 active:opacity-70 disabled:opacity-30"
-                title="Edit exercise"
-              >
-                ✎
-              </button>
-              <button
-                onClick={openAddEx}
-                className="rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white/60 active:opacity-70"
-                title="Add exercise"
-              >
-                +
-              </button>
+              <div className="overflow-x-auto -mx-5 px-5 pb-0.5" style={{ scrollbarWidth: 'none' }}>
+                <div className="flex gap-2 min-w-max">
+                  {filteredExercises.map((ex, i) => {
+                    const isActive = currentEx?.id === ex.id
+                    return (
+                      <motion.button
+                        key={ex.id}
+                        initial={{ opacity: 0, x: -12 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.05 + i * 0.05, ease: EASE_OUT, duration: 0.3 }}
+                        whileTap={{ scale: 0.93 }}
+                        onClick={() => selectEx(ex.id)}
+                        className="relative px-4 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap flex-shrink-0 transition-all duration-200"
+                        style={isActive ? {
+                          background: 'rgba(74,222,128,0.1)',
+                          border: '1px solid rgba(74,222,128,0.35)',
+                          color: '#4ade80',
+                          boxShadow: '0 0 16px rgba(74,222,128,0.14), inset 0 0 10px rgba(74,222,128,0.05)',
+                        } : {
+                          background: 'rgba(255,255,255,0.04)',
+                          border: '1px solid rgba(255,255,255,0.08)',
+                          color: 'rgba(255,255,255,0.45)',
+                        }}
+                      >
+                        {ex.name}
+                        {isActive && (
+                          <motion.span
+                            layoutId="ex-active-dot"
+                            className="absolute -bottom-px left-1/2 -translate-x-1/2 w-6 h-px rounded-full"
+                            style={{ background: 'rgba(74,222,128,0.7)' }}
+                          />
+                        )}
+                      </motion.button>
+                    )
+                  })}
+                  {filteredExercises.length === 0 && (
+                    <button
+                      onClick={openAddEx}
+                      className="px-4 py-2.5 rounded-xl border border-dashed text-white/25 text-sm whitespace-nowrap"
+                      style={{ borderColor: 'rgba(255,255,255,0.12)' }}
+                    >
+                      No exercises — add one
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
 
             {currentEx && (
@@ -1268,71 +1306,130 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   : { duration: 0.4, ease: EASE_OUT }
                 }
               >
-                {/* Last set banner */}
-                {lastLog && (
-                  <div className="rounded-xl bg-white/5 border border-white/8 px-4 py-3 mb-4 flex items-center gap-3">
-                    <span className="text-xs text-white/40 uppercase tracking-widest font-bold">Last time</span>
-                    <span className="text-sm font-bold flex-1">
-                      {currentEx.bodyweight
-                        ? `${lastLog.reps} reps`
-                        : `${lastLog.weight}${config.units} × ${lastLog.reps}`
-                      }
-                    </span>
-                    <span className="text-xs text-white/30 font-mono">{lastLogAgo}</span>
+                {/* Exercise hero */}
+                <div className="mb-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <motion.h2
+                      key={currentEx.id}
+                      initial={{ opacity: 0, x: -8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.3, ease: EASE_OUT }}
+                      className="text-2xl font-bold text-white leading-tight"
+                    >
+                      {currentEx.name}
+                    </motion.h2>
+                    {rx && (
+                      <motion.span
+                        key={rx.action}
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.3, ease: [0.34, 1.56, 0.64, 1], delay: 0.1 }}
+                        className="shrink-0 text-[10px] font-bold tracking-widest px-2.5 py-1.5 rounded-full"
+                        style={rx.action === 'INCREASE' ? {
+                          background: 'rgba(74,222,128,0.15)', color: '#4ade80',
+                          border: '1px solid rgba(74,222,128,0.3)',
+                          boxShadow: '0 0 10px rgba(74,222,128,0.15)',
+                        } : rx.action === 'HOLD' ? {
+                          background: 'rgba(251,191,36,0.12)', color: '#fbbf24',
+                          border: '1px solid rgba(251,191,36,0.25)',
+                        } : rx.action === 'DELOAD' ? {
+                          background: 'rgba(248,113,113,0.12)', color: '#f87171',
+                          border: '1px solid rgba(248,113,113,0.25)',
+                        } : {
+                          background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.4)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                        }}
+                      >
+                        {rxIcons[rx.action]} {rx.action}
+                      </motion.span>
+                    )}
                   </div>
-                )}
+                  {lastLog && (
+                    <p className="text-xs text-white/30 font-mono mt-1.5">
+                      Last: {currentEx.bodyweight ? `${lastLog.reps} reps` : `${lastLog.weight}${config.units} × ${lastLog.reps}`}
+                      <span className="text-white/20 ml-1.5">· {lastLogAgo}</span>
+                    </p>
+                  )}
+                </div>
 
                 {/* Weight stepper */}
                 {!currentEx.bodyweight && (
-                  <div className="relative flex items-center justify-center mb-3" style={{ height: 56 }}>
-                    <button
-                      onClick={() => setWeightInput(w => {
-                        const next = Math.max(0, (parseFloat(w) || 0) - currentEx.step)
-                        return +next.toFixed(4) === 0 ? '0' : String(+next.toFixed(4))
-                      })}
-                      className="absolute left-0 w-11 h-11 rounded-xl bg-white/8 border border-white/10 text-lg font-light active:opacity-70 flex items-center justify-center"
-                    >−</button>
-                    <div className="text-center">
-                      <input
-                        type="number"
-                        inputMode="decimal"
-                        step={currentEx.step}
-                        value={weightInput}
-                        onFocus={e => e.target.select()}
-                        onChange={e => setWeightInput(e.target.value)}
-                        className="w-28 text-center text-2xl font-bold bg-transparent focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                      />
-                      <p className="text-xs text-white/30 -mt-1">{config.units}</p>
+                  <div className="mb-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30">Weight</span>
+                      <span className="text-[10px] text-white/20 font-mono">+{currentEx.step} {config.units} / step</span>
                     </div>
-                    <button
-                      onClick={() => setWeightInput(w => String(+((parseFloat(w) || 0) + currentEx.step).toFixed(4)))}
-                      className="absolute right-0 w-11 h-11 rounded-xl bg-white/8 border border-white/10 text-lg font-light active:opacity-70 flex items-center justify-center"
-                    >+</button>
+                    <div className="flex items-center gap-4">
+                      <motion.button
+                        whileTap={{ scale: 0.85 }}
+                        onClick={() => setWeightInput(w => {
+                          const next = Math.max(0, (parseFloat(w) || 0) - currentEx.step)
+                          return +next.toFixed(4) === 0 ? '0' : String(+next.toFixed(4))
+                        })}
+                        className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl font-light text-white/50 shrink-0"
+                        style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)' }}
+                      >−</motion.button>
+                      <div className="flex-1 text-center">
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          step={currentEx.step}
+                          value={weightInput}
+                          onFocus={e => e.target.select()}
+                          onChange={e => setWeightInput(e.target.value)}
+                          className="w-full text-center text-5xl font-bold bg-transparent focus:outline-none tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                        <p className="text-xs text-white/25 -mt-1 font-mono tracking-widest">{config.units}</p>
+                      </div>
+                      <motion.button
+                        whileTap={{ scale: 0.85 }}
+                        onClick={() => setWeightInput(w => String(+((parseFloat(w) || 0) + currentEx.step).toFixed(4)))}
+                        className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl font-light shrink-0"
+                        style={{ background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.2)', color: '#4ade80' }}
+                      >+</motion.button>
+                    </div>
                   </div>
                 )}
 
-                {/* Reps slider */}
-                <div className="mb-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs text-white/40 uppercase tracking-widest font-bold">Reps</label>
-                    <span className="text-2xl font-bold tabular-nums">{selectedReps}</span>
+                {/* Reps grid */}
+                <div className="mb-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30">Reps</span>
+                    <span className="text-[10px] text-white/20 font-mono">
+                      {repMin}–{repMax} target
+                    </span>
                   </div>
-                  <input
-                    type="range"
-                    min={3}
-                    max={20}
-                    step={1}
-                    value={selectedReps}
-                    onChange={e => setSelectedReps(Number(e.target.value))}
-                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
-                    style={{
-                      background: `linear-gradient(to right, #fff ${((selectedReps - 3) / (20 - 3)) * 100}%, rgba(255,255,255,0.15) 0%)`,
-                      WebkitAppearance: 'none',
-                    }}
-                  />
-                  <div className="flex justify-between mt-1">
-                    <span className="text-xs text-white/20">3</span>
-                    <span className="text-xs text-white/20">20</span>
+                  <div className="overflow-x-auto -mx-5 px-5 pb-0.5" style={{ scrollbarWidth: 'none' }}>
+                    <div className="flex gap-1.5 min-w-max">
+                      {Array.from({ length: 18 }, (_, i) => i + 3).map(n => {
+                        const inRange = n >= repMin && n <= repMax
+                        const isSelected = n === selectedReps
+                        return (
+                          <motion.button
+                            key={n}
+                            whileTap={{ scale: 0.82 }}
+                            onClick={() => setSelectedReps(n)}
+                            className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 transition-all duration-150"
+                            style={isSelected ? {
+                              background: 'rgba(74,222,128,0.18)',
+                              border: '1px solid rgba(74,222,128,0.45)',
+                              color: '#4ade80',
+                              boxShadow: '0 0 12px rgba(74,222,128,0.2)',
+                            } : inRange ? {
+                              background: 'rgba(74,222,128,0.06)',
+                              border: '1px solid rgba(74,222,128,0.18)',
+                              color: 'rgba(74,222,128,0.55)',
+                            } : {
+                              background: 'rgba(255,255,255,0.04)',
+                              border: '1px solid rgba(255,255,255,0.07)',
+                              color: 'rgba(255,255,255,0.2)',
+                            }}
+                          >
+                            {n}
+                          </motion.button>
+                        )
+                      })}
+                    </div>
                   </div>
                 </div>
 
@@ -1340,50 +1437,110 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 <motion.button
                   onClick={handleLogSet}
                   disabled={logSet.isPending}
-                  whileTap={{ scale: 0.94 }}
-                  animate={{ background: logSetFlash ? 'rgba(74,222,128,0.2)' : '#4ade80' }}
+                  whileTap={{ scale: 0.93 }}
+                  animate={{
+                    boxShadow: logSetFlash
+                      ? '0 0 28px rgba(74,222,128,0.45), 0 0 8px rgba(74,222,128,0.3)'
+                      : '0 0 0px rgba(74,222,128,0)',
+                  }}
                   transition={{ duration: 0.4, ease: EASE_OUT }}
-                  className="w-full rounded-xl text-black font-bold py-4 text-base disabled:opacity-50"
+                  className="w-full rounded-2xl font-bold py-4 text-base disabled:opacity-50 relative overflow-hidden"
+                  style={{
+                    background: logSetFlash
+                      ? 'rgba(74,222,128,0.2)'
+                      : 'linear-gradient(135deg, #4ade80 0%, #16a34a 100%)',
+                    color: logSetFlash ? '#4ade80' : '#000',
+                    border: logSetFlash ? '1px solid rgba(74,222,128,0.4)' : 'none',
+                  }}
                 >
-                  Log Set
+                  {logSet.isPending ? '…' : 'Log Set'}
                 </motion.button>
 
                 {/* Prescription card */}
                 {rx && (
-                  <div className={`mt-4 rounded-xl border px-4 py-3 ${rxColors[rx.action]}`}>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-lg">{rxIcons[rx.action]}</span>
-                      <span className="text-sm font-bold">{rx.action}</span>
+                  <motion.div
+                    key={rx.action}
+                    initial={{ opacity: 0, y: 8, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ duration: 0.35, ease: [0.34, 1.56, 0.64, 1] }}
+                    className="mt-4 rounded-2xl overflow-hidden"
+                    style={{
+                      background: rx.action === 'INCREASE'
+                        ? 'linear-gradient(135deg, rgba(74,222,128,0.12) 0%, rgba(74,222,128,0.03) 100%)'
+                        : rx.action === 'HOLD'
+                        ? 'linear-gradient(135deg, rgba(251,191,36,0.10) 0%, rgba(251,191,36,0.02) 100%)'
+                        : rx.action === 'DELOAD'
+                        ? 'linear-gradient(135deg, rgba(248,113,113,0.12) 0%, rgba(248,113,113,0.03) 100%)'
+                        : 'rgba(255,255,255,0.04)',
+                      border: rx.action === 'INCREASE'
+                        ? '1px solid rgba(74,222,128,0.22)'
+                        : rx.action === 'HOLD'
+                        ? '1px solid rgba(251,191,36,0.22)'
+                        : rx.action === 'DELOAD'
+                        ? '1px solid rgba(248,113,113,0.22)'
+                        : '1px solid rgba(255,255,255,0.08)',
+                    }}
+                  >
+                    <div className="px-5 py-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className={`text-base font-bold tracking-wide ${rxColors[rx.action].split(' ')[0]}`}>
+                          {rxIcons[rx.action]} {rx.action}
+                        </span>
+                        {rx.action === 'INCREASE' && (
+                          <span className="text-[9px] font-bold tracking-widest px-2 py-1 rounded-full"
+                            style={{ background: 'rgba(74,222,128,0.15)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.2)' }}>
+                            LEVEL UP
+                          </span>
+                        )}
+                      </div>
+                      <p className={`text-sm leading-relaxed ${rxColors[rx.action].split(' ')[0] === 'text-green-400' ? 'text-green-200/60' : rxColors[rx.action].split(' ')[0] === 'text-yellow-400' ? 'text-yellow-200/60' : rxColors[rx.action].split(' ')[0] === 'text-red-400' ? 'text-red-200/60' : 'text-white/40'}`}>
+                        {rx.reason}
+                      </p>
+                      {rx.nextWeight != null && (
+                        <p className="text-xs mt-2 font-mono text-white/35">→ next: {rx.nextWeight} {config.units}</p>
+                      )}
                     </div>
-                    <p className="text-xs opacity-80">{rx.reason}</p>
-                    {rx.nextWeight != null && (
-                      <p className="text-xs mt-1 opacity-70">Target: {rx.nextWeight} {config.units}</p>
-                    )}
-                  </div>
+                  </motion.div>
                 )}
 
                 {/* Stats row */}
-                <div className="grid grid-cols-3 gap-3 mt-4">
-                  <div className="rounded-xl bg-white/5 border border-white/8 px-3 py-3 text-center">
-                    <p className="text-xs text-white/30 mb-1">{currentEx.bodyweight ? 'Best reps' : 'Est 1RM'}</p>
-                    <p className="text-base font-bold tabular-nums">
-                      {est1RM != null ? Math.round(est1RM) : (currentEx.bodyweight && bestSet ? bestSet.reps : '—')}
-                    </p>
-                    {est1RM != null && <p className="text-xs text-white/30">{config.units}</p>}
-                  </div>
-                  <div className="rounded-xl bg-white/5 border border-white/8 px-3 py-3 text-center">
-                    <p className="text-xs text-white/30 mb-1">Best set</p>
-                    <p className="text-base font-bold tabular-nums">
-                      {bestSet
-                        ? (currentEx.bodyweight ? `${bestSet.reps}` : `${bestSet.weight}×${bestSet.reps}`)
-                        : '—'
-                      }
-                    </p>
-                  </div>
-                  <div className="rounded-xl bg-white/5 border border-white/8 px-3 py-3 text-center">
-                    <p className="text-xs text-white/30 mb-1">Sessions</p>
-                    <p className="text-base font-bold tabular-nums">{exLogs.length}</p>
-                  </div>
+                <div className="grid grid-cols-3 gap-2 mt-5">
+                  {[
+                    {
+                      label: currentEx.bodyweight ? 'Best reps' : 'Est 1RM',
+                      value: est1RM != null ? Math.round(est1RM) : (currentEx.bodyweight && bestSet ? bestSet.reps : '—'),
+                      sub: est1RM != null ? config.units : null,
+                      accent: est1RM != null,
+                    },
+                    {
+                      label: 'Best set',
+                      value: bestSet ? (currentEx.bodyweight ? `${bestSet.reps}` : `${bestSet.weight}×${bestSet.reps}`) : '—',
+                      sub: null,
+                      accent: false,
+                    },
+                    {
+                      label: 'Sessions',
+                      value: exLogs.length,
+                      sub: null,
+                      accent: exLogs.length >= 10,
+                    },
+                  ].map((stat, i) => (
+                    <motion.div
+                      key={stat.label}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.05 + i * 0.06, duration: 0.3, ease: EASE_OUT }}
+                      className="rounded-xl px-3 py-3.5 text-center"
+                      style={{
+                        background: stat.accent ? 'rgba(74,222,128,0.05)' : 'rgba(255,255,255,0.04)',
+                        border: stat.accent ? '1px solid rgba(74,222,128,0.12)' : '1px solid rgba(255,255,255,0.07)',
+                      }}
+                    >
+                      <p className="text-[10px] text-white/30 mb-1.5 uppercase tracking-widest font-semibold">{stat.label}</p>
+                      <p className={`text-base font-bold tabular-nums ${stat.accent ? 'text-green-400' : ''}`}>{stat.value}</p>
+                      {stat.sub && <p className="text-[10px] text-white/25 mt-0.5">{stat.sub}</p>}
+                    </motion.div>
+                  ))}
                 </div>
 
                 {/* Sparkline */}

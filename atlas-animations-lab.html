@@ -1,0 +1,1234 @@
+<!--
+  ATLAS ANIMATIONS LAB
+  =====================
+  Workflow:
+    1. Open this file in Chrome (no server needed — file:// works fine)
+    2. Say "card 3, make the entrance faster" → Claude edits this file → you refresh
+    3. Top bar controls affect ALL cards: speed multiplier, easing preset, accent color
+    4. Each card has a "↺ replay" button to re-trigger its animation
+
+  Easing tokens (applied via JS to CSS vars):
+    --ease-out     cubic-bezier(.16,1,.3,1)   ← default, snappy decelerate
+    --ease-spring  cubic-bezier(.34,1.56,.64,1) ← spring overshoot
+    --ease-linear  linear
+
+  To add a new card: copy an existing .card block, give it the next number,
+  update the label, and add the JS entry in the animationRegistry object.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Atlas Animations Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+/* ─── Reset & Tokens ──────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #050508;
+  --surface: rgba(255,255,255,0.03);
+  --border: rgba(255,255,255,0.08);
+  --border-active: rgba(255,255,255,0.14);
+  --text: rgba(255,255,255,0.92);
+  --muted: rgba(255,255,255,0.4);
+  --faint: rgba(255,255,255,0.12);
+
+  /* Accent — toggled by theme switch */
+  --accent: #4ade80;
+  --accent-rgb: 74,222,128;
+  --accent-dim: rgba(74,222,128,0.12);
+  --accent-glow: rgba(74,222,128,0.35);
+
+  --cyan: #22d3ee;
+  --cyan-rgb: 34,211,238;
+  --amber: #fbbf24;
+
+  /* Animation globals — driven by top-bar controls */
+  --speed: 1;
+  --ease: cubic-bezier(.16,1,.3,1);
+  --ease-spring: cubic-bezier(.34,1.56,.64,1);
+
+  --font-body: 'Geist Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --radius: 16px;
+  --radius-sm: 10px;
+  --radius-pill: 9999px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  min-height: 100vh;
+  padding-top: 72px; /* topbar height */
+}
+
+/* ─── Topbar ──────────────────────────────────────────────────────────── */
+#topbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 60px;
+  z-index: 100;
+  background: rgba(5,5,8,0.85);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding: 0 24px;
+}
+
+#topbar .logo {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--accent);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  margin-right: 8px;
+}
+
+.ctrl-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ctrl-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Speed slider */
+#speed-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100px;
+  height: 4px;
+  background: var(--border-active);
+  border-radius: 9999px;
+  outline: none;
+  cursor: pointer;
+}
+#speed-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+#speed-val {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  min-width: 28px;
+}
+
+/* Easing dropdown */
+#easing-select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  outline: none;
+}
+#easing-select:focus { border-color: var(--accent); }
+
+/* Theme toggle */
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.toggle-btn {
+  position: relative;
+  width: 40px; height: 22px;
+  background: var(--border-active);
+  border-radius: 9999px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+.toggle-btn.active { background: var(--accent-dim); }
+.toggle-thumb {
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  transition: transform 0.25s var(--ease), background 0.3s;
+}
+.toggle-btn.active .toggle-thumb { transform: translateX(18px); }
+
+/* ─── Grid ────────────────────────────────────────────────────────────── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 20px;
+  padding: 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* ─── Card shell ──────────────────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(8px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 260px;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.card-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  background: var(--accent-dim);
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  text-transform: uppercase;
+}
+
+.replay-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+.replay-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+.card-body {
+  flex: 1;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+}
+
+/* ─── Card 1 — Page section entrance ─────────────────────────────────── */
+.entrance-item {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  opacity: 0;
+  transform: translateY(20px);
+  transition-property: opacity, transform;
+  transition-timing-function: var(--ease);
+  transition-duration: calc(400ms / var(--speed));
+}
+.entrance-item.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.entrance-item-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.entrance-item-sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ─── Card 2 — Chat bubbles ───────────────────────────────────────────── */
+.chat-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.bubble {
+  max-width: 82%;
+  padding: 11px 14px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  opacity: 0;
+  transition-property: opacity, transform;
+  transition-timing-function: var(--ease);
+  transition-duration: calc(350ms / var(--speed));
+}
+.bubble.atlas {
+  align-self: flex-start;
+  background: rgba(var(--accent-rgb), 0.07);
+  border: 1px solid rgba(var(--accent-rgb), 0.22);
+  color: var(--text);
+  transform: translateX(-12px);
+  border-bottom-left-radius: 4px;
+}
+.bubble.user {
+  align-self: flex-end;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
+  color: rgba(255,255,255,0.75);
+  transform: translateX(12px);
+  border-bottom-right-radius: 4px;
+}
+.bubble.visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+.bubble-author {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--accent);
+  margin-bottom: 4px;
+  letter-spacing: 0.06em;
+}
+.bubble.user .bubble-author {
+  color: var(--muted);
+  text-align: right;
+}
+
+/* ─── Card 3 — Thinking orb ──────────────────────────────────────────── */
+.orb-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(var(--accent-rgb), 0.08);
+  border: 1px solid rgba(var(--accent-rgb), 0.2);
+  border-radius: var(--radius-pill);
+  padding: 10px 18px;
+  align-self: flex-start;
+}
+.orb-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent-glow);
+  animation: orb-pulse calc(1.4s / var(--speed)) var(--ease) infinite;
+}
+.orb-dot:nth-child(2) { animation-delay: calc(0.2s / var(--speed)); }
+.orb-dot:nth-child(3) { animation-delay: calc(0.4s / var(--speed)); }
+@keyframes orb-pulse {
+  0%, 100% { opacity: 0.25; transform: scale(0.75); }
+  50% { opacity: 1; transform: scale(1); }
+}
+.orb-label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent);
+  margin-left: 4px;
+  letter-spacing: 0.06em;
+}
+
+/* ─── Card 4 — Jot fall ──────────────────────────────────────────────── */
+.jot-stage {
+  position: relative;
+  height: 140px;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+.jot-trigger {
+  background: var(--accent-dim);
+  border: 1px solid rgba(var(--accent-rgb), 0.25);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 8px 18px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background 0.2s;
+  margin-bottom: 16px;
+}
+.jot-trigger:hover { background: rgba(var(--accent-rgb), 0.18); }
+.jot-snippet {
+  position: absolute;
+  top: 0; left: 50%; transform: translateX(-50%);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.jot-snippet.falling {
+  animation: jot-fall calc(600ms / var(--speed)) var(--ease) forwards;
+}
+@keyframes jot-fall {
+  from { opacity: 1; transform: translateX(-50%) translateY(0); }
+  to   { opacity: 0; transform: translateX(-50%) translateY(80px); }
+}
+
+/* ─── Card 5 — Counter bounce ────────────────────────────────────────── */
+.counter-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+.counter-number {
+  font-size: 56px;
+  font-weight: 600;
+  color: var(--accent);
+  line-height: 1;
+  display: inline-block;
+}
+.counter-number.bounce {
+  animation: counter-bounce calc(500ms / var(--speed)) var(--ease-spring) forwards;
+}
+@keyframes counter-bounce {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.4); }
+  100% { transform: scale(1); }
+}
+.counter-btn {
+  background: var(--accent-dim);
+  border: 1px solid rgba(var(--accent-rgb), 0.25);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 8px 20px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.counter-btn:hover { background: rgba(var(--accent-rgb), 0.18); }
+
+/* ─── Card 6 — Activity chips ────────────────────────────────────────── */
+.chip-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.chip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.04);
+  color: var(--muted);
+  opacity: 0;
+  transform: translateX(-16px);
+  transition-property: opacity, transform, box-shadow, border-color, color;
+  transition-timing-function: var(--ease);
+  transition-duration: calc(320ms / var(--speed));
+}
+.chip.visible { opacity: 1; transform: translateX(0); }
+.chip.active-chip {
+  color: var(--accent);
+  border-color: rgba(var(--accent-rgb), 0.4);
+  background: var(--accent-dim);
+  box-shadow: 0 0 14px var(--accent-glow), inset 0 0 8px rgba(var(--accent-rgb), 0.08);
+}
+.chip.active-amber {
+  color: var(--amber);
+  border-color: rgba(251,191,36,0.4);
+  background: rgba(251,191,36,0.1);
+  box-shadow: 0 0 14px rgba(251,191,36,0.3);
+}
+.chip.active-cyan {
+  color: var(--cyan);
+  border-color: rgba(var(--cyan-rgb), 0.4);
+  background: rgba(var(--cyan-rgb), 0.08);
+  box-shadow: 0 0 14px rgba(var(--cyan-rgb), 0.3);
+}
+
+/* ─── Card 7 — Breathing card ────────────────────────────────────────── */
+.breathing-card {
+  background: rgba(255,255,255,0.035);
+  border-radius: var(--radius-sm);
+  padding: 18px;
+  position: relative;
+  animation: breathing calc(3s / var(--speed)) ease-in-out infinite;
+}
+@keyframes breathing {
+  0%, 100% {
+    border: 1px solid rgba(var(--accent-rgb), 0.15);
+    box-shadow: 0 0 0px transparent;
+  }
+  50% {
+    border: 1px solid rgba(var(--accent-rgb), 0.5);
+    box-shadow: 0 0 22px rgba(var(--accent-rgb), 0.18), inset 0 0 16px rgba(var(--accent-rgb), 0.04);
+  }
+}
+.breathing-title {
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 6px;
+}
+.breathing-sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--accent);
+  background: var(--accent-dim);
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  margin-bottom: 12px;
+}
+.live-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: live-blink 1.2s ease-in-out infinite;
+}
+@keyframes live-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+
+/* ─── Card 8 — Typewriter ────────────────────────────────────────────── */
+.typewriter-bubble {
+  background: rgba(var(--accent-rgb), 0.06);
+  border: 1px solid rgba(var(--accent-rgb), 0.18);
+  border-radius: 14px;
+  border-bottom-left-radius: 4px;
+  padding: 14px 16px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+  min-height: 80px;
+}
+.typewriter-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--accent);
+  vertical-align: text-bottom;
+  margin-left: 2px;
+  animation: cursor-blink 0.8s step-end infinite;
+}
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.typewriter-author {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--accent);
+  margin-bottom: 8px;
+  letter-spacing: 0.06em;
+}
+
+/* ─── Card 9 — Glow border ───────────────────────────────────────────── */
+.glow-card {
+  background: rgba(255,255,255,0.035);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  border: 1px solid rgba(var(--accent-rgb), 0.18);
+  box-shadow: 0 0 0px transparent;
+  cursor: pointer;
+  transition:
+    border-color calc(250ms / var(--speed)) var(--ease),
+    box-shadow calc(250ms / var(--speed)) var(--ease),
+    background calc(250ms / var(--speed)) var(--ease);
+}
+.glow-card:hover, .glow-card:active, .glow-card.glow-active {
+  border-color: rgba(var(--accent-rgb), 0.5);
+  box-shadow: 0 0 22px rgba(var(--accent-rgb), 0.18), inset 0 0 16px rgba(var(--accent-rgb), 0.04);
+  background: rgba(var(--accent-rgb), 0.05);
+}
+.glow-card--hold {
+  border-color: rgba(251,191,36,0.2);
+}
+.glow-card--hold:hover, .glow-card--hold:active {
+  border-color: rgba(251,191,36,0.45);
+  box-shadow: 0 0 18px rgba(251,191,36,0.14);
+  background: rgba(251,191,36,0.04);
+}
+
+/* ─── Card 10 — Dot-grid ─────────────────────────────────────────────── */
+.dot-grid-card {
+  padding: 20px;
+  background: rgba(255,255,255,0.03);
+  background-image: radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px);
+  background-size: 22px 22px;
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity calc(400ms / var(--speed)) var(--ease), transform calc(400ms / var(--speed)) var(--ease);
+}
+.dot-grid-card.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ─── Card 11 — Exercise chips ───────────────────────────────────────── */
+.ex-chip-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+.ex-chip {
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
+  color: rgba(255,255,255,0.4);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition:
+    background calc(200ms / var(--speed)) var(--ease),
+    border-color calc(200ms / var(--speed)) var(--ease),
+    color calc(200ms / var(--speed)) var(--ease),
+    box-shadow calc(200ms / var(--speed)) var(--ease);
+  opacity: 0;
+  transform: translateX(-12px);
+}
+.ex-chip.chip-visible {
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity calc(300ms / var(--speed)) var(--ease),
+    transform calc(300ms / var(--speed)) var(--ease),
+    background calc(200ms / var(--speed)) var(--ease),
+    border-color calc(200ms / var(--speed)) var(--ease),
+    box-shadow calc(200ms / var(--speed)) var(--ease);
+}
+.active-ex-chip {
+  background: rgba(var(--accent-rgb), 0.10) !important;
+  border-color: rgba(var(--accent-rgb), 0.35) !important;
+  color: var(--accent) !important;
+  box-shadow: 0 0 14px rgba(var(--accent-rgb), 0.14), inset 0 0 8px rgba(var(--accent-rgb), 0.05) !important;
+}
+.reps-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.rep-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.07);
+  background: rgba(255,255,255,0.04);
+  color: rgba(255,255,255,0.2);
+  transition: all calc(120ms / var(--speed)) var(--ease);
+}
+.rep-btn.in-range {
+  background: rgba(var(--accent-rgb), 0.06);
+  border-color: rgba(var(--accent-rgb), 0.18);
+  color: rgba(var(--accent-rgb), 0.55);
+}
+.rep-btn.selected {
+  background: rgba(var(--accent-rgb), 0.18);
+  border-color: rgba(var(--accent-rgb), 0.45);
+  color: var(--accent);
+  box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.2);
+}
+
+/* ─── Card 12 — Gradient CTA ─────────────────────────────────────────── */
+.cta-btn {
+  width: 100%;
+  max-width: 280px;
+  padding: 16px 24px;
+  border-radius: 16px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  background: linear-gradient(135deg, #4ade80 0%, #16a34a 100%);
+  color: #000;
+  box-shadow: 0 0 0px rgba(74,222,128,0);
+  transition:
+    box-shadow calc(200ms / var(--speed)) var(--ease),
+    transform calc(100ms / var(--speed)) var(--ease-spring),
+    background calc(300ms / var(--speed)) var(--ease);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cta-btn:active {
+  transform: scale(0.94);
+}
+.cta-btn.cta-flash {
+  background: rgba(74,222,128,0.18) !important;
+  color: #4ade80 !important;
+  border: 1px solid rgba(74,222,128,0.4) !important;
+  box-shadow: 0 0 28px rgba(74,222,128,0.4), 0 0 8px rgba(74,222,128,0.25) !important;
+}
+.cta-btn--ghost {
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.6);
+  cursor: pointer;
+}
+.cta-btn--ghost:active { transform: scale(0.96); }
+
+/* ─── Utility ─────────────────────────────────────────────────────────── */
+.flex-col { display: flex; flex-direction: column; }
+.gap-8 { gap: 8px; }
+</style>
+</head>
+<body>
+
+<!-- ─── Topbar ─────────────────────────────────────────────────────────── -->
+<div id="topbar">
+  <span class="logo">ATLAS / ANIM LAB</span>
+
+  <div class="ctrl-group">
+    <span class="ctrl-label">SPEED</span>
+    <input type="range" id="speed-slider" min="0.5" max="2" step="0.25" value="1" />
+    <span id="speed-val">1×</span>
+  </div>
+
+  <div class="ctrl-group">
+    <span class="ctrl-label">EASING</span>
+    <select id="easing-select">
+      <option value="cubic-bezier(.16,1,.3,1)">easeOut</option>
+      <option value="cubic-bezier(.34,1.56,.64,1)">spring</option>
+      <option value="linear">linear</option>
+    </select>
+  </div>
+
+  <div class="ctrl-group theme-toggle">
+    <span class="ctrl-label">GREEN</span>
+    <button class="toggle-btn" id="theme-toggle"><span class="toggle-thumb"></span></button>
+    <span class="ctrl-label">CYAN</span>
+  </div>
+</div>
+
+<!-- ─── Card grid ─────────────────────────────────────────────────────── -->
+<div class="grid">
+
+  <!-- Card 1 — Page section entrance -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-label">01 · section entrance</span>
+      <button class="replay-btn" data-card="1">↺ replay</button>
+    </div>
+    <div class="card-body" id="card1-body">
+      <div class="entrance-item" data-idx="0">
+        <div class="entrance-item-title">Morning Check-in</div>
+        <div class="entrance-item-sub">08:42 · Training day</div>
+      </div>
+      <div class="entrance-item" data-idx="1">
+        <div class="entrance-item-title">Last Workout</div>
+        <div class="entrance-item-sub">Yesterday · Upper A · 12,400 lbs</div>
+      </div>
+      <div class="entrance-item" data-idx="2">
+        <div class="entrance-item-title">Sleep Score</div>
+        <div class="entrance-item-sub">Oura · 84 · 7h 22m</div>
+      </div>
+      <div class="entrance-item" data-idx="3">
+        <div class="entrance-item-title">HRV Trend</div>
+        <div class="entrance-item-sub">↑ 6ms above baseline</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Card 2 — Frosted glass chat bubbles -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-label">02 · chat bubbles</span>
+      <button class="replay-btn" data-card="2">↺ replay</button>
+    </div>
+    <div class="card-body" id="card2-body">
+      <div class="chat-thread" id="chat-thread">
+        <div class="bubble atlas" data-idx="0">
+          <div class="bubble-author">ATLAS</div>
+          Your HRV is 6ms above baseline. A hard push today is a green light.
+        </div>
+        <div class="bubble user" data-idx="1">
+          <div class="bubble-author">YOU</div>
+          Going upper A — bench, rows, OHP.
+        </div>
+        <div class="bubble atlas" data-idx="2">
+          <div class="bubble-author">ATLAS</div>
+          Solid. Bench target is 195 for 3×5 — last session stopped at 190.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Card 3 — Thinking orb -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-label">03 · thinking orb</span>
+      <button class="replay-btn" data-card="3">↺ replay</button>
+    </div>
+    <div class="card-body" style="align-items:flex-start; gap:16px;">
+      <div class="orb-pill" id="orb-pill">
+        <div class="orb-dot"></div>
+        <div class="orb-dot"></div>
+        <div class="orb-dot"></div>
+        <span class="orb-label">Atlas is thinking</span>
+      </div>
+      <div style="font-family:var(--font-mono);font-size:11px;color:var(--muted);">
+        Shown while streaming · disappears on first token
+      </div>
+    </div>
+  </div>
+
+  <!-- Card 4 — Jot fall -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-label">04 · jot fall</span>
+      <button class="replay-btn" data-card="4">↺ replay</button>
+    </div>
+    <div class="card-body" style="align-items:center;">
+      <button class="jot-trigger" id="jot-trigger">+ save jot</button>
+      <div class="jot-stage">
+        <div class="jot-snippet" id="jot-snippet">"Remember to log creatine before bed"</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Card 5 — Counter spring bounce -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-label">05 · counter bounce</span>
+      <button class="replay-btn" data-card="5">↺ replay</button>
+    </div>
+    <div class="card-body">
+      <div class="counter-wrap">
+        <div class="counter-number" id="counter-number">0</div>
+        <button class="counter-btn" id="counter-btn">+ increment</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Card 6 — Activity chips -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-label">06 · activity chips</span>
+      <button class="replay-btn" data-card="6">↺ replay</button>
+    </div>
+    <div class="card-body">
+      <div class="chip-row" id="chip-row">
+        <div class="chip active-chip" data-idx="0">GYM</div>
+        <div class="chip active-amber" data-idx="1">HEALTH</div>
+        <div class="chip" data-idx="2">JOURNAL</div>
+        <div class="chip active-cyan" data-idx="3">MENTOR</div>
+      </div>
+      <div style="font-family:var(--font-mono);font-size:11px;color:var(--muted);margin-top:4px;">
+        Active chips glow — inactive chips are muted
+      </div>
+    </div>
+  </div>
+
+  <!-- Card 7 — Breathing card -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-label">07 · breathing / live state</span>
+      <button class="replay-btn" data-card="7">↺ replay</button>
+    </div>
+    <div class="card-body">
+      <div class="breathing-card">
+        <div class="live-badge"><span class="live-dot"></span>LIVE</div>
+        <div class="breathing-title">Weekly Training Load</div>
+        <div class="breathing-sub">4 sessions · 47,200 lbs total volume</div>
+      </div>
+      <div style="font-family:var(--font-mono);font-size:11px;color:var(--muted);">
+        Subtle glow pulse — "this data is current"
+      </div>
+    </div>
+  </div>
+
+  <!-- Card 8 — Typewriter -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-label">08 · typewriter</span>
+      <button class="replay-btn" data-card="8">↺ replay</button>
+    </div>
+    <div class="card-body">
+      <div class="typewriter-author">ATLAS</div>
+      <div class="typewriter-bubble">
+        <span id="typewriter-text"></span><span class="typewriter-cursor" id="tw-cursor"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Card 9 — Glow border hover -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-label">09 · glow border</span>
+      <button class="replay-btn" data-card="9">↺ replay</button>
+    </div>
+    <div class="card-body" style="gap:12px;">
+      <div class="glow-card" id="glow-card-demo">
+        <div class="live-badge" style="margin-bottom:10px;"><span class="live-dot"></span>PUSH DAY</div>
+        <div class="breathing-title">Bench Press</div>
+        <div class="breathing-sub">135 lbs × 8 · last session</div>
+      </div>
+      <div class="glow-card glow-card--hold">
+        <div class="breathing-title">Overhead Press</div>
+        <div class="breathing-sub" style="color:rgba(251,191,36,0.55);">HOLD · stay at 95 lbs</div>
+      </div>
+      <div style="font-family:var(--font-mono);font-size:11px;color:var(--muted);">
+        Hover or tap to trigger glow
+      </div>
+    </div>
+  </div>
+
+  <!-- Card 10 — Dot-grid card -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-label">10 · dot-grid texture</span>
+      <button class="replay-btn" data-card="10">↺ replay</button>
+    </div>
+    <div class="card-body" style="padding:0; overflow:hidden;">
+      <div class="dot-grid-card" id="dot-grid-demo">
+        <div style="position:relative;z-index:1;">
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--accent);letter-spacing:0.12em;margin-bottom:8px;">PROGRESSIVE OVERLOAD</div>
+          <div style="font-size:22px;font-weight:700;margin-bottom:4px;">Squat</div>
+          <div style="font-family:var(--font-mono);font-size:11px;color:var(--muted);">225 lbs · 3×5 · strength</div>
+        </div>
+        <div class="chip-row" style="margin-top:16px;position:relative;z-index:1;">
+          <div class="chip visible active-chip">SQUAT</div>
+          <div class="chip visible" style="opacity:0.5;">DEADLIFT</div>
+          <div class="chip visible" style="opacity:0.5;">RDL</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Card 11 — Exercise chip selector -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-label">11 · exercise chips</span>
+      <button class="replay-btn" data-card="11">↺ replay</button>
+    </div>
+    <div class="card-body" style="gap:16px;">
+      <div>
+        <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);letter-spacing:0.1em;margin-bottom:10px;">EXERCISE</div>
+        <div class="ex-chip-row" id="ex-chip-row">
+          <button class="ex-chip active-ex-chip" data-ex="0">Bench Press</button>
+          <button class="ex-chip" data-ex="1">OHP</button>
+          <button class="ex-chip" data-ex="2">Incline DB</button>
+          <button class="ex-chip" data-ex="3">Tricep Dips</button>
+        </div>
+      </div>
+      <div class="reps-row" id="reps-row">
+        <!-- filled by JS -->
+      </div>
+      <div style="font-family:var(--font-mono);font-size:11px;color:var(--muted);">
+        Target range glows green · tap to select
+      </div>
+    </div>
+  </div>
+
+  <!-- Card 12 — Gradient CTA button -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-label">12 · gradient CTA</span>
+      <button class="replay-btn" data-card="12">↺ replay</button>
+    </div>
+    <div class="card-body" style="gap:16px; align-items:center;">
+      <button class="cta-btn" id="cta-btn">Log Set</button>
+      <button class="cta-btn cta-btn--flash" id="cta-btn-flash" style="display:none;">Log Set</button>
+      <div class="cta-btn cta-btn--ghost">Finish Workout</div>
+      <div style="font-family:var(--font-mono);font-size:11px;color:var(--muted);text-align:center;">
+        Tap green button to see success flash
+      </div>
+    </div>
+  </div>
+
+</div><!-- /grid -->
+
+<script>
+/* ─── Global state ──────────────────────────────────────────────────── */
+const root = document.documentElement;
+let speed = 1;
+let easing = 'cubic-bezier(.16,1,.3,1)';
+let useSpring = false;
+
+/* ─── Top-bar controls ──────────────────────────────────────────────── */
+const speedSlider = document.getElementById('speed-slider');
+const speedVal    = document.getElementById('speed-val');
+const easingSelect = document.getElementById('easing-select');
+const themeToggle  = document.getElementById('theme-toggle');
+
+speedSlider.addEventListener('input', () => {
+  speed = parseFloat(speedSlider.value);
+  speedVal.textContent = speed + '×';
+  root.style.setProperty('--speed', speed);
+  replayAll();
+});
+
+easingSelect.addEventListener('change', () => {
+  easing = easingSelect.value;
+  root.style.setProperty('--ease', easing);
+  replayAll();
+});
+
+let isCyan = false;
+themeToggle.addEventListener('click', () => {
+  isCyan = !isCyan;
+  themeToggle.classList.toggle('active', isCyan);
+  if (isCyan) {
+    root.style.setProperty('--accent', '#22d3ee');
+    root.style.setProperty('--accent-rgb', '34,211,238');
+    root.style.setProperty('--accent-dim', 'rgba(34,211,238,0.1)');
+    root.style.setProperty('--accent-glow', 'rgba(34,211,238,0.35)');
+  } else {
+    root.style.setProperty('--accent', '#4ade80');
+    root.style.setProperty('--accent-rgb', '74,222,128');
+    root.style.setProperty('--accent-dim', 'rgba(74,222,128,0.12)');
+    root.style.setProperty('--accent-glow', 'rgba(74,222,128,0.35)');
+  }
+});
+
+/* ─── Animation registry ────────────────────────────────────────────── */
+const animations = {
+
+  1() {
+    const items = document.querySelectorAll('#card1-body .entrance-item');
+    items.forEach(el => {
+      el.classList.remove('visible');
+      // force reflow
+      void el.offsetHeight;
+    });
+    items.forEach((el, i) => {
+      const delay = (100 * i) / speed;
+      setTimeout(() => el.classList.add('visible'), delay);
+    });
+  },
+
+  2() {
+    const bubbles = document.querySelectorAll('#card2-body .bubble');
+    bubbles.forEach(el => {
+      el.classList.remove('visible');
+      void el.offsetHeight;
+    });
+    bubbles.forEach((el, i) => {
+      const delay = (180 * i) / speed;
+      setTimeout(() => el.classList.add('visible'), delay);
+    });
+  },
+
+  3() {
+    // orb is CSS-only, just let it breathe — replay resets animation
+    const pill = document.getElementById('orb-pill');
+    pill.style.animation = 'none';
+    void pill.offsetHeight;
+    pill.style.animation = '';
+    const dots = pill.querySelectorAll('.orb-dot');
+    dots.forEach(d => {
+      d.style.animation = 'none';
+      void d.offsetHeight;
+      d.style.animation = '';
+    });
+  },
+
+  4() {
+    const snippet = document.getElementById('jot-snippet');
+    snippet.classList.remove('falling');
+    snippet.style.opacity = '1';
+    void snippet.offsetHeight;
+  },
+
+  5() {
+    const num = document.getElementById('counter-number');
+    num.classList.remove('bounce');
+    void num.offsetHeight;
+    counterVal = 0;
+    num.textContent = '0';
+  },
+
+  6() {
+    const chips = document.querySelectorAll('#chip-row .chip');
+    chips.forEach(el => {
+      el.classList.remove('visible');
+      void el.offsetHeight;
+    });
+    chips.forEach((el, i) => {
+      const delay = (80 * i) / speed;
+      setTimeout(() => el.classList.add('visible'), delay);
+    });
+  },
+
+  7() {
+    const card = document.querySelector('.breathing-card');
+    card.style.animation = 'none';
+    void card.offsetHeight;
+    card.style.animation = '';
+  },
+
+  8() {
+    typewriterReplay();
+  },
+
+  9() {
+    // just reset — hover/active is CSS-driven
+    const cards = document.querySelectorAll('.glow-card');
+    cards.forEach(c => c.classList.remove('glow-active'));
+    void cards[0]?.offsetHeight;
+    setTimeout(() => cards.forEach(c => c.classList.add('glow-active')), 100 / speed);
+    setTimeout(() => cards.forEach(c => c.classList.remove('glow-active')), 1200 / speed);
+  },
+
+  10() {
+    const card = document.getElementById('dot-grid-demo');
+    card.classList.remove('visible');
+    void card.offsetHeight;
+    setTimeout(() => card.classList.add('visible'), 60 / speed);
+  },
+
+  11() {
+    const chips = document.querySelectorAll('#ex-chip-row .ex-chip');
+    chips.forEach(c => c.classList.remove('chip-visible'));
+    void chips[0]?.offsetHeight;
+    chips.forEach((c, i) => setTimeout(() => c.classList.add('chip-visible'), (60 + i * 60) / speed));
+    // reset reps selection
+    buildRepsRow(9);
+  },
+
+  12() {
+    const btn = document.getElementById('cta-btn');
+    btn.classList.remove('cta-flash');
+    void btn.offsetHeight;
+  },
+
+};
+
+function replayAll() {
+  Object.keys(animations).forEach(k => animations[k]());
+}
+
+/* ─── Replay buttons ────────────────────────────────────────────────── */
+document.querySelectorAll('.replay-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const n = btn.dataset.card;
+    if (animations[n]) animations[n]();
+  });
+});
+
+/* ─── Card 4 — Jot trigger ──────────────────────────────────────────── */
+document.getElementById('jot-trigger').addEventListener('click', () => {
+  const snippet = document.getElementById('jot-snippet');
+  snippet.classList.remove('falling');
+  snippet.style.opacity = '1';
+  void snippet.offsetHeight;
+  snippet.classList.add('falling');
+});
+
+/* ─── Card 5 — Counter ──────────────────────────────────────────────── */
+let counterVal = 0;
+document.getElementById('counter-btn').addEventListener('click', () => {
+  counterVal++;
+  const num = document.getElementById('counter-number');
+  num.textContent = counterVal;
+  num.classList.remove('bounce');
+  void num.offsetHeight;
+  num.classList.add('bounce');
+});
+
+/* ─── Card 8 — Typewriter ───────────────────────────────────────────── */
+const TW_MESSAGE = "Your sleep efficiency hit 94% last night — that's your best in 3 weeks. HRV is tracking above baseline. Today looks like a green light.";
+let twTimeout = null;
+
+function typewriterReplay() {
+  if (twTimeout) clearTimeout(twTimeout);
+  const el = document.getElementById('typewriter-text');
+  el.textContent = '';
+  let i = 0;
+  function tick() {
+    if (i < TW_MESSAGE.length) {
+      el.textContent += TW_MESSAGE[i++];
+      const delay = 18 / speed;
+      twTimeout = setTimeout(tick, delay);
+    }
+  }
+  tick();
+}
+
+/* ─── Card 11 — Reps grid ───────────────────────────────────────────── */
+let selectedRep = 9;
+const REP_MIN = 8, REP_MAX = 12;
+
+function buildRepsRow(selected) {
+  selectedRep = selected;
+  const row = document.getElementById('reps-row');
+  row.innerHTML = '';
+  for (let n = 3; n <= 20; n++) {
+    const btn = document.createElement('button');
+    btn.className = 'rep-btn' + (n >= REP_MIN && n <= REP_MAX ? ' in-range' : '') + (n === selected ? ' selected' : '');
+    btn.textContent = n;
+    btn.addEventListener('click', () => buildRepsRow(n));
+    row.appendChild(btn);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  buildRepsRow(9);
+  // Exercise chip clicks
+  document.querySelectorAll('#ex-chip-row .ex-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('#ex-chip-row .ex-chip').forEach(c => c.classList.remove('active-ex-chip'));
+      chip.classList.add('active-ex-chip');
+    });
+  });
+});
+
+/* ─── Card 12 — CTA flash ───────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
+  const btn = document.getElementById('cta-btn');
+  btn.addEventListener('click', () => {
+    btn.classList.add('cta-flash');
+    setTimeout(() => btn.classList.remove('cta-flash'), 450 / speed);
+  });
+});
+
+/* ─── Init on load ──────────────────────────────────────────────────── */
+window.addEventListener('DOMContentLoaded', () => {
+  // stagger init so cards appear as page loads
+  Object.keys(animations).forEach((k, idx) => {
+    setTimeout(() => animations[k](), 80 * idx);
+  });
+});
+</script>
+</body>
+</html>
