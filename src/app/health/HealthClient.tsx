@@ -135,11 +135,13 @@ function WearablesSection({
 
   return (
     <section>
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-zinc-500">
-        Wearables
-      </h2>
+      <div className="flex items-center gap-4 mb-3.5">
+        <div className="flex-1 h-px bg-white/[0.10]" />
+        <span className="text-[11px] font-semibold tracking-[0.22em] text-white/85">WEARABLES</span>
+        <div className="flex-1 h-px bg-white/[0.10]" />
+      </div>
       <div className="space-y-3">
-        <div className="rounded-xl bg-zinc-900 p-4">
+        <div className="bg-[#111113] border border-white/[0.06] rounded-[18px] p-4">
           <p className="mb-3 text-xs font-medium text-zinc-500">Oura Ring</p>
           {!hasOura ? (
             <a
@@ -182,7 +184,7 @@ function WearablesSection({
           )}
         </div>
 
-        <div className="rounded-xl bg-zinc-900 p-4">
+        <div className="bg-[#111113] border border-white/[0.06] rounded-[18px] p-4">
           <p className="mb-3 text-xs font-medium text-zinc-500">Whoop</p>
           {!hasWhoop ? (
             <a
@@ -1129,6 +1131,7 @@ function WaterSection({
   setSettingsOpen: (open: boolean) => void
 }) {
   const [whyOpen, setWhyOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [subSearch, setSubSearch] = useState('')
   const [showSubResults, setShowSubResults] = useState(false)
   const [localProfile, setLocalProfile] = useState<WaterProfile>(() => mergeProfile(initialProfile))
@@ -1328,39 +1331,50 @@ function WaterSection({
       </div>
 
       {/* History Card */}
-      <div className="bg-[#111113] border border-white/[0.06] rounded-[18px] px-5 pt-[22px] pb-[18px] mb-3.5">
-        <div className="text-[10px] font-bold tracking-[0.20em] uppercase text-white/40 mb-2">LAST 14 DAYS</div>
-        <div className="py-1.5">
-          {sparkHistory.length > 0
-            ? <WaterSpark history={sparkHistory} targetUnits={targetUnits} unitVol={unitVol} />
-            : <div className="h-[70px] flex items-center justify-center text-[12px] text-white/40">No logs yet.</div>
-          }
-        </div>
-        <div className="mt-3.5">
-          {last7.length === 0
-            ? <div className="text-center text-[12px] text-white/40 py-3">No logs yet.</div>
-            : last7.map(({ date, total_oz }) => {
-                const d = new Date(date + 'T12:00:00')
-                const dows = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
-                const lbl = `${dows[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}`
-                const dayCount = total_oz / unitVol
-                const pct = Math.min(100, (dayCount / targetUnits) * 100)
-                const hit = dayCount >= targetUnits
-                return (
-                  <div key={date} className="grid gap-2.5 py-2.5 items-center border-b border-white/[0.06] last:border-b-0 text-[13px]" style={{ gridTemplateColumns: '70px 1fr auto' }}>
-                    <span className="text-[11px] text-white/40 font-mono">{lbl}</span>
-                    <div className="h-2 bg-white/[0.04] rounded-[4px] overflow-hidden">
-                      <div className="h-full rounded-[4px]" style={{
-                        width: `${pct}%`,
-                        background: hit ? 'linear-gradient(90deg, #7DD3FC, #6ee7b7)' : 'rgba(255,138,138,0.4)',
-                      }} />
-                    </div>
-                    <span className="font-mono text-[12px] text-white/60 tabular-nums">{dayCount.toFixed(1)}/{targetUnits}</span>
-                  </div>
-                )
-              })
-          }
-        </div>
+      <div className="bg-[#111113] border border-white/[0.06] rounded-[18px] mb-3.5 overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setHistoryOpen(o => !o)}
+          className="w-full flex items-center justify-between px-5 py-[18px] bg-transparent border-0 cursor-pointer"
+        >
+          <span className="text-[10px] font-bold tracking-[0.20em] uppercase text-white/40">LAST 14 DAYS</span>
+          <span className={`text-[14px] text-white/30 transition-transform duration-200 inline-block ${historyOpen ? 'rotate-180' : ''}`}>▾</span>
+        </button>
+        {historyOpen && (
+          <div className="px-5 pb-[18px]">
+            <div className="py-1.5">
+              {sparkHistory.length > 0
+                ? <WaterSpark history={sparkHistory} targetUnits={targetUnits} unitVol={unitVol} />
+                : <div className="h-[70px] flex items-center justify-center text-[12px] text-white/40">No logs yet.</div>
+              }
+            </div>
+            <div className="mt-3.5">
+              {last7.length === 0
+                ? <div className="text-center text-[12px] text-white/40 py-3">No logs yet.</div>
+                : last7.map(({ date, total_oz }) => {
+                    const d = new Date(date + 'T12:00:00')
+                    const dows = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+                    const lbl = `${dows[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}`
+                    const dayCount = total_oz / unitVol
+                    const pct = Math.min(100, (dayCount / targetUnits) * 100)
+                    const hit = dayCount >= targetUnits
+                    return (
+                      <div key={date} className="grid gap-2.5 py-2.5 items-center border-b border-white/[0.06] last:border-b-0 text-[13px]" style={{ gridTemplateColumns: '70px 1fr auto' }}>
+                        <span className="text-[11px] text-white/40 font-mono">{lbl}</span>
+                        <div className="h-2 bg-white/[0.04] rounded-[4px] overflow-hidden">
+                          <div className="h-full rounded-[4px]" style={{
+                            width: `${pct}%`,
+                            background: hit ? 'linear-gradient(90deg, #7DD3FC, #6ee7b7)' : 'rgba(255,138,138,0.4)',
+                          }} />
+                        </div>
+                        <span className="font-mono text-[12px] text-white/60 tabular-nums">{dayCount.toFixed(1)}/{targetUnits}</span>
+                      </div>
+                    )
+                  })
+              }
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Settings Modal */}
@@ -1688,9 +1702,11 @@ function CaffeineSection({
 
   return (
     <section>
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-zinc-500">
-        Caffeine
-      </h2>
+      <div className="flex items-center gap-4 mb-3.5">
+        <div className="flex-1 h-px bg-white/[0.10]" />
+        <span className="text-[11px] font-semibold tracking-[0.22em] text-white/85">CAFFEINE</span>
+        <div className="flex-1 h-px bg-white/[0.10]" />
+      </div>
       <Link
         href="/health/caffeine"
         className="cosmic-card block p-4 active:scale-[0.99] transition-transform"
@@ -2266,7 +2282,7 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
         <div className="flex-1 h-px bg-white/[0.10]" />
       </div>
 
-      <div className="rounded-xl bg-zinc-900 p-4 space-y-3">
+      <div className="bg-[#111113] border border-white/[0.06] rounded-[18px] p-4 space-y-3">
         {/* Totals row */}
         {hasTarget ? (
           <div className="space-y-2">
@@ -2578,7 +2594,7 @@ function HealthCoach() {
       <button
         onClick={run}
         disabled={streaming}
-        className="flex h-12 w-full items-center justify-center rounded-xl bg-zinc-900 text-sm font-medium text-zinc-300 disabled:opacity-60 active:opacity-80"
+        className="flex h-12 w-full items-center justify-center rounded-xl bg-[#111113] border border-white/[0.06] text-sm font-medium text-zinc-300 disabled:opacity-60 active:opacity-80"
       >
         {streaming ? 'Thinking…' : 'Get coach feedback'}
       </button>
