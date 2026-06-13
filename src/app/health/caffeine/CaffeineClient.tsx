@@ -609,6 +609,13 @@ export default function CaffeineClient({ initialCaffeine, today, ouraData, whoop
                 <div className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />
                 <p className="text-[10px] text-zinc-400 font-mono">{formatHour(displayHour)}</p>
               </div>
+              <p className="text-[9px] font-mono text-zinc-600 mt-1.5">
+                {ouraData?.sleep?.score != null
+                  ? `Sleep ${ouraData.sleep.score} · wake ${formatHour(wakeHour)}`
+                  : whoopData?.recovery?.score != null
+                  ? `Recovery ${whoopData.recovery.score} · wake ${formatHour(wakeHour)}`
+                  : `Baseline sleep · wake ${formatHour(wakeHour)}`}
+              </p>
             </div>
 
             {/* Total mg */}
