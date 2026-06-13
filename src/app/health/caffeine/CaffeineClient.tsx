@@ -254,20 +254,31 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
   })
 
   const [ratingSlider, setRatingSlider] = useState(50)
-  const [ratingSubmitting, setRatingSubmitting] = useState(false)
+  const [ratingSaved, setRatingSaved] = useState(false)
+  const [totalDays, setTotalDays] = useState(0)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  async function submitRating() {
-    setRatingSubmitting(true)
-    try {
+  useEffect(() => {
+    fetch('/api/health/energy-rating?count=true')
+      .then(r => r.json())
+      .then(({ count }: { count: number }) => setTotalDays(count))
+      .catch(() => {})
+  }, [])
+
+  function handleRatingChange(val: number) {
+    setRatingSlider(val)
+    setRatingSaved(false)
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(async () => {
       await fetch('/api/health/energy-rating', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rating: ratingSlider, predicted: Math.round(currentEnergy), date_key: today }),
+        body: JSON.stringify({ rating: val, predicted: Math.round(currentEnergy), date_key: today }),
       })
       qc.invalidateQueries({ queryKey: ['energy-ratings', today] })
-    } finally {
-      setRatingSubmitting(false)
-    }
+      setRatingSaved(true)
+      setTimeout(() => setRatingSaved(false), 2000)
+    }, 800)
   }
 
   const doses: DosePoint[] = useMemo(
@@ -288,6 +299,7 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
   // ── Chart paths ───────────────────────────────────────────────────────────
   const { areaPath, linePath, timeLabelHours, chartYMin, chartYMax } = useMemo(() => {
     const startH = wakeHour - CHART_START_OFFSET
+    // Fine-grained pass for accurate Y-scale bounds
     const allEnergies: number[] = []
     for (let h = startH; h <= 24; h += 0.25) {
       allEnergies.push(computeEnergy(h, wakeHour, sleepQuality, doses, workouts, meals))
@@ -298,27 +310,35 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
     const chartYMin = Math.max(0, dataMin - pad)
     const chartYMax = Math.min(100, dataMax + pad)
 
+    // 0.5h steps for path — coarser = no micro-wobble, still captures caffeine peak
     const pts: [number, number][] = []
-    let idx = 0
-    for (let h = startH; h <= 24; h += 0.25) {
-      pts.push([hToX(h, wakeHour), eToYScaled(allEnergies[idx++], chartYMin, chartYMax)])
+    for (let h = startH; h <= 24; h += 0.5) {
+      const e = computeEnergy(h, wakeHour, sleepQuality, doses, workouts, meals)
+      pts.push([hToX(h, wakeHour), eToYScaled(e, chartYMin, chartYMax)])
     }
 
-    // Bezier line path
-    let linePath = `M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`
-    for (let i = 1; i < pts.length; i++) {
-      const cx = (pts[i - 1][0] + pts[i][0]) / 2
-      linePath += ` C ${cx.toFixed(1)} ${pts[i - 1][1].toFixed(1)}, ${cx.toFixed(1)} ${pts[i][1].toFixed(1)}, ${pts[i][0].toFixed(1)} ${pts[i][1].toFixed(1)}`
+    // Catmull-Rom → smooth curve that passes through all points without overshooting
+    function catmullPath(points: [number, number][], close?: { x: number }) {
+      let d = `M ${points[0][0].toFixed(1)} ${points[0][1].toFixed(1)}`
+      for (let i = 0; i < points.length - 1; i++) {
+        const p0 = points[Math.max(0, i - 1)]
+        const p1 = points[i]
+        const p2 = points[i + 1]
+        const p3 = points[Math.min(points.length - 1, i + 2)]
+        const cp1x = p1[0] + (p2[0] - p0[0]) / 6
+        const cp1y = p1[1] + (p2[1] - p0[1]) / 6
+        const cp2x = p2[0] - (p3[0] - p1[0]) / 6
+        const cp2y = p2[1] - (p3[1] - p1[1]) / 6
+        d += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`
+      }
+      if (close) d += ` L ${pts[pts.length - 1][0].toFixed(1)} ${SVG_H} L ${close.x.toFixed(1)} ${SVG_H} Z`
+      return d
     }
 
-    // Area path (same bezier control points)
-    const first = pts[0], last = pts[pts.length - 1]
-    let areaPath = `M ${first[0].toFixed(1)} ${SVG_H} L ${first[0].toFixed(1)} ${first[1].toFixed(1)}`
-    for (let i = 1; i < pts.length; i++) {
-      const cx = (pts[i - 1][0] + pts[i][0]) / 2
-      areaPath += ` C ${cx.toFixed(1)} ${pts[i - 1][1].toFixed(1)}, ${cx.toFixed(1)} ${pts[i][1].toFixed(1)}, ${pts[i][0].toFixed(1)} ${pts[i][1].toFixed(1)}`
-    }
-    areaPath += ` L ${last[0].toFixed(1)} ${SVG_H} Z`
+    const linePath = catmullPath(pts)
+    const areaPath = `M ${pts[0][0].toFixed(1)} ${SVG_H} L ` +
+      catmullPath(pts).slice(1) +
+      ` L ${pts[pts.length - 1][0].toFixed(1)} ${SVG_H} Z`
 
     const timeLabelHours: number[] = []
     for (let h = Math.ceil(startH); h <= 24; h += 3) timeLabelHours.push(h)
@@ -681,19 +701,15 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
                   <stop offset="60%" stopColor="#4ade80" stopOpacity="0.12" />
                   <stop offset="100%" stopColor="#4ade80" stopOpacity="0.01" />
                 </linearGradient>
-                <filter id="lineGlow" x="-10%" y="-40%" width="120%" height="180%">
-                  <feGaussianBlur stdDeviation="3" result="blur" />
-                  <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-                </filter>
               </defs>
               {/* Subtle horizontal grid lines */}
               {[0.25, 0.5, 0.75].map(f => (
                 <line key={f} x1="0" y1={SVG_H * f} x2={SVG_W} y2={SVG_H * f} stroke="rgba(255,255,255,0.04)" strokeWidth="1" />
               ))}
               <path d={areaPath} fill="url(#cafAreaGrad)" />
-              <path d={linePath} fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" filter="url(#lineGlow)" />
+              <path d={linePath} fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
               {doses.map(d => (
-                <circle key={d.id} cx={hToX(d.hour, wakeHour)} cy={eToYScaled(computeEnergy(d.hour, wakeHour, sleepQuality, doses, workouts, meals), chartYMin, chartYMax)} r="4" fill="#4ade80" stroke="#050508" strokeWidth="2" style={{ filter: 'drop-shadow(0 0 4px rgba(74,222,128,0.8))' }} />
+                <circle key={d.id} cx={hToX(d.hour, wakeHour)} cy={eToYScaled(computeEnergy(d.hour, wakeHour, sleepQuality, doses, workouts, meals), chartYMin, chartYMax)} r="4.5" fill="#050508" stroke="#4ade80" strokeWidth="2" />
               ))}
               {/* Subjective rating dots */}
               {ratings.map(r => {
@@ -791,68 +807,53 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
         )}
 
         {/* ── How do you feel? ── */}
-        <div className="cosmic-card p-4">
-          <div className="flex items-center gap-2 mb-4">
-            <span className="text-[9px] font-mono text-zinc-500 tracking-[0.2em] uppercase">How do you feel right now?</span>
-            <div className="flex-1 h-px bg-white/[0.06]" />
-            <span className="text-[9px] font-mono text-zinc-700">MODEL: {Math.round(currentEnergy)}</span>
-          </div>
+        <div style={{ background: '#0a0a0d', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: '18px 20px' }}>
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <p style={{ fontFamily: 'Georgia, serif', fontStyle: 'italic', fontSize: 17, color: 'white', lineHeight: 1.2 }}>
+                How do you feel right now?
+              </p>
+              <p style={{ fontFamily: 'monospace', fontSize: 9, color: '#3f3f46', letterSpacing: '0.14em', marginTop: 5, textTransform: 'uppercase' }}>
+                Currently building a more detailed analysis · {totalDays}/30 days
+              </p>
 
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-mono text-zinc-600">Crash</span>
-            <span className="text-lg font-semibold" style={{ color: energyColor(ratingSlider) }}>
-              {energyLabel(ratingSlider)} · {ratingSlider}
-            </span>
-            <span className="text-[10px] font-mono text-zinc-600">Peak</span>
-          </div>
-
-          <input
-            type="range"
-            min={0}
-            max={100}
-            step={1}
-            value={ratingSlider}
-            onChange={e => setRatingSlider(Number(e.target.value))}
-            className="w-full h-1.5 rounded-full appearance-none cursor-pointer mb-4"
-            style={{
-              background: `linear-gradient(to right, ${energyColor(ratingSlider)} ${ratingSlider}%, rgba(255,255,255,0.1) 0%)`,
-              WebkitAppearance: 'none',
-            }}
-          />
-
-          <button
-            onClick={submitRating}
-            disabled={ratingSubmitting}
-            className="w-full rounded-xl py-2.5 text-sm font-semibold text-black active:opacity-80 disabled:opacity-50"
-            style={{ background: energyColor(ratingSlider) }}
-          >
-            {ratingSubmitting ? 'Logging…' : 'Log my energy'}
-          </button>
-
-          {ratings.length > 0 && (
-            <div className="mt-3 space-y-1.5">
-              <p className="text-[9px] font-mono text-zinc-600 uppercase tracking-widest">Today&apos;s check-ins</p>
-              {[...ratings].reverse().slice(0, 4).map(r => {
-                const h = new Date(r.logged_at)
-                const timeStr = `${h.getHours() % 12 || 12}:${String(h.getMinutes()).padStart(2, '0')}${h.getHours() < 12 ? 'am' : 'pm'}`
-                const delta = r.predicted != null ? r.rating - r.predicted : null
-                return (
-                  <div key={r.id} className="flex items-center gap-3">
-                    <span className="text-[10px] font-mono text-zinc-500 w-14">{timeStr}</span>
-                    <div className="flex-1 h-1 rounded-full bg-white/[0.06]">
-                      <div className="h-full rounded-full" style={{ width: `${r.rating}%`, background: energyColor(r.rating) }} />
-                    </div>
-                    <span className="text-[10px] font-mono w-6 text-right" style={{ color: energyColor(r.rating) }}>{r.rating}</span>
-                    {delta != null && (
-                      <span className="text-[9px] font-mono text-zinc-600 w-10 text-right">
-                        {delta > 0 ? '+' : ''}{delta} vs model
-                      </span>
-                    )}
-                  </div>
-                )
-              })}
+              {/* Slider track + thumb */}
+              <div className="relative flex items-center mt-4" style={{ height: 28 }}>
+                {/* Multicolor track */}
+                <div className="absolute inset-x-0" style={{ height: 6, borderRadius: 3, background: 'linear-gradient(to right, #ef4444, #f97316 35%, #eab308 65%, #4ade80)' }} />
+                {/* Thumb */}
+                <div
+                  className="absolute pointer-events-none"
+                  style={{
+                    left: `calc(${ratingSlider}% - 11px)`,
+                    width: 22, height: 22,
+                    borderRadius: '50%',
+                    background: 'white',
+                    boxShadow: '0 0 0 3px rgba(74,222,128,0.35), 0 0 14px rgba(74,222,128,0.55)',
+                    transition: 'left 0ms',
+                  }}
+                />
+                {/* Transparent range input on top */}
+                <input
+                  type="range" min={0} max={100} step={1}
+                  value={ratingSlider}
+                  onChange={e => handleRatingChange(Number(e.target.value))}
+                  className="absolute inset-0 w-full cursor-pointer opacity-0"
+                  style={{ height: '100%' }}
+                />
+              </div>
             </div>
-          )}
+
+            {/* Score */}
+            <div className="flex flex-col items-end shrink-0 pt-0.5">
+              <span style={{ fontFamily: 'Georgia, serif', fontStyle: 'italic', fontSize: 32, color: 'white', lineHeight: 1 }}>
+                {ratingSlider}%
+              </span>
+              <span style={{ fontFamily: 'monospace', fontSize: 9, color: ratingSaved ? '#4ade80' : '#3f3f46', marginTop: 4, letterSpacing: '0.1em', transition: 'color 300ms' }}>
+                {ratingSaved ? 'SAVED' : energyLabel(ratingSlider).toUpperCase()}
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* ── Peak windows ── (Change 2: no number prefix) */}

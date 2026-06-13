@@ -7,10 +7,21 @@ export async function GET(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { searchParams } = new URL(req.url)
+  const db = createServiceClient()
+
+  // Count distinct days with logged ratings
+  if (searchParams.get('count') === 'true') {
+    const { data } = await db
+      .from('energy_ratings')
+      .select('date_key')
+      .eq('user_id', user.id)
+    const count = new Set(data?.map((r: { date_key: string }) => r.date_key) ?? []).size
+    return NextResponse.json({ count })
+  }
+
   const date = searchParams.get('date')
   if (!date) return NextResponse.json({ error: 'date required' }, { status: 400 })
 
-  const db = createServiceClient()
   const { data } = await db
     .from('energy_ratings')
     .select('*')
