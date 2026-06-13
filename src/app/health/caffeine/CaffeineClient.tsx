@@ -608,9 +608,6 @@ export default function CaffeineClient({ initialCaffeine, today, ouraData, whoop
               <div className="flex items-center gap-1.5 mt-1">
                 <div className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />
                 <p className="text-[10px] text-zinc-400 font-mono">{formatHour(displayHour)}</p>
-                {scrubHour !== null && (
-                  <span className="text-[9px] text-zinc-600 font-mono">· Scrubbing</span>
-                )}
               </div>
             </div>
 
