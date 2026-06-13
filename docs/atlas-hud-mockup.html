@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Atlas HUD — refined mockup</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; color: #e6f6ff; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  #panel {
+    position: fixed; top: 14px; left: 14px; z-index: 10;
+    background: rgba(6,12,18,0.82); border: 1px solid rgba(80,200,255,0.18);
+    border-radius: 14px; padding: 14px 16px; width: 250px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 8px 40px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+  #panel h1 { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: #7fdfff; margin: 0 0 2px; }
+  #panel .sub { font-size: 10px; color: #5a7a8a; margin: 0 0 14px; line-height: 1.5; }
+  .group { margin-bottom: 14px; }
+  .group > .glabel { font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase;
+    color: #5a7a8a; margin-bottom: 6px; }
+  .note { font-size: 9.5px; color: #4d6a78; line-height: 1.55; margin-top: 4px; }
+  .row { display:flex; align-items:center; gap:8px; }
+  .row input[type=range]{ flex:1; accent-color:#43c4ff; }
+  .row .val{ font-size:10px; color:#7fdfff; width:34px; text-align:right; }
+  .hint { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+    z-index: 10; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: #3d5663; }
+  .hint b { color: #7fdfff; }
+  #toast { position: fixed; bottom: 56px; left: 50%; transform: translateX(-50%) translateY(10px);
+    z-index: 11; padding: 9px 16px; border-radius: 10px; font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: #001016; background: linear-gradient(180deg,#9fe8ff,#43c4ff);
+    box-shadow: 0 4px 20px rgba(80,200,255,0.45); opacity: 0; transition: .25s; pointer-events: none; }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="panel">
+  <h1>Atlas HUD · Mockup</h1>
+  <p class="sub">Holographic center = Today/home (click it). Four module planets + billboard labels. Drag to orbit · move mouse for parallax.</p>
+  <div class="group">
+    <div class="glabel">Bloom / glow</div>
+    <div class="row">
+      <input id="bloom" type="range" min="0" max="1.4" step="0.02" value="0.42" />
+      <span class="val" id="bloom-val">0.42</span>
+    </div>
+    <div class="note">Tuned low so the holographic grid + dotted continents stay readable — no white blob.</div>
+  </div>
+  <div class="group">
+    <div class="glabel">Self-rotation</div>
+    <div class="row">
+      <input id="spin" type="range" min="0" max="0.3" step="0.01" value="0.08" />
+      <span class="val" id="spin-val">0.08</span>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div class="hint">Click a planet — fixed positions mean clicks <b>always</b> land. Center → <b>home</b>.</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// ─── Renderer / scene / camera ────────────────────────────────────────────────
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x000308, 0.018);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
+camera.position.set(0, 0.6, 8.5);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor = 0.08;
+controls.enablePan = false; controls.minDistance = 5; controls.maxDistance = 14;
+
+const world = new THREE.Group();
+scene.add(world);
+
+// ─── Lights ───────────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x223344, 0.6));
+const key = new THREE.DirectionalLight(0x9fd8ff, 2.0); key.position.set(4, 3, 5); scene.add(key);
+const rim = new THREE.DirectionalLight(0x3a6cff, 1.2); rim.position.set(-5, -2, -3); scene.add(rim);
+
+// ─── Starfield ──────────────────────────────────────────────────────────────
+(function stars() {
+  const N = 1400, pos = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    const r = 30 + Math.random() * 40;
+    const t = Math.random() * Math.PI * 2, p = Math.acos(2 * Math.random() - 1);
+    pos[i*3]=r*Math.sin(p)*Math.cos(t); pos[i*3+1]=r*Math.sin(p)*Math.sin(t); pos[i*3+2]=r*Math.cos(p);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0x99c0d8, size: 0.11,
+    sizeAttenuation: true, transparent: true, opacity: 0.75 })));
+})();
+
+// ─── GLSL noise helpers ───────────────────────────────────────────────────────
+const NOISE = /* glsl */`
+  vec2 hash2(vec2 p){ p = vec2(dot(p,vec2(127.1,311.7)), dot(p,vec2(269.5,183.3)));
+    return fract(sin(p)*43758.5453); }
+  float vnoise(vec2 p){
+    vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+    float a=hash2(i).x, b=hash2(i+vec2(1,0)).x, c=hash2(i+vec2(0,1)).x, d=hash2(i+vec2(1,1)).x;
+    return mix(mix(a,b,f.x), mix(c,d,f.x), f.y);
+  }
+  float fbm(vec2 p){ float v=0.0,a=0.5; for(int i=0;i<5;i++){ v+=a*vnoise(p); p*=2.0; a*=0.5; } return v; }
+`;
+
+// ─── Atlas holographic planet (center = Today / home) ──────────────────────────
+const atlasGroup = new THREE.Group(); world.add(atlasGroup);
+const ATLAS_R = 1.4;
+
+const holoMat = new THREE.ShaderMaterial({
+  transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+  uniforms: { uTime: { value: 0 } },
+  vertexShader: /* glsl */`
+    varying vec2 vUv; varying vec3 vNormal; varying vec3 vView;
+    void main(){ vUv = uv; vNormal = normalize(normalMatrix * normal);
+      vec4 mv = modelViewMatrix * vec4(position,1.0); vView = normalize(-mv.xyz);
+      gl_Position = projectionMatrix * mv; }`,
+  fragmentShader: NOISE + /* glsl */`
+    varying vec2 vUv; varying vec3 vNormal; varying vec3 vView; uniform float uTime;
+    void main(){
+      // fine lat/long grid
+      vec2 g = vUv * vec2(48.0, 24.0);
+      vec2 grid = abs(fract(g - 0.5) - 0.5) / fwidth(g);
+      float line = (1.0 - clamp(min(grid.x, grid.y), 0.0, 1.0)) * 0.45;
+      // halftone dotted continents
+      float land = smoothstep(0.52, 0.70, fbm(vUv * 6.0 + 3.0));
+      vec2 hp = vUv * vec2(170.0, 85.0);
+      vec2 cell = fract(hp) - 0.5;
+      float dotv = smoothstep(0.42, 0.28, length(cell));
+      float continents = dotv * land;
+      // fresnel rim
+      float fres = pow(1.0 - max(dot(vNormal, vView), 0.0), 3.0);
+      // slow scan sweep in latitude
+      float scan = smoothstep(0.025, 0.0, abs(fract(vUv.y - uTime*0.05) - 0.5)) * 0.5;
+      vec3 cyan = vec3(0.34, 0.85, 1.0);
+      float intensity = line + continents*1.0 + fres*1.05 + scan;
+      vec3 col = cyan * intensity;
+      float alpha = clamp(line*0.55 + continents*0.85 + fres*0.7 + scan*0.55, 0.0, 0.8);
+      if (!gl_FrontFacing) { col *= 0.45; alpha *= 0.45; }   // back faces fainter → see-through depth
+      gl_FragColor = vec4(col, alpha);
+    }`,
+});
+const atlasMesh = new THREE.Mesh(new THREE.SphereGeometry(ATLAS_R, 128, 128), holoMat);
+atlasGroup.add(atlasMesh);
+
+// atmosphere rim shell
+const atmo = new THREE.Mesh(new THREE.SphereGeometry(ATLAS_R*1.13, 64, 64), new THREE.ShaderMaterial({
+  transparent: true, blending: THREE.AdditiveBlending, side: THREE.BackSide, depthWrite: false,
+  vertexShader: `varying vec3 vN; varying vec3 vV; void main(){ vN=normalize(normalMatrix*normal);
+    vec4 mv=modelViewMatrix*vec4(position,1.0); vV=normalize(-mv.xyz); gl_Position=projectionMatrix*mv; }`,
+  fragmentShader: `varying vec3 vN; varying vec3 vV; void main(){
+    float f=pow(1.0-max(dot(vN,vV),0.0),3.5); gl_FragColor=vec4(vec3(0.3,0.7,1.0)*f, f*0.85); }`,
+}));
+atlasGroup.add(atmo);
+
+// scan rings around Atlas
+const rings = new THREE.Group();
+for (let i = 0; i < 2; i++) {
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(ATLAS_R*1.28, 0.005, 8, 160),
+    new THREE.MeshBasicMaterial({ color: 0x5fd8ff, transparent: true, opacity: 0.4 }));
+  ring.rotation.x = Math.PI/2 + i*0.5; rings.add(ring);
+}
+atlasGroup.add(rings);
+
+// ─── Satellites (4 modules) + billboard labels ─────────────────────────────────
+const MODULES = [
+  { id:'gym',     label:'Gym',     href:'/gym',     color:0x4ade80 },  // green
+  { id:'health',  label:'Health',  href:'/health',  color:0x3b82f6 },  // blue
+  { id:'journal', label:'Journal', href:'/journal', color:0xfb923c },  // orange
+  { id:'mentor',  label:'Mentor',  href:'/mentor',  color:0xa855f7 },  // purple
+];
+const ORBIT_R = 3.5;
+const clickable = [];          // meshes the raycaster checks
+const satellites = [];
+
+function billboardLabel(text, hex) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+  const ctx = c.getContext('2d');
+  ctx.font = '800 30px ui-monospace, Menlo, monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.shadowColor = hex; ctx.shadowBlur = 16; ctx.fillStyle = hex;
+  ctx.fillText(text.toUpperCase(), 128, 34); ctx.fillText(text.toUpperCase(), 128, 34);
+  const tex = new THREE.CanvasTexture(c); tex.anisotropy = 4;
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  spr.scale.set(1.5, 0.38, 1);
+  return spr;
+}
+
+MODULES.forEach((m, i) => {
+  const ang = (i / MODULES.length) * Math.PI * 2 + Math.PI/4;
+  const pos = new THREE.Vector3(Math.cos(ang)*ORBIT_R, Math.sin(ang)*0.6, Math.sin(ang)*ORBIT_R);
+  const hex = '#' + m.color.toString(16).padStart(6, '0');
+
+  const grp = new THREE.Group(); grp.position.copy(pos); world.add(grp);
+
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.44, 48, 48), new THREE.MeshStandardMaterial({
+    color: m.color, roughness: 0.55, metalness: 0.1, emissive: m.color, emissiveIntensity: 0.16 }));
+  mesh.userData = { module: m };
+  grp.add(mesh); clickable.push(mesh);
+
+  const sAtmo = new THREE.Mesh(new THREE.SphereGeometry(0.50, 32, 32), new THREE.ShaderMaterial({
+    transparent:true, blending:THREE.AdditiveBlending, side:THREE.BackSide, depthWrite:false,
+    uniforms:{ uColor:{ value:new THREE.Color(m.color) } },
+    vertexShader:`varying vec3 vN; varying vec3 vV; void main(){ vN=normalize(normalMatrix*normal);
+      vec4 mv=modelViewMatrix*vec4(position,1.0); vV=normalize(-mv.xyz); gl_Position=projectionMatrix*mv; }`,
+    fragmentShader:`uniform vec3 uColor; varying vec3 vN; varying vec3 vV; void main(){
+      float f=pow(1.0-max(dot(vN,vV),0.0),3.0); gl_FragColor=vec4(uColor*f, f*0.8); }`,
+  }));
+  grp.add(sAtmo);
+
+  const label = billboardLabel(m.label, hex); label.position.set(0, 0.8, 0); grp.add(label);
+  satellites.push({ grp, mesh, baseY: pos.y, phase: i, base: 0.44 });
+});
+
+// center Atlas is clickable too (→ home)
+atlasMesh.userData = { module: { id:'today', label:'Atlas · Today', href:'/' } };
+clickable.push(atlasMesh);
+
+// faint orbit guide
+const orbitRing = new THREE.Mesh(new THREE.RingGeometry(ORBIT_R-0.01, ORBIT_R+0.01, 160),
+  new THREE.MeshBasicMaterial({ color: 0x2a5566, transparent: true, opacity: 0.22, side: THREE.DoubleSide }));
+orbitRing.rotation.x = Math.PI/2; world.add(orbitRing);
+
+// ─── Postprocessing ────────────────────────────────────────────────────────────
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.42, 0.7, 0.0);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+// ─── UI ─────────────────────────────────────────────────────────────────────
+const bloomSlider = document.getElementById('bloom'), bloomVal = document.getElementById('bloom-val');
+bloomSlider.addEventListener('input', () => { bloom.strength = +bloomSlider.value; bloomVal.textContent = bloomSlider.value; });
+const spinSlider = document.getElementById('spin'), spinVal = document.getElementById('spin-val');
+let spinSpeed = 0.08;
+spinSlider.addEventListener('input', () => { spinSpeed = +spinSlider.value; spinVal.textContent = spinSlider.value; });
+
+// ─── Raycast: hover + click ────────────────────────────────────────────────────
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
+let hovered = null;
+const toast = document.getElementById('toast'); let toastT;
+function showToast(txt) { toast.textContent = txt; toast.classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(() => toast.classList.remove('show'), 1400); }
+
+function pick(e) {
+  mouse.x = (e.clientX/innerWidth)*2 - 1; mouse.y = -(e.clientY/innerHeight)*2 + 1;
+  ray.setFromCamera(mouse, camera);
+  return ray.intersectObjects(clickable, false)[0]?.object ?? null;
+}
+renderer.domElement.addEventListener('pointermove', e => {
+  hovered = pick(e); renderer.domElement.style.cursor = hovered ? 'pointer' : 'default';
+});
+renderer.domElement.addEventListener('click', e => {
+  const hit = pick(e); if (!hit) return;
+  const mod = hit.userData.module;
+  showToast(`→ would navigate to ${mod.href}`);
+});
+
+// ─── Parallax + resize + loop ──────────────────────────────────────────────────
+const target = { x: 0, y: 0 };
+addEventListener('mousemove', e => { target.x=(e.clientX/innerWidth-0.5)*2; target.y=(e.clientY/innerHeight-0.5)*2; });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight);
+  bloom.setSize(innerWidth, innerHeight);
+});
+
+const clock = new THREE.Clock();
+function tick() {
+  const t = clock.getElapsedTime();
+  holoMat.uniforms.uTime.value = t;
+  atlasMesh.rotation.y = t * spinSpeed;
+  rings.rotation.y = -t * 0.12; rings.rotation.z = Math.sin(t*0.3)*0.15;
+
+  world.rotation.y += (target.x*0.25 - world.rotation.y)*0.04;
+  world.rotation.x += (target.y*0.18 - world.rotation.x)*0.04;
+
+  satellites.forEach(s => {
+    s.grp.position.y = s.baseY + Math.sin(t*0.6 + s.phase)*0.1;
+    s.mesh.rotation.y = t * 0.2;
+    const want = (hovered === s.mesh) ? 1.18 : 1.0;
+    const k = s.mesh.scale.x + (want - s.mesh.scale.x)*0.15;
+    s.mesh.scale.setScalar(k);
+  });
+
+  controls.update();
+  composer.render();
+  requestAnimationFrame(tick);
+}
+tick();
+</script>
+</body>
+</html>

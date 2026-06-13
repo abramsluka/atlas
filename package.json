@@ -12,9 +12,13 @@
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.1",
+    "@react-three/postprocessing": "^3.0.4",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.106.1",
     "@tanstack/react-query": "^5.100.11",
+    "@types/three": "^0.184.1",
     "barcode-detector": "^3.2.0",
     "date-fns": "^4.2.1",
     "date-fns-tz": "^3.2.0",
@@ -23,6 +27,7 @@
     "openai": "^6.39.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "three": "^0.184.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

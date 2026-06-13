@@ -2182,6 +2182,7 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
   const updateMeal = useUpdateFoodLog()
   const deleteMeal = useDeleteFoodLog()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const libraryInputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [editingMeal, setEditingMeal] = useState<FoodLog | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
@@ -2348,13 +2349,38 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
             className="hidden"
             onChange={handlePhoto}
           />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="w-full rounded-xl border border-white/[0.12] py-2.5 text-sm font-semibold text-white disabled:opacity-50 hover:bg-white/[0.04] transition-colors"
-          >
-            {uploading ? 'Estimating…' : '📷 Snap a meal'}
-          </button>
+          <input
+            ref={libraryInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handlePhoto}
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-white/[0.12] py-3 text-white disabled:opacity-50 hover:bg-white/[0.04] active:opacity-70 transition-colors"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-300">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+              </svg>
+              <span className="text-xs font-semibold text-zinc-300">{uploading ? 'Estimating…' : 'Camera'}</span>
+            </button>
+            <button
+              onClick={() => libraryInputRef.current?.click()}
+              disabled={uploading}
+              className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-white/[0.12] py-3 text-white disabled:opacity-50 hover:bg-white/[0.04] active:opacity-70 transition-colors"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-300">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21 15 16 10 5 21"/>
+              </svg>
+              <span className="text-xs font-semibold text-zinc-300">{uploading ? 'Estimating…' : 'Library'}</span>
+            </button>
+          </div>
           <div className="grid grid-cols-3 gap-2">
             <button
               onClick={() => setWizardKind('food')}
