@@ -4,6 +4,7 @@ import { useMemo, useRef } from 'react'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { useTexture } from '@react-three/drei'
 import * as THREE from 'three'
+import GlobeFx from './GlobeFx'
 
 // ─── Central Atlas globe (ported from docs/atlas-globe-lab.html, settings locked) ──
 // Real Earth continents (halftone dots from earth-water mask), multi-tone blue with
@@ -49,37 +50,43 @@ const GLOBE_FRAG =
     // continents from real Earth mask → halftone dots (uDotSize opens the spacing)
     float land = smoothstep(0.42,0.55, landVal);
     vec2 hp = vUv*vec2(uDotFreq, uDotFreq*0.5);
-    float dotv = smoothstep(uDotSize, uDotSize-0.14, length(fract(hp)-0.5));
+    float dd = length(fract(hp)-0.5);
+    float dotCore = smoothstep(uDotSize, uDotSize-0.10, dd);          // crisp bright core
+    float dotHalo = smoothstep(uDotSize+0.22, uDotSize-0.04, dd);     // soft glow around each dot
+    float dotv = dotCore + dotHalo*0.55;
     float continents = dotv*land;
     float coast = smoothstep(0.34,0.5,landVal) * (1.0 - smoothstep(0.5,0.66,landVal));
 
-    float fres = pow(1.0-max(dot(vN,vV),0.0),3.0);
+    float fres = gl_FrontFacing ? pow(1.0-max(dot(vN,vV),0.0),3.0) : 0.0;  // no rim fill on back faces
     float scan = smoothstep(0.02,0.0,abs(fract(vUv.y-uTime*0.04)-0.5)) * uScan;
 
     // directional shading → continents get a lit (lighter) and shadowed (darker) side
     float diff = max(dot(normalize(vWN), normalize(uLightDir)), 0.0);
     float shade = 0.40 + 0.60 * diff;
 
-    // darker, deeper-blue palette (less near-white cyan)
-    vec3 deepOcean = vec3(0.006,0.018,0.045);
-    vec3 midBlue   = vec3(0.04,0.15,0.34);
-    vec3 cyan      = vec3(0.20,0.54,0.85);
-    vec3 brightBlue= vec3(0.42,0.72,1.0);
+    // electric-cyan holographic palette with cross-surface shade variation
+    vec3 deepOcean = vec3(0.0,0.0,0.0);   // fully black — see straight through
+    vec3 midOcean  = vec3(0.0,0.0,0.0);
+    vec3 cyan      = vec3(0.13,0.55,1.0);       // vibrant electric blue
+    vec3 brightCy  = vec3(0.45,0.90,1.0);       // bright cyan-white highlight
 
-    float oceanN = fbm3(normalize(vPos)*2.2);
-    vec3 ocean  = mix(deepOcean, midBlue*0.5, oceanN*0.6);
-    vec3 dotCol = mix(cyan, brightBlue, clamp(topo*1.3 + oceanN*0.2, 0.0, 1.0));
+    float nLarge = fbm3(normalize(vPos)*1.6);   // large-scale shade drift across the globe
+    float nFine  = fbm3(normalize(vPos)*7.0);   // dot-to-dot variation
+    float dotVar = 0.60 + nFine*0.75;
+
+    vec3 ocean  = mix(deepOcean, midOcean, nLarge*0.5);
+    vec3 dotCol = mix(cyan, brightCy, clamp(topo*0.8 + nFine*0.6, 0.0, 1.0));
 
     vec3 col = ocean;
-    col += cyan      * line * 0.30;
-    col += dotCol    * continents * uBright * shade;
-    col += brightBlue* coast * 0.40 * shade;
-    col += cyan      * fres * 0.60;
-    col += brightBlue* scan * 0.32;
+    col += cyan     * line * 0.10;
+    col += dotCol   * continents * uBright * shade * dotVar;
+    col += brightCy * coast * 0.45 * shade;
+    col += cyan     * fres * 0.65;
+    col += brightCy * scan * 0.34;
 
-    float feat = clamp(line*0.35 + continents*0.78 + coast*0.4 + scan*0.4, 0.0, 1.0);
+    float feat = clamp(line*0.12 + continents*0.92 + coast*0.4 + scan*0.4, 0.0, 1.0);
     float alpha = clamp(uOcean + feat*0.78 + fres*0.55, 0.0, 0.96);
-    if(!gl_FrontFacing){ col*=0.40; alpha*=0.45; }
+    if(!gl_FrontFacing){ col*=0.42; alpha*=0.42; }  // back continents faintly visible through the front
     gl_FragColor = vec4(col, alpha);
   }
 `
@@ -108,11 +115,25 @@ const ATMO_VERT = /* glsl */ `
 `
 const ATMO_FRAG = /* glsl */ `
   varying vec3 vN; varying vec3 vV;
-  void main(){ float f = pow(1.0 - max(dot(vN, vV), 0.0), 4.5);
-    gl_FragColor = vec4(vec3(0.26, 0.56, 1.0) * f, f * 0.42); }
+  void main(){ float f = pow(1.0 - max(dot(vN, vV), 0.0), 5.5);  // high power → thin bright rim ring
+    gl_FragColor = vec4(vec3(0.42, 0.84, 1.0) * f, f * 0.9); }
 `
 
 const ARC_BLUES = [0x5fc8ff, 0x8fdcff, 0x4aa8ff, 0xaee4ff, 0x6fd0ff]
+
+// Soft radial-gradient sprite — fakes a glow halo (no post-processing bloom).
+function makeGlowTexture() {
+  const c = document.createElement('canvas')
+  c.width = c.height = 64
+  const x = c.getContext('2d')!
+  const g = x.createRadialGradient(32, 32, 0, 32, 32, 32)
+  g.addColorStop(0, 'rgba(210,242,255,1)')
+  g.addColorStop(0.28, 'rgba(127,223,255,0.55)')
+  g.addColorStop(1, 'rgba(127,223,255,0)')
+  x.fillStyle = g
+  x.fillRect(0, 0, 64, 64)
+  return new THREE.CanvasTexture(c)
+}
 
 function makeHexTexture() {
   const c = document.createElement('canvas')
@@ -155,8 +176,8 @@ export default function AtlasPlanet({ onSelect }: { onSelect: () => void }) {
     const globeMat = new THREE.ShaderMaterial({
       transparent: true, blending: THREE.NormalBlending, depthWrite: false, side: THREE.DoubleSide,
       uniforms: {
-        uTime: { value: 0 }, uBright: { value: 1.5 }, uDotFreq: { value: 270 }, uDotSize: { value: 0.37 },
-        uOcean: { value: 0.14 }, uGrid: { value: 1 }, uScan: { value: 1 }, uFlipU: { value: 0 }, uInvert: { value: 0 },
+        uTime: { value: 0 }, uBright: { value: 2.0 }, uDotFreq: { value: 340 }, uDotSize: { value: 0.35 },
+        uOcean: { value: 0.0 }, uGrid: { value: 1 }, uScan: { value: 1 }, uFlipU: { value: 0 }, uInvert: { value: 0 },
         uLand: { value: landTex }, uTopo: { value: topoTex },
         uLightDir: { value: new THREE.Vector3(0.7, 0.35, 0.6).normalize() },
       },
@@ -167,16 +188,17 @@ export default function AtlasPlanet({ onSelect }: { onSelect: () => void }) {
     const sp: number[] = [], tp: number[] = []
     for (let i = 0; i < 65; i++) {
       const dir = randDir()
-      const len = ATLAS_R * (0.1 + Math.random() * 0.3)
+      const len = ATLAS_R * (0.15 + Math.random() * 0.45)
       const base = dir.clone().multiplyScalar(ATLAS_R * 1.01)
       const tip = dir.clone().multiplyScalar(ATLAS_R * 1.01 + len)
       sp.push(base.x, base.y, base.z, tip.x, tip.y, tip.z)
       tp.push(tip.x, tip.y, tip.z)
     }
     const spG = new THREE.BufferGeometry(); spG.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3))
-    const spikes = new THREE.LineSegments(spG, new THREE.LineBasicMaterial({ color: 0x6fd8ff, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending }))
+    const spikes = new THREE.LineSegments(spG, new THREE.LineBasicMaterial({ color: 0x8fe0ff, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending }))
     const tpG = new THREE.BufferGeometry(); tpG.setAttribute('position', new THREE.Float32BufferAttribute(tp, 3))
-    const tips = new THREE.Points(tpG, new THREE.PointsMaterial({ color: 0x9fe8ff, size: 0.035, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending }))
+    // glowing tips (soft sprite halo)
+    const tips = new THREE.Points(tpG, new THREE.PointsMaterial({ map: makeGlowTexture(), color: 0xcfeeff, size: 0.16, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }))
 
     // POI hex-nodes on the geography
     const hex = makeHexTexture()
@@ -203,8 +225,8 @@ export default function AtlasPlanet({ onSelect }: { onSelect: () => void }) {
 
     // comet-traced orbit arcs (5)
     const arcs: { line: THREE.Line; mat: THREE.ShaderMaterial; speed: number; dir: number }[] = []
-    for (let i = 0; i < 5; i++) {
-      const rad = ATLAS_R * (1.1 + i * 0.08)
+    for (let i = 0; i < 8; i++) {
+      const rad = ATLAS_R * (1.08 + i * 0.06)
       const segs = 256, pos: number[] = [], aT: number[] = []
       for (let s = 0; s <= segs; s++) { const a = (s / segs) * 6.283; pos.push(Math.cos(a) * rad, 0, Math.sin(a) * rad); aT.push(s / segs) }
       const ag = new THREE.BufferGeometry()
@@ -220,12 +242,25 @@ export default function AtlasPlanet({ onSelect }: { onSelect: () => void }) {
       arcs.push({ line, mat, speed: 0.06 + Math.random() * 0.1, dir: Math.random() < 0.5 ? 1 : -1 })
     }
 
+    // Large dotted ring well outside the globe — encompasses the orbital rings.
+    const ringN = 340, ringR = ATLAS_R * 1.55, rp = new Float32Array(ringN * 3)
+    for (let i = 0; i < ringN; i++) {
+      const a = (i / ringN) * Math.PI * 2
+      rp[i * 3] = Math.cos(a) * ringR; rp[i * 3 + 1] = 0; rp[i * 3 + 2] = Math.sin(a) * ringR
+    }
+    const ringG = new THREE.BufferGeometry()
+    ringG.setAttribute('position', new THREE.BufferAttribute(rp, 3))
+    const dottedRing = new THREE.Points(ringG, new THREE.PointsMaterial({
+      color: 0x7fdfff, size: 0.05, transparent: true, opacity: 0.65, blending: THREE.AdditiveBlending,
+    }))
+
+    // thin bright rim ring around the globe (the "outer ring")
     const atmoMat = new THREE.ShaderMaterial({
-      transparent: true, blending: THREE.AdditiveBlending, side: THREE.BackSide, depthWrite: false,
+      transparent: true, blending: THREE.AdditiveBlending, side: THREE.FrontSide, depthWrite: false,
       vertexShader: ATMO_VERT, fragmentShader: ATMO_FRAG,
     })
 
-    return { globeMat, spikes, tips, pois, poiData, skyDots, arcs, atmoMat }
+    return { globeMat, spikes, tips, pois, poiData, skyDots, arcs, dottedRing, atmoMat }
   }, [landTex, topoTex])
 
   useFrame((state) => {
@@ -271,11 +306,19 @@ export default function AtlasPlanet({ onSelect }: { onSelect: () => void }) {
         <primitive key={i} object={a.line} />
       ))}
 
-      {/* atmospheric rim glow */}
+      {/* dotted ring around the globe (no blue halo; dark space between) */}
+      <group rotation={[0.5, 0, 0.18]}>
+        <primitive object={built.dottedRing} />
+      </group>
+
+      {/* thin bright rim ring around the planet (the outer ring) */}
       <mesh>
-        <sphereGeometry args={[ATLAS_R * 1.12, 64, 64]} />
+        <sphereGeometry args={[ATLAS_R * 1.03, 64, 64]} />
         <primitive object={built.atmoMat} attach="material" />
       </mesh>
+
+      {/* plexus web, tick strip, geodesic arcs — reference HUD detail */}
+      <GlobeFx R={ATLAS_R} />
     </group>
   )
 }

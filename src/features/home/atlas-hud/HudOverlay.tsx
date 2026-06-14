@@ -229,8 +229,8 @@ export default function HudOverlay() {
       }} />
       <Corner pos="tl" /><Corner pos="tr" /><Corner pos="bl" /><Corner pos="br" />
 
-      {/* LEFT column */}
-      <div className="absolute left-3 sm:left-5 top-5 flex flex-col gap-3 w-[168px] sm:w-[250px]">
+      {/* LEFT column — hidden on mobile (just the globe there) */}
+      <div className="absolute left-3 sm:left-5 top-5 hidden sm:flex flex-col gap-3 w-[168px] sm:w-[250px]">
         <Panel label="Day"><DayArc ring={ring} /></Panel>
         <Panel label="Scan" className="hidden sm:block"><Radar /></Panel>
         {call && (
@@ -249,8 +249,8 @@ export default function HudOverlay() {
         )}
       </div>
 
-      {/* RIGHT column (below the view-toggle button) */}
-      <div className="absolute right-3 sm:right-5 top-[64px] flex flex-col gap-3 w-[160px] sm:w-[238px]">
+      {/* RIGHT column — hidden on mobile (just the globe there) */}
+      <div className="absolute right-3 sm:right-5 top-[64px] hidden sm:flex flex-col gap-3 w-[160px] sm:w-[238px]">
         <Panel label="Vitals">
           <div className="space-y-1.5">
             <StatRow k="Train" v={trainV} />
