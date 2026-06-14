@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useFoodCoachMessages } from '@/features/food/queries'
+import { useStickToBottom } from '@/lib/useStickToBottom'
 import type { FoodLog } from '@/features/food/types'
 
 const CHIPS = [
@@ -37,6 +38,7 @@ export function FoodCoachSection({ today, meals, profile }: Props) {
   const [inputText, setInputText] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const threadEndRef = useRef<HTMLDivElement>(null)
+  const { scrollToBottom, stuck } = useStickToBottom()
 
   const generateSummary = useCallback(async () => {
     if (summaryGenerating) return
@@ -71,6 +73,7 @@ export function FoodCoachSection({ today, meals, profile }: Props) {
     setAskStream('')
     setPendingQuestion(question)
     setInputText('')
+    stuck.current = true // user initiated — resume following
     setTimeout(() => threadEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
     try {
       const res = await fetch('/api/health/food/coach', {
@@ -85,7 +88,7 @@ export function FoodCoachSection({ today, meals, profile }: Props) {
         const { done, value } = await reader.read()
         if (done) break
         setAskStream(prev => prev + decoder.decode(value))
-        threadEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+        scrollToBottom(threadEndRef.current)
       }
       await qc.invalidateQueries({ queryKey: ['food-coach', today] })
       setAskStream('')

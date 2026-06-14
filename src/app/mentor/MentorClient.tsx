@@ -11,6 +11,7 @@ import {
   useLatestSynthesis,
 } from '@/features/mentor/queries'
 import { useCreateJot, useGenerateWeeklyReport, useRunSynthesis } from '@/features/mentor/mutations'
+import { useStickToBottom } from '@/lib/useStickToBottom'
 import type { ChatMessage } from '@/features/mentor/types'
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -641,6 +642,7 @@ export default function MentorClient() {
   const [flightPill, setFlightPill] = useState<number | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const { scrollToBottom, stuck } = useStickToBottom()
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const promptPillsRef = useRef<HTMLDivElement>(null)
 
@@ -667,10 +669,10 @@ export default function MentorClient() {
   const { data: jotsData } = useJots()
   const totalJots = jotsData?.total_count ?? 0
 
-  // Auto-scroll
+  // Auto-scroll — follows the stream only while the user is pinned to bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, streaming])
+    scrollToBottom(messagesEndRef.current, !streaming)
+  }, [messages, streaming, scrollToBottom])
 
   // Invalidate context after messages (to pick up profile updates)
   useEffect(() => {
@@ -682,6 +684,7 @@ export default function MentorClient() {
 
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || streaming) return
+    stuck.current = true // user initiated — resume following
     const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: 'user', content: text.trim() }
     setMessages(prev => [...prev, userMsg])
     setInput('')
