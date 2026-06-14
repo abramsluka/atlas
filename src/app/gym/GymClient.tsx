@@ -16,6 +16,7 @@ import {
 } from '@/features/gym/mutations'
 import type { GymConfig, GymExercise, GymLog, BodyWeight, Prescription, ProgressPhoto } from '@/features/gym/types'
 import ProtocolCard from './ProtocolCard'
+import { useStickToBottom } from '@/lib/useStickToBottom'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -442,8 +443,11 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const [coachStreaming, setCoachStreaming] = useState(false)
   const [coachMode, setCoachMode] = useState<'devil' | 'angel' | null>(null)
   const [logSetFlash, setLogSetFlash] = useState(false)
+  const { scrollToBottom, stuck } = useStickToBottom()
+  const coachEndRef = useRef<HTMLDivElement>(null)
 
   async function streamCoach(mode: 'devil' | 'angel') {
+    stuck.current = true // user initiated — resume following
     setCoachMode(mode)
     setCoachStreaming(true)
     setCoachText('')
@@ -464,6 +468,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
         const { value, done } = await reader.read()
         if (done) break
         setCoachText(prev => prev + decoder.decode(value))
+        scrollToBottom(coachEndRef.current)
       }
     } finally {
       setCoachStreaming(false)
@@ -1160,6 +1165,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
               </motion.div>
             )}
           </AnimatePresence>
+          <div ref={coachEndRef} />
         </motion.section>
 
         {/* ── PO Coach ──────────────────────────────────────────────── */}

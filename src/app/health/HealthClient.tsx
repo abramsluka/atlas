@@ -30,6 +30,7 @@ import { resizeImage } from '@/features/food/resize'
 import { FoodWizardSheet, BarcodeFlow, FrequentsRow } from './FoodEntry'
 import { PhotoMealCard } from './PhotoMealCard'
 import { FoodCoachSection } from './FoodCoachSection'
+import { useStickToBottom } from '@/lib/useStickToBottom'
 import type { FoodLog } from '@/features/food/types'
 import type {
   Supplement,
@@ -2603,8 +2604,11 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
 function HealthCoach() {
   const [text, setText] = useState('')
   const [streaming, setStreaming] = useState(false)
+  const { scrollToBottom, stuck } = useStickToBottom()
+  const coachEndRef = useRef<HTMLDivElement>(null)
 
   async function run() {
+    stuck.current = true // user initiated — resume following
     setStreaming(true)
     setText('')
     try {
@@ -2619,6 +2623,7 @@ function HealthCoach() {
         const { value, done } = await reader.read()
         if (done) break
         setText(prev => prev + decoder.decode(value))
+        scrollToBottom(coachEndRef.current)
       }
     } finally {
       setStreaming(false)
@@ -2637,6 +2642,7 @@ function HealthCoach() {
       {text && (
         <p className="mt-3 text-sm leading-relaxed text-zinc-300">{text}</p>
       )}
+      <div ref={coachEndRef} />
     </section>
   )
 }

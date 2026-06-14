@@ -10,6 +10,7 @@ import { useSaveEveningCheckin } from '@/features/workouts/mutations'
 import type { DailyCheckin } from '@/features/workouts/types'
 import type { BentoStats } from '@/app/api/home/bento-stats/route'
 import { computeRing, CIRC, type RingState } from '@/features/home/dayRing'
+import { useStickToBottom } from '@/lib/useStickToBottom'
 
 // Code-split the Three.js HUD so it never enters the main bundle — loads only
 // when the user opens map view. ssr:false because it's a WebGL/client-only view.
@@ -670,6 +671,8 @@ function BriefingCard() {
   const [coachText, setCoachText] = useState('')
   const [coachStreaming, setCoachStreaming] = useState(false)
   const [loading, setLoading] = useState(true)
+  const { scrollToBottom, stuck } = useStickToBottom()
+  const coachEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     fetch('/api/home/briefing')
@@ -680,6 +683,7 @@ function BriefingCard() {
 
   async function streamBriefing() {
     if (coachStreaming) return
+    stuck.current = true // user initiated — resume following
     setCoachStreaming(true)
     setCoachText('')
     try {
@@ -694,6 +698,7 @@ function BriefingCard() {
         const { value, done } = await reader.read()
         if (done) break
         setCoachText(prev => prev + decoder.decode(value))
+        scrollToBottom(coachEndRef.current)
       }
     } finally {
       setCoachStreaming(false)
@@ -732,6 +737,7 @@ function BriefingCard() {
           )}
         </p>
       )}
+      <div ref={coachEndRef} />
       {!loading && !coachText && coachStreaming && (
         <p className="text-sm text-zinc-500 mb-4 leading-relaxed">
           Reading your data
