@@ -8,7 +8,6 @@ import { useJournalEntry } from '@/features/journal/queries'
 import { useUpdateEntry, useDeleteEntry } from '@/features/journal/mutations'
 import type { JournalEntry } from '@/features/journal/types'
 import { useVoiceRecorder, formatElapsed } from '@/features/journal/useVoiceRecorder'
-import { useStickToBottom } from '@/lib/useStickToBottom'
 
 interface Props {
   initialEntry: JournalEntry
@@ -77,8 +76,6 @@ export default function EntryDetail({ initialEntry }: Props) {
   const rec = useVoiceRecorder()
 
   const bodyTextareaRef = useRef<HTMLTextAreaElement>(null)
-  const { scrollToBottom, stuck } = useStickToBottom()
-  const replyEndRef = useRef<HTMLDivElement>(null)
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   function autoGrow(el: HTMLTextAreaElement) {
@@ -111,7 +108,6 @@ export default function EntryDetail({ initialEntry }: Props) {
   }
 
   async function handleGetReflection() {
-    stuck.current = true // user initiated — resume following
     setStreaming(true)
     setStreamError(null)
     setReflectionText('')
@@ -129,9 +125,7 @@ export default function EntryDetail({ initialEntry }: Props) {
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        setReflectionText((prev) => prev + decoder.decode(value, { stream: true }))
-        scrollToBottom(replyEndRef.current)
-      }
+        setReflectionText((prev) => prev + decoder.decode(value, { stream: true }))      }
 
       queryClient.invalidateQueries({ queryKey: ['journal', entry.id] })
     } catch (err) {
@@ -176,7 +170,6 @@ export default function EntryDetail({ initialEntry }: Props) {
   async function handleVoiceReply() {
     const file = rec.toFile()
     if (!file || isReplying) return
-    stuck.current = true // user initiated — resume following
     setIsReplying(true)
     setStreamingReply('')
     setReplyError(null)
@@ -192,9 +185,7 @@ export default function EntryDetail({ initialEntry }: Props) {
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        setStreamingReply(prev => prev + decoder.decode(value, { stream: true }))
-        scrollToBottom(replyEndRef.current)
-      }
+        setStreamingReply(prev => prev + decoder.decode(value, { stream: true }))      }
 
       setStreamingReply('')
       rec.reset()
@@ -210,7 +201,6 @@ export default function EntryDetail({ initialEntry }: Props) {
   async function handleReply() {
     const userMsg = replyText.trim()
     if (!userMsg || isReplying) return
-    stuck.current = true // user initiated — resume following
     setIsReplying(true)
     setReplyText('')
     setStreamingReply('')
@@ -232,9 +222,7 @@ export default function EntryDetail({ initialEntry }: Props) {
         if (done) break
         const chunk = decoder.decode(value, { stream: true })
         assistantText += chunk
-        setStreamingReply(prev => prev + chunk)
-        scrollToBottom(replyEndRef.current)
-      }
+        setStreamingReply(prev => prev + chunk)      }
 
       setStreamingReply('')
       setConversation(prev => [
@@ -251,7 +239,6 @@ export default function EntryDetail({ initialEntry }: Props) {
 
   async function handleGoLonger(messageIndex: number) {
     if (isReplying) return
-    stuck.current = true // user initiated — resume following
     setIsReplying(true)
     setStreamingReply('')
     setReplyError(null)
@@ -272,9 +259,7 @@ export default function EntryDetail({ initialEntry }: Props) {
         if (done) break
         const chunk = decoder.decode(value, { stream: true })
         expandedText += chunk
-        setStreamingReply(prev => prev + chunk)
-        scrollToBottom(replyEndRef.current)
-      }
+        setStreamingReply(prev => prev + chunk)      }
 
       setStreamingReply('')
       if (messageIndex === -1) {
@@ -521,7 +506,6 @@ export default function EntryDetail({ initialEntry }: Props) {
               {replyError && (
                 <p className="mt-3 text-sm text-red-400">{replyError}</p>
               )}
-              <div ref={replyEndRef} />
 
               {/* Reply input */}
               {rec.error && <p className="mt-3 text-xs text-red-400">{rec.error}</p>}

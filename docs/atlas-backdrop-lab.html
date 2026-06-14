@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Atlas backdrop — FX lab</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; color: #cfeeff; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+  #panel {
+    position: fixed; top: 14px; left: 14px; z-index: 10; width: 250px;
+    background: rgba(6,12,18,0.85); border: 1px solid rgba(80,200,255,0.18);
+    border-radius: 14px; padding: 14px 16px; backdrop-filter: blur(10px);
+    box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+  }
+  #panel h1 { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: #7fdfff; margin: 0 0 2px; }
+  #panel .sub { font-size: 10px; color: #5a7a8a; margin: 0 0 12px; line-height: 1.5; }
+  .glabel { font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: #5a7a8a; margin: 12px 0 6px; }
+  .row { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+  .row label { flex: 0 0 92px; font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: #6f93a4; }
+  .row input[type=range] { flex: 1; accent-color: #43c4ff; }
+  .row .val { width: 30px; text-align: right; font-size: 10px; color: #7fdfff; }
+  .toggles { display: flex; flex-wrap: wrap; gap: 6px; }
+  .toggles button { cursor: pointer; font: inherit; font-size: 9.5px; font-weight: 700; letter-spacing: 0.05em;
+    text-transform: uppercase; padding: 6px 8px; color: #9fc6d6; background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(120,200,255,0.14); border-radius: 8px; }
+  .toggles button.on { color: #001016; background: linear-gradient(180deg,#9fe8ff,#43c4ff); border-color: #9fe8ff; }
+  .hint { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 10;
+    font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #3d5663; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="panel">
+  <h1>Atlas Backdrop · Lab</h1>
+  <p class="sub">Preview + tune the space FX. Drag to orbit. The dim sphere is a stand-in for the Atlas globe.</p>
+  <div class="glabel">Effects</div>
+  <div class="toggles">
+    <button id="t-meteor" class="on">Meteors</button>
+    <button id="t-twinkle" class="on">Twinkle</button>
+    <button id="t-nebula" class="on">Nebula</button>
+    <button id="t-beacon" class="on">Beacons</button>
+    <button id="t-dust" class="on">Dust</button>
+    <button id="t-parallax" class="on">Parallax</button>
+    <button id="t-stars" class="on">Base Stars</button>
+  </div>
+  <div class="glabel">Tuning</div>
+  <div class="row"><label>Meteor rate</label><input id="mrate" type="range" min="0.2" max="4" step="0.1" value="1.4"><span class="val" id="mrate-v">1.4</span></div>
+  <div class="row"><label>Meteor size</label><input id="msize" type="range" min="0.4" max="2.5" step="0.1" value="1.0"><span class="val" id="msize-v">1.0</span></div>
+  <div class="row"><label>Nebula</label><input id="neb" type="range" min="0" max="1.5" step="0.05" value="0.6"><span class="val" id="neb-v">.6</span></div>
+  <div class="row"><label>Twinkle</label><input id="twk" type="range" min="0" max="1" step="0.05" value="0.6"><span class="val" id="twk-v">.6</span></div>
+  <div class="row"><label>Dust</label><input id="dst" type="range" min="0" max="1" step="0.05" value="0.5"><span class="val" id="dst-v">.5</span></div>
+</div>
+<div class="hint">Tune to taste, then I'll port the winning settings into the app</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+
+const app = document.getElementById('app')
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight)
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+app.appendChild(renderer.domElement)
+
+const scene = new THREE.Scene()
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 400)
+camera.position.set(0, 1, 16)
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true; controls.dampingFactor = 0.06; controls.enablePan = false
+controls.minDistance = 8; controls.maxDistance = 30
+
+const rand = (a, b) => a + Math.random() * (b - a)
+function randDir() {
+  const t = Math.random() * 6.283, p = Math.acos(2 * Math.random() - 1)
+  return new THREE.Vector3(Math.sin(p) * Math.cos(t), Math.sin(p) * Math.sin(t), Math.cos(p))
+}
+
+// ── central placeholder "Atlas" globe (dim, just for context) ──
+const globe = new THREE.Mesh(
+  new THREE.SphereGeometry(3.2, 64, 64),
+  new THREE.ShaderMaterial({
+    transparent: true, side: THREE.DoubleSide, depthWrite: false,
+    uniforms: { uTime: { value: 0 } },
+    vertexShader: `varying vec3 vN; varying vec3 vV; varying vec2 vUv;
+      void main(){ vUv=uv; vN=normalize(normalMatrix*normal); vec4 mv=modelViewMatrix*vec4(position,1.0);
+        vV=normalize(-mv.xyz); gl_Position=projectionMatrix*mv; }`,
+    fragmentShader: `varying vec3 vN; varying vec3 vV; varying vec2 vUv; uniform float uTime;
+      void main(){ float fres=pow(1.0-max(dot(vN,vV),0.0),3.0);
+        vec2 g=vUv*vec2(40.0,20.0); vec2 gr=abs(fract(g-0.5)-0.5)/fwidth(g);
+        float line=(1.0-clamp(min(gr.x,gr.y),0.0,1.0))*0.25;
+        vec3 col=vec3(0.13,0.55,1.0)*(fres*0.9+line);
+        gl_FragColor=vec4(col, fres*0.6 + line*0.4); }`,
+  }),
+)
+scene.add(globe)
+
+// groups (parallax-capable)
+const farGroup = new THREE.Group(); scene.add(farGroup)   // base stars, beacons, nebula
+const midGroup = new THREE.Group(); scene.add(midGroup)   // twinkle, dust
+
+// ── textures ──
+function softTex() {
+  const c = document.createElement('canvas'); c.width = c.height = 64
+  const x = c.getContext('2d'); const g = x.createRadialGradient(32, 32, 0, 32, 32, 32)
+  g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.35, 'rgba(180,235,255,0.55)'); g.addColorStop(1, 'rgba(127,223,255,0)')
+  x.fillStyle = g; x.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c)
+}
+function streakTex() {
+  const c = document.createElement('canvas'); c.width = 160; c.height = 32; const x = c.getContext('2d')
+  const g = x.createLinearGradient(0, 0, 160, 0)
+  g.addColorStop(0, 'rgba(127,223,255,0)'); g.addColorStop(0.65, 'rgba(150,225,255,0.35)')
+  g.addColorStop(0.93, 'rgba(220,245,255,0.95)'); g.addColorStop(1, 'rgba(255,255,255,1)')
+  x.fillStyle = g; x.fillRect(0, 0, 160, 32)
+  const h = x.createRadialGradient(150, 16, 0, 150, 16, 16); h.addColorStop(0, 'rgba(255,255,255,1)'); h.addColorStop(1, 'rgba(255,255,255,0)')
+  x.fillStyle = h; x.fillRect(120, 0, 40, 32)
+  const v = x.createLinearGradient(0, 0, 0, 32); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(0.5, 'rgba(0,0,0,1)'); v.addColorStop(1, 'rgba(0,0,0,0)')
+  x.globalCompositeOperation = 'destination-in'; x.fillStyle = v; x.fillRect(0, 0, 160, 32)
+  return new THREE.CanvasTexture(c)
+}
+function cloudTex() {
+  const c = document.createElement('canvas'); c.width = c.height = 256; const x = c.getContext('2d')
+  for (let i = 0; i < 60; i++) {
+    const px = rand(40, 216), py = rand(40, 216), r = rand(30, 90)
+    const g = x.createRadialGradient(px, py, 0, px, py, r)
+    g.addColorStop(0, `rgba(120,150,255,${rand(0.02, 0.06)})`); g.addColorStop(1, 'rgba(120,150,255,0)')
+    x.fillStyle = g; x.fillRect(0, 0, 256, 256)
+  }
+  return new THREE.CanvasTexture(c)
+}
+const SOFT = softTex(), STREAK = streakTex(), CLOUD = cloudTex()
+
+// ── base stars ──
+const baseStars = (() => {
+  const N = 1100, pos = new Float32Array(N * 3)
+  for (let i = 0; i < N; i++) { const r = rand(40, 120), d = randDir().multiplyScalar(r); pos[i*3]=d.x; pos[i*3+1]=d.y; pos[i*3+2]=d.z }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+  const p = new THREE.Points(g, new THREE.PointsMaterial({ color: 0x9fc0e0, size: 0.18, transparent: true, opacity: 0.7, sizeAttenuation: true }))
+  farGroup.add(p); return p
+})()
+
+// ── twinkling / popping stars (shader) ──
+const twinkle = (() => {
+  const N = 700
+  const pos = new Float32Array(N * 3), ph = new Float32Array(N), sz = new Float32Array(N), sp = new Float32Array(N)
+  for (let i = 0; i < N; i++) { const d = randDir().multiplyScalar(rand(30, 90)); pos[i*3]=d.x; pos[i*3+1]=d.y; pos[i*3+2]=d.z
+    ph[i] = Math.random() * 6.283; sz[i] = rand(0.6, 2.4); sp[i] = rand(0.5, 2.5) }
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+  g.setAttribute('aPhase', new THREE.BufferAttribute(ph, 1))
+  g.setAttribute('aSize', new THREE.BufferAttribute(sz, 1))
+  g.setAttribute('aSpeed', new THREE.BufferAttribute(sp, 1))
+  const m = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    uniforms: { uTime: { value: 0 }, uAmt: { value: 0.6 }, uMap: { value: SOFT } },
+    vertexShader: `attribute float aPhase; attribute float aSize; attribute float aSpeed;
+      uniform float uTime; uniform float uAmt; varying float vA;
+      void main(){ float tw = 0.5 + 0.5*sin(uTime*aSpeed + aPhase);
+        float pop = pow(tw, 4.0);                       // occasional bright "pop"
+        vA = mix(0.35, 1.0, mix(tw, pop, 0.5)) ;
+        vec4 mv = modelViewMatrix * vec4(position,1.0);
+        gl_PointSize = aSize * (8.0) * (0.5 + uAmt*vA) / -mv.z * 50.0;
+        gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform sampler2D uMap; varying float vA;
+      void main(){ vec4 t = texture2D(uMap, gl_PointCoord); gl_FragColor = vec4(vec3(0.8,0.93,1.0), t.a*vA); }`,
+  })
+  const p = new THREE.Points(g, m); midGroup.add(p); return { p, m }
+})()
+
+// ── meteors / shooting stars (thick glowing streaks) ──
+const METEOR_N = 14
+const meteors = []
+for (let i = 0; i < METEOR_N; i++) {
+  const mat = new THREE.MeshBasicMaterial({ map: STREAK, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 })
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat)
+  scene.add(mesh)
+  meteors.push({ mesh, mat, vel: new THREE.Vector3(), life: 0, max: 1, delay: rand(0, 6), len: 8, active: false })
+}
+function spawnMeteor(m) {
+  const origin = randDir().multiplyScalar(rand(45, 80))         // start far out
+  m.mesh.position.copy(origin)
+  const tangent = new THREE.Vector3().crossVectors(origin, randDir()).normalize()
+  m.vel.copy(tangent).multiplyScalar(rand(28, 46))               // streak across
+  m.len = rand(7, 16); m.max = rand(0.7, 1.4); m.life = 0; m.active = true
+}
+function orientStreak(mesh, vel) {
+  const pos = mesh.position
+  const toCam = new THREE.Vector3().subVectors(camera.position, pos).normalize()
+  const x = vel.clone().normalize()
+  let y = new THREE.Vector3().crossVectors(toCam, x)
+  if (y.lengthSq() < 1e-6) y.set(0, 1, 0); else y.normalize()
+  const z = new THREE.Vector3().crossVectors(x, y).normalize()
+  mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z))
+}
+
+// ── nebula (soft additive clouds) ──
+const nebula = (() => {
+  const grp = new THREE.Group()
+  const tints = [0x4a3aa0, 0x2a5a9a, 0x5a2a8a]
+  for (let i = 0; i < 4; i++) {
+    const mat = new THREE.SpriteMaterial({ map: CLOUD, color: tints[i % tints.length], transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })
+    const s = new THREE.Sprite(mat); s.position.copy(randDir().multiplyScalar(rand(50, 90))); s.scale.setScalar(rand(60, 110))
+    grp.add(s)
+  }
+  farGroup.add(grp); return grp
+})()
+
+// ── beacon stars (pulsing glow sprites) ──
+const beacons = []
+for (let i = 0; i < 12; i++) {
+  const mat = new THREE.SpriteMaterial({ map: SOFT, color: 0xbfe6ff, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false })
+  const s = new THREE.Sprite(mat); s.position.copy(randDir().multiplyScalar(rand(35, 90))); s.scale.setScalar(rand(1.2, 2.6))
+  farGroup.add(s); beacons.push({ s, mat, phase: Math.random() * 6.283, speed: rand(0.4, 1.1), base: s.scale.x })
+}
+
+// ── drifting dust ──
+const dust = (() => {
+  const N = 500, pos = new Float32Array(N * 3)
+  for (let i = 0; i < N; i++) { const d = randDir().multiplyScalar(rand(10, 40)); pos[i*3]=d.x; pos[i*3+1]=d.y; pos[i*3+2]=d.z }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+  const p = new THREE.Points(g, new THREE.PointsMaterial({ color: 0x88b0d8, size: 0.08, transparent: true, opacity: 0.4, sizeAttenuation: true, blending: THREE.AdditiveBlending }))
+  midGroup.add(p); return p
+})()
+
+// ── controls ──
+const $ = (id) => document.getElementById(id)
+const state = { meteor: true, twinkle: true, nebula: true, beacon: true, dust: true, parallax: true, stars: true,
+  mrate: 1.4, msize: 1.0, neb: 0.6, twk: 0.6, dst: 0.5 }
+function toggle(id, key, apply) { const b = $(id); b.addEventListener('click', () => { b.classList.toggle('on'); state[key] = b.classList.contains('on'); apply() }) }
+toggle('t-meteor', 'meteor', () => meteors.forEach(m => { if (!state.meteor) m.mat.opacity = 0 }))
+toggle('t-twinkle', 'twinkle', () => twinkle.p.visible = state.twinkle)
+toggle('t-nebula', 'nebula', () => nebula.visible = state.nebula)
+toggle('t-beacon', 'beacon', () => beacons.forEach(b => b.s.visible = state.beacon))
+toggle('t-dust', 'dust', () => dust.visible = state.dust)
+toggle('t-parallax', 'parallax', () => {})
+toggle('t-stars', 'stars', () => baseStars.visible = state.stars)
+function slider(id, key, fmt = (v) => v) { const el = $(id), v = $(id + '-v'); el.addEventListener('input', () => { state[key] = parseFloat(el.value); v.textContent = fmt(state[key]) }) }
+slider('mrate', 'mrate'); slider('msize', 'msize'); slider('neb', 'neb', v => v.toFixed(2).slice(1))
+slider('twk', 'twk', v => v.toFixed(2).slice(1)); slider('dst', 'dst', v => v.toFixed(2).slice(1))
+
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight) })
+const ptr = { x: 0, y: 0 }
+addEventListener('pointermove', e => { ptr.x = (e.clientX / innerWidth - 0.5); ptr.y = (e.clientY / innerHeight - 0.5) })
+
+const clock = new THREE.Clock()
+function tick() {
+  const dt = Math.min(clock.getDelta(), 0.05)
+  const t = clock.elapsedTime
+  globe.material.uniforms.uTime.value = t
+  globe.rotation.y = t * 0.04
+
+  // twinkle
+  twinkle.m.uniforms.uTime.value = t
+  twinkle.m.uniforms.uAmt.value = state.twk
+
+  // nebula opacity + slow drift
+  nebula.children.forEach((s, i) => { s.material.opacity = 0.5 * state.neb; })
+  nebula.rotation.y = t * 0.004
+
+  // beacons pulse
+  beacons.forEach(b => { const k = 0.5 + 0.5 * Math.sin(t * b.speed + b.phase); b.mat.opacity = 0.25 + 0.6 * k; b.s.scale.setScalar(b.base * (0.85 + 0.3 * k)) })
+
+  // dust drift
+  dust.material.opacity = 0.4 * state.dst
+  midGroup.rotation.y = t * 0.01
+
+  // meteors
+  meteors.forEach(m => {
+    if (!state.meteor) { m.mat.opacity = 0; return }
+    if (!m.active) { m.delay -= dt * state.mrate; if (m.delay <= 0) spawnMeteor(m); else return }
+    m.life += dt
+    const u = m.life / m.max
+    if (u >= 1) { m.active = false; m.delay = rand(0.3, 4) / state.mrate; m.mat.opacity = 0; return }
+    m.mesh.position.addScaledVector(m.vel, dt)
+    const fade = Math.sin(Math.PI * u)                       // fade in then out
+    m.mat.opacity = fade * 0.95
+    m.mesh.scale.set(m.len * state.msize, 0.9 * state.msize, 1)
+    orientStreak(m.mesh, m.vel)
+  })
+
+  // parallax (subtle pointer push on far layers, in addition to orbit)
+  if (state.parallax) {
+    farGroup.position.x += (ptr.x * 2.5 - farGroup.position.x) * 0.03
+    farGroup.position.y += (-ptr.y * 2.5 - farGroup.position.y) * 0.03
+    midGroup.position.x += (ptr.x * 4.5 - midGroup.position.x) * 0.03
+    midGroup.position.y += (-ptr.y * 4.5 - midGroup.position.y) * 0.03
+  }
+
+  controls.update()
+  renderer.render(scene, camera)
+  requestAnimationFrame(tick)
+}
+tick()
+</script>
+</body>
+</html>
