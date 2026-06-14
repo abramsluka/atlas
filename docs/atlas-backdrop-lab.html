@@ -133,7 +133,7 @@ function cloudTex() {
   for (let i = 0; i < 60; i++) {
     const px = rand(40, 216), py = rand(40, 216), r = rand(30, 90)
     const g = x.createRadialGradient(px, py, 0, px, py, r)
-    g.addColorStop(0, `rgba(120,150,255,${rand(0.02, 0.06)})`); g.addColorStop(1, 'rgba(120,150,255,0)')
+    g.addColorStop(0, `rgba(255,255,255,${rand(0.02, 0.06)})`); g.addColorStop(1, 'rgba(255,255,255,0)') // white → tint per-sprite
     x.fillStyle = g; x.fillRect(0, 0, 256, 256)
   }
   return new THREE.CanvasTexture(c)
@@ -203,16 +203,26 @@ function orientStreak(mesh, vel) {
   mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z))
 }
 
-// ── nebula (soft additive clouds) ──
+// ── nebula (multicolored soft clouds, each with a bright central star) ──
 const nebula = (() => {
   const grp = new THREE.Group()
-  const tints = [0x4a3aa0, 0x2a5a9a, 0x5a2a8a]
-  for (let i = 0; i < 4; i++) {
-    const mat = new THREE.SpriteMaterial({ map: CLOUD, color: tints[i % tints.length], transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })
-    const s = new THREE.Sprite(mat); s.position.copy(randDir().multiplyScalar(rand(50, 90))); s.scale.setScalar(rand(60, 110))
-    grp.add(s)
+  const palette = [
+    { cloud: 0x7a3ac0, star: 0xcea6ff }, // purple
+    { cloud: 0xc0682a, star: 0xffc794 }, // orange
+    { cloud: 0xbfa830, star: 0xfff0a4 }, // yellow
+    { cloud: 0x2a86a0, star: 0x9ee6ff }, // teal
+    { cloud: 0x9a2a78, star: 0xffa6e0 }, // magenta
+  ]
+  const cores = []
+  for (let i = 0; i < palette.length; i++) {
+    const pos = randDir().multiplyScalar(rand(55, 95))
+    const cmat = new THREE.SpriteMaterial({ map: CLOUD, color: palette[i].cloud, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })
+    const cloud = new THREE.Sprite(cmat); cloud.position.copy(pos); cloud.scale.setScalar(rand(55, 100)); grp.add(cloud)
+    const smat = new THREE.SpriteMaterial({ map: SOFT, color: palette[i].star, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false })
+    const star = new THREE.Sprite(smat); star.position.copy(pos); star.scale.setScalar(rand(2.6, 4.6)); grp.add(star)
+    cores.push({ cmat, smat, phase: Math.random() * 6.283 })
   }
-  farGroup.add(grp); return grp
+  farGroup.add(grp); return { grp, cores }
 })()
 
 // ── beacon stars (pulsing glow sprites) ──
@@ -239,7 +249,7 @@ const state = { meteor: true, twinkle: true, nebula: true, beacon: true, dust: t
 function toggle(id, key, apply) { const b = $(id); b.addEventListener('click', () => { b.classList.toggle('on'); state[key] = b.classList.contains('on'); apply() }) }
 toggle('t-meteor', 'meteor', () => meteors.forEach(m => { if (!state.meteor) m.mat.opacity = 0 }))
 toggle('t-twinkle', 'twinkle', () => twinkle.p.visible = state.twinkle)
-toggle('t-nebula', 'nebula', () => nebula.visible = state.nebula)
+toggle('t-nebula', 'nebula', () => nebula.grp.visible = state.nebula)
 toggle('t-beacon', 'beacon', () => beacons.forEach(b => b.s.visible = state.beacon))
 toggle('t-dust', 'dust', () => dust.visible = state.dust)
 toggle('t-parallax', 'parallax', () => {})
@@ -263,9 +273,13 @@ function tick() {
   twinkle.m.uniforms.uTime.value = t
   twinkle.m.uniforms.uAmt.value = state.twk
 
-  // nebula opacity + slow drift
-  nebula.children.forEach((s, i) => { s.material.opacity = 0.5 * state.neb; })
-  nebula.rotation.y = t * 0.004
+  // nebula: cloud opacity follows slider; central star stays visible + softly pulses
+  nebula.cores.forEach(c => {
+    c.cmat.opacity = 0.6 * state.neb
+    const k = 0.6 + 0.4 * Math.sin(t * 0.8 + c.phase)
+    c.smat.opacity = (0.4 + 0.55 * state.neb) * k
+  })
+  nebula.grp.rotation.y = t * 0.004
 
   // beacons pulse
   beacons.forEach(b => { const k = 0.5 + 0.5 * Math.sin(t * b.speed + b.phase); b.mat.opacity = 0.25 + 0.6 * k; b.s.scale.setScalar(b.base * (0.85 + 0.3 * k)) })

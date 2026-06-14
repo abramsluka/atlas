@@ -895,11 +895,11 @@ export default function GymClient({ today, initialConfig, initialExercises, init
           </button>
           <button
             onClick={openSettings}
-            className="w-9 h-9 rounded-full bg-white/8 border border-white/10 flex items-center justify-center text-white/50 active:opacity-70"
+            className="w-9 h-9 rounded-full bg-white/8 border border-white/10 flex items-center justify-center text-white/70 active:opacity-70"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M8 10a2 2 0 100-4 2 2 0 000 4z" />
-              <path fillRule="evenodd" d="M8 1a.75.75 0 01.75.75v.823a5.002 5.002 0 013.177 3.177h.823a.75.75 0 010 1.5h-.823a5.002 5.002 0 01-3.177 3.177v.823a.75.75 0 01-1.5 0v-.823a5.002 5.002 0 01-3.177-3.177H2.25a.75.75 0 010-1.5h.823A5.002 5.002 0 016.25 2.573V1.75A.75.75 0 018 1z" />
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
           </button>
         </div>
