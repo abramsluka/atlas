@@ -4,13 +4,12 @@ import { useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 
-// ─── Backdrop FX (ported from docs/atlas-backdrop-lab.html, settings locked) ────
-// Meteors (thick glowing streaks that shoot across + fade), twinkling/popping
-// stars, multicolor nebulae each with a bright central star, pulsing beacon
-// stars, drifting dust, and a base star field. No bloom (faked glow via additive
-// sprites). Locked tuning: meteor rate/size 0.8, twinkle 0.6, nebula 0.8, dust 0.25.
+// ─── Backdrop FX (tuned in docs/atlas-backdrop-lab.html) ────────────────────────
+// Meteors (thin glowing streaks that shoot across + fade), twinkling/popping
+// stars, faint purple nebula clouds, pulsing white beacon stars, drifting dust,
+// and a base star field. No bloom — glow faked via additive sprites.
 
-const METEOR_RATE = 0.8
+const METEOR_RATE = 0.4
 const METEOR_SIZE = 0.8
 const TWINKLE = 0.6
 const NEBULA = 0.8
@@ -89,49 +88,43 @@ export default function StarField() {
     })
     root.add(new THREE.Points(tg, twinkleMat))
 
-    // meteors
+    // meteors (thin glowing streaks)
     const meteors: Meteor[] = []
     for (let i = 0; i < 14; i++) {
       const mat = new THREE.MeshBasicMaterial({ map: STREAK, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 })
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat)
+      mesh.visible = false
       root.add(mesh)
       meteors.push({ mesh, mat, vel: new THREE.Vector3(), life: 0, max: 1, delay: rand(0, 6), len: 8, active: false })
     }
 
-    // multicolor nebulae + central stars
-    const palette = [
-      { cloud: 0x7a3ac0, star: 0xcea6ff }, { cloud: 0xc0682a, star: 0xffc794 },
-      { cloud: 0xbfa830, star: 0xfff0a4 }, { cloud: 0x2a86a0, star: 0x9ee6ff },
-      { cloud: 0x9a2a78, star: 0xffa6e0 },
-    ]
+    // faint purple nebula clouds (no central stars)
+    const purples = [0x5a2a9a, 0x6a38b8, 0x4a2a8a, 0x7048c0]
     const nebulaGrp = new THREE.Group()
-    const nebulaCores: { cmat: THREE.SpriteMaterial; smat: THREE.SpriteMaterial; phase: number }[] = []
-    for (const pal of palette) {
-      const pos = randDir().multiplyScalar(rand(55, 95))
-      const cmat = new THREE.SpriteMaterial({ map: CLOUD, color: pal.cloud, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })
-      const cloud = new THREE.Sprite(cmat); cloud.position.copy(pos); cloud.scale.setScalar(rand(55, 100)); nebulaGrp.add(cloud)
-      const smat = new THREE.SpriteMaterial({ map: SOFT, color: pal.star, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false })
-      const star = new THREE.Sprite(smat); star.position.copy(pos); star.scale.setScalar(rand(2.6, 4.6)); nebulaGrp.add(star)
-      nebulaCores.push({ cmat, smat, phase: Math.random() * 6.283 })
+    const nebulaClouds: { cmat: THREE.SpriteMaterial }[] = []
+    for (let i = 0; i < 4; i++) {
+      const cmat = new THREE.SpriteMaterial({ map: CLOUD, color: purples[i % purples.length], transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })
+      const cloud = new THREE.Sprite(cmat); cloud.position.copy(randDir().multiplyScalar(rand(55, 95))); cloud.scale.setScalar(rand(55, 100)); nebulaGrp.add(cloud)
+      nebulaClouds.push({ cmat })
     }
     root.add(nebulaGrp)
 
-    // beacon stars
+    // white beacon stars
     const beacons: { mat: THREE.SpriteMaterial; sprite: THREE.Sprite; phase: number; speed: number; base: number }[] = []
     for (let i = 0; i < 12; i++) {
-      const mat = new THREE.SpriteMaterial({ map: SOFT, color: 0xbfe6ff, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false })
+      const mat = new THREE.SpriteMaterial({ map: SOFT, color: 0xffffff, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false })
       const sprite = new THREE.Sprite(mat); sprite.position.copy(randDir().multiplyScalar(rand(35, 90))); const base = rand(1.2, 2.6); sprite.scale.setScalar(base)
       root.add(sprite); beacons.push({ mat, sprite, phase: Math.random() * 6.283, speed: rand(0.4, 1.1), base })
     }
 
-    // drifting dust
+    // drifting dust — soft round sprites, pushed out so none sit near the camera
     const dn = 500, dp = new Float32Array(dn * 3)
-    for (let i = 0; i < dn; i++) { const d = randDir().multiplyScalar(rand(10, 40)); dp[i*3]=d.x; dp[i*3+1]=d.y; dp[i*3+2]=d.z }
+    for (let i = 0; i < dn; i++) { const d = randDir().multiplyScalar(rand(20, 58)); dp[i*3]=d.x; dp[i*3+1]=d.y; dp[i*3+2]=d.z }
     const dg = new THREE.BufferGeometry(); dg.setAttribute('position', new THREE.BufferAttribute(dp, 3))
-    const dust = new THREE.Points(dg, new THREE.PointsMaterial({ color: 0x88b0d8, size: 0.08, transparent: true, opacity: 0.4 * DUST, sizeAttenuation: true, blending: THREE.AdditiveBlending }))
+    const dust = new THREE.Points(dg, new THREE.PointsMaterial({ map: SOFT, color: 0x9fc0e0, size: 0.45, transparent: true, opacity: 0.35 * DUST, sizeAttenuation: true, blending: THREE.AdditiveBlending, depthWrite: false }))
     root.add(dust)
 
-    return { root, twinkleMat, meteors, nebulaGrp, nebulaCores, beacons, dust, STREAK }
+    return { root, twinkleMat, meteors, nebulaGrp, nebulaClouds, beacons, dust }
   }, [])
 
   useFrame((state, delta) => {
@@ -141,11 +134,7 @@ export default function StarField() {
 
     built.twinkleMat.uniforms.uTime.value = t
 
-    built.nebulaCores.forEach((c) => {
-      c.cmat.opacity = 0.6 * NEBULA
-      const k = 0.6 + 0.4 * Math.sin(t * 0.8 + c.phase)
-      c.smat.opacity = (0.4 + 0.55 * NEBULA) * k
-    })
+    built.nebulaClouds.forEach((c) => { c.cmat.opacity = 0.6 * NEBULA })
     built.nebulaGrp.rotation.y = t * 0.004
 
     built.beacons.forEach((b) => {
@@ -164,19 +153,19 @@ export default function StarField() {
           const origin = randDir().multiplyScalar(rand(45, 80))
           m.mesh.position.copy(origin)
           m.vel.copy(new THREE.Vector3().crossVectors(origin, randDir()).normalize()).multiplyScalar(rand(28, 46))
-          m.len = rand(7, 16); m.max = rand(0.7, 1.4); m.life = 0; m.active = true
+          m.len = rand(7, 16); m.max = rand(0.7, 1.4); m.life = 0; m.active = true; m.mesh.visible = true
         } else continue
       }
       m.life += dt
       const u = m.life / m.max
-      if (u >= 1) { m.active = false; m.delay = rand(0.3, 4) / METEOR_RATE; m.mat.opacity = 0; continue }
+      if (u >= 1) { m.active = false; m.delay = rand(0.5, 5) / METEOR_RATE; m.mat.opacity = 0; m.mesh.visible = false; continue }
       m.mesh.position.addScaledVector(m.vel, dt)
       m.mat.opacity = Math.sin(Math.PI * u) * 0.95
-      m.mesh.scale.set(m.len * METEOR_SIZE, 0.9 * METEOR_SIZE, 1)
+      m.mesh.scale.set(m.len * METEOR_SIZE, 0.45 * METEOR_SIZE, 1) // thinner streak
       // orient the streak along velocity, billboarded toward the camera
       const toCam = new THREE.Vector3().subVectors(cam.position, m.mesh.position).normalize()
       const ax = m.vel.clone().normalize()
-      let ay = new THREE.Vector3().crossVectors(toCam, ax)
+      const ay = new THREE.Vector3().crossVectors(toCam, ax)
       if (ay.lengthSq() < 1e-6) ay.set(0, 1, 0); else ay.normalize()
       const az = new THREE.Vector3().crossVectors(ax, ay).normalize()
       m.mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(ax, ay, az))
