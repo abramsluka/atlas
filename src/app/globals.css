@@ -208,3 +208,19 @@ input[type="range"]::-moz-range-thumb {
   0%, 100% { opacity: 0.18; }
   50%       { opacity: 0.35; }
 }
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes spinRev {
+  from { transform: rotate(360deg); }
+  to   { transform: rotate(0deg); }
+}
+/* Journal "handwriting" — draw the stroke in, hold, then fade & reset */
+@keyframes journalWrite {
+  0%   { stroke-dashoffset: 60; opacity: 0; }
+  6%   { opacity: 0.9; }
+  40%  { stroke-dashoffset: 0;  opacity: 0.9; }
+  82%  { stroke-dashoffset: 0;  opacity: 0.9; }
+  100% { stroke-dashoffset: 0;  opacity: 0; }
+}

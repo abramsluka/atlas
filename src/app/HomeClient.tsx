@@ -218,7 +218,7 @@ function TrainVisual({ color }: { color: string }) {
   )
 }
 
-/** FUEL: Glowing orb with one orbiting dot */
+/** FUEL: Rotating 3D orbital sphere — crossed tilted rings + orbiting dots */
 function FuelOrb({ calories, color }: { calories: number; color: string }) {
   const lit = calories > 0
   return (
@@ -229,58 +229,58 @@ function FuelOrb({ calories, color }: { calories: number; color: string }) {
         animation: 'bentoGlow 3.5s ease-in-out infinite',
       }} />
       <svg viewBox="0 0 68 68" width="68" height="68" style={{ position: 'absolute', inset: 0 }}>
-        {/* Orbit ring */}
-        <circle cx="34" cy="34" r="26" fill="none"
-          stroke={color} strokeWidth="0.7" opacity={lit ? 0.18 : 0.1}
-          strokeDasharray="3 5" />
-        {/* Central orb ring */}
-        <circle cx="34" cy="34" r="8" fill="none"
-          stroke={color} strokeWidth="1" opacity={lit ? 0.35 : 0.1} />
-        {/* Core dot */}
-        <circle cx="34" cy="34" r={lit ? 5 : 4}
-          fill={color}
+        {/* Tilted orbital ring — rotates clockwise (3D gyroscope feel) */}
+        <g style={{ transformOrigin: '34px 34px', animation: 'spin 9s linear infinite' }}>
+          <ellipse cx="34" cy="34" rx="26" ry="10" fill="none" stroke={color} strokeWidth="0.7"
+            opacity={lit ? 0.2 : 0.1} strokeDasharray="3 5" />
+          <circle cx="60" cy="34" r="2.4" fill={color} opacity={lit ? 0.8 : 0.18}
+            style={{ filter: `drop-shadow(0 0 5px ${color})` }} />
+        </g>
+        {/* Second ring, opposite tilt + counter-rotation → crossing orbits */}
+        <g style={{ transformOrigin: '34px 34px', animation: 'spinRev 7s linear infinite' }}>
+          <ellipse cx="34" cy="34" rx="10" ry="26" fill="none" stroke={color} strokeWidth="0.6"
+            opacity={lit ? 0.14 : 0.08} strokeDasharray="3 5" />
+          <circle cx="34" cy="8" r="1.7" fill={color} opacity={lit ? 0.55 : 0.13}
+            style={{ filter: `drop-shadow(0 0 4px ${color})` }} />
+        </g>
+        {/* Core */}
+        <circle cx="34" cy="34" r={lit ? 5 : 4} fill={color}
           opacity={lit ? 0.85 : 0.18}
-          style={{ filter: `drop-shadow(0 0 6px ${color})` }}
-        />
-        {/* Orbiting dot */}
-        <circle cx="60" cy="34" r="2.5" fill={color} opacity={lit ? 0.7 : 0.15}>
-          <animateTransform
-            attributeName="transform" attributeType="XML"
-            type="rotate" from="0 34 34" to="360 34 34"
-            dur="8s" repeatCount="indefinite" />
-        </circle>
-        {/* Second faint dot, offset */}
-        <circle cx="34" cy="8" r="1.5" fill={color} opacity={lit ? 0.35 : 0.1}>
-          <animateTransform
-            attributeName="transform" attributeType="XML"
-            type="rotate" from="180 34 34" to="540 34 34"
-            dur="13s" repeatCount="indefinite" />
-        </circle>
+          style={{ filter: `drop-shadow(0 0 6px ${color})`, animation: 'bentoGlow 3.5s ease-in-out infinite' }} />
       </svg>
     </div>
   )
 }
 
-/** JOURNAL: Mood glow — pulsing orb colored by last mood */
+/** JOURNAL: Handwriting — wavy "lines of text" that draw themselves, looping */
 function JournalMood({ mood, color }: { mood: number | null; color: string }) {
   const moodColors = [color, '#f87171', '#fb923c', '#fbbf24', '#4ade80', '#34d399']
   const c = mood != null ? (moodColors[mood] ?? color) : color
   const lit = mood != null
+  // Three cursive-ish strokes of decreasing length — like handwritten lines
+  const lines = [
+    'M5,13 q4,-4 8,0 t8,0 t8,0 t8,0',
+    'M5,24 q4,4 8,0 t8,0 t8,0',
+    'M5,35 q4,-4 8,0 t8,0',
+  ]
   return (
-    <div style={{ width: 56, height: 56, position: 'relative', marginTop: 6, marginRight: 8, flexShrink: 0 }}>
+    <div style={{ width: 60, height: 56, position: 'relative', marginTop: 6, marginRight: 6, flexShrink: 0 }}>
       <div style={{
-        position: 'absolute', inset: 8, borderRadius: '50%',
-        background: c, filter: 'blur(14px)', opacity: lit ? 0.28 : 0.07,
-        animation: 'bentoGlow 3s ease-in-out infinite',
+        position: 'absolute', inset: 10, borderRadius: '50%',
+        background: c, filter: 'blur(16px)', opacity: lit ? 0.22 : 0.06,
+        animation: 'bentoGlow 3.4s ease-in-out infinite',
       }} />
-      <svg viewBox="0 0 56 56" width="56" height="56" style={{ position: 'absolute', inset: 0 }}>
-        <circle cx="28" cy="28" r="20" fill="none" stroke={c} strokeWidth="0.7"
-          opacity={lit ? 0.15 : 0.1} strokeDasharray="2 4" />
-        <circle cx="28" cy="28" r="12" fill="none" stroke={c} strokeWidth="0.5"
-          opacity={lit ? 0.1 : 0.07} />
-        <circle cx="28" cy="28" r={lit ? 5 : 4} fill={c}
-          opacity={lit ? 0.9 : 0.2}
-          style={{ filter: `drop-shadow(0 0 5px ${c})` }} />
+      <svg viewBox="0 0 60 48" width="60" height="48" style={{ position: 'absolute', inset: 0, overflow: 'visible' }}>
+        {lines.map((d, i) => (
+          <path key={i} d={d} fill="none" stroke={c} strokeWidth="1.5"
+            strokeLinecap="round" strokeLinejoin="round"
+            opacity={lit ? 0.9 : 0.25}
+            style={{
+              strokeDasharray: 60, strokeDashoffset: 60,
+              filter: `drop-shadow(0 0 3px ${c}aa)`,
+              animation: `journalWrite 4.5s ease-in-out ${i * 0.6}s infinite`,
+            }} />
+        ))}
       </svg>
     </div>
   )
@@ -316,15 +316,26 @@ function EnergyArc({ color }: { color: string }) {
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H}
-      style={{ display: 'block', marginTop: 10, marginRight: 6 }}>
+      style={{ display: 'block', marginTop: 10, marginRight: 6, overflow: 'visible' }}>
       <defs>
         <linearGradient id="eGrad" x1="0" y1="0" x2="1" y2="0">
           <stop offset="0%" stopColor={color} stopOpacity="0.08" />
           <stop offset={`${Math.min(98, (hoursAwake / totalAwake) * 100).toFixed(0)}%`} stopColor={color} stopOpacity="0.65" />
           <stop offset="100%" stopColor={color} stopOpacity="0.12" />
         </linearGradient>
+        <path id="ePath" d={path} />
       </defs>
-      <path d={path} fill="none" stroke="url(#eGrad)" strokeWidth="1.5" strokeLinejoin="round" />
+      <use href="#ePath" fill="none" stroke="url(#eGrad)" strokeWidth="1.5" strokeLinejoin="round" />
+      {/* Traveling pulse riding the curve — the "moving" Luka wants */}
+      <circle r="2" fill={color} opacity="0.85" style={{ filter: `drop-shadow(0 0 5px ${color})` }}>
+        <animateMotion dur="5.5s" repeatCount="indefinite" calcMode="spline"
+          keyTimes="0;1" keySplines="0.4 0 0.6 1">
+          <mpath href="#ePath" />
+        </animateMotion>
+        <animate attributeName="opacity" values="0;0.85;0.85;0" keyTimes="0;0.08;0.92;1"
+          dur="5.5s" repeatCount="indefinite" />
+      </circle>
+      {/* Current-position marker */}
       <circle cx={curX.toFixed(1)} cy={curY.toFixed(1)} r="3.5" fill={color}
         style={{ filter: `drop-shadow(0 0 6px ${color}cc)`, animation: 'bentoGlow 2.5s ease-in-out infinite' }} />
     </svg>

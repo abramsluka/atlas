@@ -7,6 +7,21 @@ import { useCaffeineLogs } from '@/features/health/queries'
 import { useLogCaffeine, useDeleteCaffeineLog } from '@/features/health/mutations'
 import type { CaffeineLog, OuraData, WhoopData } from '@/features/health/types'
 import type { WorkoutPoint, MealPoint } from './page'
+import {
+  caffeineConc,
+  circadianOffset,
+  workoutBoostAt,
+  mealDipAt,
+  computeEnergy,
+  energyLabel,
+  energyColor,
+  deriveSleepQuality,
+  deriveWakeHour,
+  computePeakWindows,
+  CAF_SCALE,
+  ADENOSINE_RATE,
+  type DosePoint,
+} from '@/features/health/energyModel'
 
 interface EnergyRating {
   id: string
@@ -15,95 +30,7 @@ interface EnergyRating {
   predicted: number | null
 }
 
-// ── Pharmacokinetic model ────────────────────────────────────────────────────
-const HALF_LIFE_H = 5.5
-const ABSORPTION_TAU = 0.8
-const ADENOSINE_RATE = 1.8
-const CAF_SCALE = 0.24
 const DOSE_COLORS = ['#4ade80', '#60a5fa', '#fb923c', '#c084fc', '#f472b6', '#34d399']
-
-interface DosePoint {
-  id: string
-  hour: number
-  mg: number
-  source: string
-  loggedAt: string
-}
-
-function caffeineConc(t: number, mg: number): number {
-  if (t <= 0) return 0
-  const absorption = 1 - Math.exp(-t / ABSORPTION_TAU)
-  const decay = Math.exp(-t * Math.LN2 / HALF_LIFE_H)
-  return mg * absorption * decay
-}
-
-// ── A1: Circadian rhythm ──────────────────────────────────────────────────────
-// Natural 1–3pm dip (~−8pts) and 6–9pm second wind (~+6pts)
-function circadianOffset(hour: number): number {
-  const afternoonDip = -12 * Math.exp(-0.5 * ((hour - 14) / 1.2) ** 2)
-  const eveningWind  =  15 * Math.exp(-0.5 * ((hour - 19) / 1.5) ** 2)
-  return afternoonDip + eveningWind
-}
-
-// ── A2: Exercise boost ────────────────────────────────────────────────────────
-// Post-workout endorphin/adrenaline window: starts 30min after finish, fades ~3h
-function workoutBoostAt(hour: number, workouts: WorkoutPoint[]): number {
-  return workouts.reduce((sum, w) => {
-    const t = hour - (w.completedHour + 0.5) // 30min onset delay
-    if (t < 0) return sum
-    // normalize volume: 5000 lbs = moderate session (intensity 0.5), 10000+ = high (1.0)
-    const intensity = Math.min(1, Math.max(0.2, w.volumeLbs / 10000))
-    return sum + 22 * intensity * Math.exp(-t / 2.5)
-  }, 0)
-}
-
-// ── A3: Postprandial dip ──────────────────────────────────────────────────────
-// Large meals cause a ~45min-peak dip lasting ~2h
-function mealDipAt(hour: number, meals: MealPoint[]): number {
-  return meals.reduce((sum, m) => {
-    const t = hour - m.hour
-    if (t < 0 || t > 3) return sum
-    const size = Math.min(1, (m.calories ?? 0) / 800) // 800+ kcal = full dip
-    return sum - 7 * size * Math.exp(-0.5 * ((t - 0.75) / 0.6) ** 2)
-  }, 0)
-}
-
-function computeEnergy(
-  hour: number,
-  wakeHour: number,
-  sleepQuality: number,
-  doses: DosePoint[],
-  workouts: WorkoutPoint[] = [],
-  meals: MealPoint[] = [],
-): number {
-  if (hour < wakeHour - 1) return 0
-  const hoursAwake = Math.max(0, hour - wakeHour)
-  // baseline: readiness 94 → ~82 (High), readiness 75 → ~69, readiness 50 → ~53
-  const baseline = 20 + sleepQuality * 0.65
-  let cafEnergy = 0
-  for (const d of doses) cafEnergy += caffeineConc(hour - d.hour, d.mg) * CAF_SCALE
-  const raw = baseline
-    + cafEnergy
-    + circadianOffset(hour)
-    + workoutBoostAt(hour, workouts)
-    + mealDipAt(hour, meals)
-    - hoursAwake * ADENOSINE_RATE
-  return Math.max(0, Math.min(100, raw))
-}
-
-function energyLabel(e: number): string {
-  if (e >= 80) return 'Peak'
-  if (e >= 65) return 'High'
-  if (e >= 50) return 'Moderate'
-  if (e >= 35) return 'Low'
-  return 'Crash'
-}
-
-function energyColor(e: number): string {
-  if (e >= 65) return '#4ade80'
-  if (e >= 45) return '#fb923c'
-  return '#f87171'
-}
 
 // Change 1: formatHourShort now includes minutes when non-zero
 function formatHourShort(h: number): string {
@@ -199,33 +126,8 @@ interface Props {
 export default function CaffeineClient({ initialCaffeine, initialRatings, today, ouraData, whoopData, workouts, meals }: Props) {
   const qc = useQueryClient()
   // ── Model inputs ──────────────────────────────────────────────────────────
-  function normalizeHrv(hrv: number | null | undefined): number | null {
-    if (hrv == null) return null
-    return Math.min(100, Math.max(0, (hrv - 20) / 80 * 100))
-  }
-
-  const sleepQuality = (() => {
-    // Oura readiness already integrates sleep + HRV + recovery — best single signal
-    const ouraReadiness = ouraData?.readiness?.score
-    if (ouraReadiness != null) return ouraReadiness
-    // Fall back to sleep score + HRV blend
-    const ouraScore = ouraData?.sleep?.score
-    const ouraHrv = normalizeHrv(ouraData?.sleep?.average_hrv)
-    if (ouraScore != null) return ouraHrv != null ? ouraScore * 0.7 + ouraHrv * 0.3 : ouraScore
-    const whoopScore = whoopData?.recovery?.score
-    const whoopHrv = normalizeHrv(whoopData?.recovery?.hrv_rmssd_milli)
-    if (whoopScore != null) return whoopHrv != null ? whoopScore * 0.7 + whoopHrv * 0.3 : whoopScore
-    return 75
-  })()
-
-  const wakeHour = (() => {
-    const be = ouraData?.sleep?.bedtime_end
-    if (be) {
-      const d = new Date(be)
-      if (!isNaN(d.getTime())) return d.getHours() + d.getMinutes() / 60
-    }
-    return 7
-  })()
+  const sleepQuality = deriveSleepQuality(ouraData, whoopData)
+  const wakeHour = deriveWakeHour(ouraData)
 
   // ── Live clock ────────────────────────────────────────────────────────────
   const [currentHour, setCurrentHour] = useState(() => {
@@ -349,22 +251,11 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
   }, [wakeHour, sleepQuality, doses, workouts, meals])
 
   // ── Peak windows ─────────────────────────────────────────────────────────
-  const peakWindows = useMemo(() => {
-    const THRESHOLD = 62
-    const wins: { start: number; end: number; peak: number; peakH: number }[] = []
-    let inWin = false, winStart = 0, winPeak = 0, winPeakH = 0
-    for (let h = wakeHour; h <= 24; h += 0.25) {
-      const e = computeEnergy(h, wakeHour, sleepQuality, doses, workouts, meals)
-      if (e >= THRESHOLD && !inWin) { inWin = true; winStart = h; winPeak = e; winPeakH = h }
-      else if (e >= THRESHOLD && inWin) { if (e > winPeak) { winPeak = e; winPeakH = h } }
-      else if (e < THRESHOLD && inWin) {
-        inWin = false
-        if (h - winStart > 0.5) wins.push({ start: winStart, end: h, peak: Math.round(winPeak), peakH: winPeakH })
-      }
-    }
-    if (inWin) wins.push({ start: winStart, end: 24, peak: Math.round(winPeak), peakH: winPeakH })
-    return wins.sort((a, b) => b.peak - a.peak).slice(0, 3)
-  }, [wakeHour, sleepQuality, doses, workouts, meals])
+  // Local maxima of the curve (tight window per bump), not one wide span.
+  const peakWindows = useMemo(
+    () => computePeakWindows(wakeHour, sleepQuality, doses, workouts, meals),
+    [wakeHour, sleepQuality, doses, workouts, meals]
+  )
 
   // ── Smart timing ─────────────────────────────────────────────────────────
   const { crashHour, lastCoffeeHour, peakFocusWindow } = useMemo(() => {

@@ -51,6 +51,13 @@ import {
 import { SUBSTANCE_DB } from '@/features/health/substanceDb'
 import DebloatSection from './DebloatSection'
 import { rolledDate } from '@/features/food/date'
+import {
+  currentEnergyFromLogs,
+  energyColor as energyColorShared,
+  energyLabel as energyLabelShared,
+  type WorkoutPoint,
+  type MealPoint,
+} from '@/features/health/energyModel'
 
 interface Props {
   supplements: Supplement[]
@@ -63,6 +70,8 @@ interface Props {
   hasOura: boolean
   hasWhoop: boolean
   today: string
+  workouts: WorkoutPoint[]
+  meals: MealPoint[]
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -1662,61 +1671,44 @@ function WaterSection({
 
 // ─── Caffeine Card (compact nav tile → /health/caffeine) ──────────────────────
 
-// Inline energy model for the compact card orb — same constants as CaffeineClient
-const _HALF_LIFE_H = 5.5
-const _ABSORPTION_TAU = 0.8
-const _ADENOSINE_RATE = 3.8
-const _CAF_SCALE = 0.13
-const _WAKE_HOUR = 7
-
-function _cafConc(t: number, mg: number): number {
-  if (t <= 0) return 0
-  return mg * (1 - Math.exp(-t / _ABSORPTION_TAU)) * Math.exp(-t * Math.LN2 / _HALF_LIFE_H)
-}
-
-function _currentEnergy(logs: CaffeineLog[]): number {
-  const now = new Date()
-  const h = now.getHours() + now.getMinutes() / 60
-  const hoursAwake = Math.max(0, h - _WAKE_HOUR)
-  const baseline = 40 + 75 * 0.28 // default sleep quality 75
-  let caf = 0
-  for (const l of logs) {
-    const doseH = new Date(l.logged_at).getHours() + new Date(l.logged_at).getMinutes() / 60
-    caf += _cafConc(h - doseH, l.amount_mg) * _CAF_SCALE
-  }
-  return Math.max(0, Math.min(100, baseline + caf - hoursAwake * _ADENOSINE_RATE))
-}
-
-function _energyColor(e: number): string {
-  if (e >= 65) return '#4ade80'
-  if (e >= 45) return '#fb923c'
-  return '#f87171'
-}
-
 function CaffeineSection({
   initialCaffeine,
   today,
+  ouraData,
+  whoopData,
+  workouts,
+  meals,
 }: {
   initialCaffeine: CaffeineLog[]
   today: string
+  ouraData: OuraData | null
+  whoopData: WhoopData | null
+  workouts: WorkoutPoint[]
+  meals: MealPoint[]
 }) {
   const { data: caffeineLogs } = useCaffeineLogs(today, initialCaffeine)
 
   const totalMg = caffeineLogs?.reduce((sum, l) => sum + l.amount_mg, 0) ?? 0
 
-  // Live energy score
-  const [energy, setEnergy] = useState(() => _currentEnergy(initialCaffeine))
-  useEffect(() => {
-    setEnergy(_currentEnergy(caffeineLogs ?? initialCaffeine))
-    const id = setInterval(() => setEnergy(_currentEnergy(caffeineLogs ?? initialCaffeine)), 60_000)
-    return () => clearInterval(id)
-  }, [caffeineLogs, initialCaffeine])
+  // Live energy score — same model + inputs as Today's Curve, so the two match.
+  const computeNow = useCallback(() => {
+    const now = new Date()
+    const h = now.getHours() + now.getMinutes() / 60
+    return currentEnergyFromLogs(h, caffeineLogs ?? initialCaffeine, ouraData, whoopData, workouts, meals)
+  }, [caffeineLogs, initialCaffeine, ouraData, whoopData, workouts, meals])
 
-  const color = _energyColor(energy)
+  const [energy, setEnergy] = useState(computeNow)
+  useEffect(() => {
+    setEnergy(computeNow())
+    const id = setInterval(() => setEnergy(computeNow()), 60_000)
+    return () => clearInterval(id)
+  }, [computeNow])
+
+  const color = energyColorShared(energy)
   const circumference = 2 * Math.PI * 28
   const ringOffset = circumference * (1 - energy / 100)
 
-  const energyStateLabel = energy >= 80 ? 'Peak' : energy >= 65 ? 'High' : energy >= 50 ? 'Moderate' : energy >= 35 ? 'Low' : 'Crash'
+  const energyStateLabel = energyLabelShared(energy)
 
   return (
     <section>
@@ -2660,6 +2652,8 @@ export default function HealthClient({
   hasOura,
   hasWhoop,
   today,
+  workouts,
+  meals,
 }: Props) {
   const { data: profileData } = useHealthProfile(profile)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -2709,7 +2703,14 @@ export default function HealthClient({
         settingsOpen={settingsOpen}
         setSettingsOpen={setSettingsOpen}
       />
-      <CaffeineSection initialCaffeine={todayCaffeine} today={today} />
+      <CaffeineSection
+        initialCaffeine={todayCaffeine}
+        today={today}
+        ouraData={ouraData}
+        whoopData={whoopData}
+        workouts={workouts}
+        meals={meals}
+      />
       <DebloatSection today={today} />
     </main>
   )
