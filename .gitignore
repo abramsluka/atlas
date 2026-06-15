@@ -40,5 +40,5 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# Claude Code session journal (local only)
-CLAUDE_CODE_MEMORY.md
+# Claude Code session journal — committed for this repo (overrides global ignore)
+!CLAUDE_CODE_MEMORY.md
