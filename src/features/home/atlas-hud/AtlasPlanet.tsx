@@ -260,8 +260,21 @@ export default function AtlasPlanet({ onSelect }: { onSelect: () => void }) {
       vertexShader: ATMO_VERT, fragmentShader: ATMO_FRAG,
     })
 
-    return { globeMat, spikes, tips, pois, poiData, skyDots, arcs, dottedRing, atmoMat }
+    // subtle ATLAS title above the globe (desktop only — gated in render)
+    const lc = document.createElement('canvas'); lc.width = 256; lc.height = 64
+    const lx = lc.getContext('2d')!
+    lx.font = '800 30px ui-monospace, Menlo, monospace'; lx.textAlign = 'center'; lx.textBaseline = 'middle'
+    lx.shadowColor = '#9fd8ff'; lx.shadowBlur = 14; lx.fillStyle = '#eaf4ff'; lx.fillText('ATLAS', 128, 34)
+    const ltex = new THREE.CanvasTexture(lc); ltex.anisotropy = 4
+    const atlasLabel = new THREE.Sprite(new THREE.SpriteMaterial({ map: ltex, transparent: true, depthWrite: false, opacity: 0.72 }))
+    atlasLabel.scale.set(1.7, 0.42, 1)
+    atlasLabel.position.set(0, ATLAS_R + 0.95, 0)
+
+    return { globeMat, spikes, tips, pois, poiData, skyDots, arcs, dottedRing, atmoMat, atlasLabel }
   }, [landTex, topoTex])
+
+  // ATLAS title shows on desktop only (mobile = clean globe)
+  const isDesktop = useMemo(() => typeof window !== 'undefined' && window.innerWidth >= 640, [])
 
   useFrame((state) => {
     const t = state.clock.elapsedTime
@@ -319,6 +332,9 @@ export default function AtlasPlanet({ onSelect }: { onSelect: () => void }) {
 
       {/* plexus web, tick strip, geodesic arcs — reference HUD detail */}
       <GlobeFx R={ATLAS_R} />
+
+      {/* subtle ATLAS title above the globe — desktop only */}
+      {isDesktop && <primitive object={built.atlasLabel} />}
     </group>
   )
 }

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Atlas planets — FX lab</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #04060c; overflow: hidden;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; color: #cfeeff; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+  #panel {
+    position: fixed; top: 14px; left: 14px; z-index: 10; width: 256px;
+    background: rgba(6,12,18,0.85); border: 1px solid rgba(80,200,255,0.18);
+    border-radius: 14px; padding: 14px 16px; backdrop-filter: blur(10px);
+    box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+  }
+  #panel h1 { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: #7fdfff; margin: 0 0 2px; }
+  #panel .sub { font-size: 10px; color: #5a7a8a; margin: 0 0 12px; line-height: 1.5; }
+  .row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .row label { flex: 0 0 92px; font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: #6f93a4; }
+  .row input[type=range] { flex: 1; accent-color: #43c4ff; }
+  .row .val { width: 32px; text-align: right; font-size: 10px; color: #7fdfff; }
+  .toggles { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .toggles button { cursor: pointer; font: inherit; font-size: 9.5px; font-weight: 700; letter-spacing: 0.05em;
+    text-transform: uppercase; padding: 6px 8px; color: #9fc6d6; background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(120,200,255,0.14); border-radius: 8px; }
+  .toggles button.on { color: #001016; background: linear-gradient(180deg,#9fe8ff,#43c4ff); border-color: #9fe8ff; }
+  .hint { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 10;
+    font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #3d5663; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="panel">
+  <h1>Atlas Planets · Lab</h1>
+  <p class="sub">4 module worlds (big, rotating). Tune the surface, then I port it. Drag to orbit.</p>
+  <div class="row"><label>Bump</label><input id="bump" type="range" min="0" max="1.5" step="0.05" value="0.5"><span class="val" id="bump-v">.50</span></div>
+  <div class="row"><label>Detail</label><input id="detail" type="range" min="0.4" max="2.2" step="0.05" value="1.0"><span class="val" id="detail-v">1.0</span></div>
+  <div class="row"><label>Contrast</label><input id="contrast" type="range" min="0.6" max="3" step="0.1" value="1.4"><span class="val" id="contrast-v">1.4</span></div>
+  <div class="row"><label>Specular</label><input id="spec" type="range" min="0" max="1.5" step="0.05" value="0.6"><span class="val" id="spec-v">.60</span></div>
+  <div class="row"><label>Rim glow</label><input id="rim" type="range" min="0" max="1.2" step="0.05" value="0.5"><span class="val" id="rim-v">.50</span></div>
+  <div class="toggles">
+    <button id="t-spin" class="on">Spin</button>
+    <button id="t-label" class="on">Atlas label</button>
+    <button id="t-glow" class="on">Planet glow</button>
+  </div>
+</div>
+<div class="hint">Tune to taste, then give me the values + I'll port them into the app</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+
+const app = document.getElementById('app')
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setSize(innerWidth, innerHeight); renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+app.appendChild(renderer.domElement)
+
+const scene = new THREE.Scene()
+const camera = new THREE.PerspectiveCamera(46, innerWidth / innerHeight, 0.1, 100)
+camera.position.set(0, 0, 17)
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true; controls.dampingFactor = 0.07; controls.enablePan = false
+controls.minDistance = 8; controls.maxDistance = 30
+
+scene.add(new THREE.AmbientLight(0x223344, 0.5))
+const key = new THREE.DirectionalLight(0xffffff, 2.0); key.position.set(5, 3, 6); scene.add(key)
+
+// faint stars
+;(() => { const N = 600, p = new Float32Array(N*3); for (let i=0;i<N;i++){ const t=Math.random()*6.28,ph=Math.acos(2*Math.random()-1),r=40+Math.random()*40; p[i*3]=r*Math.sin(ph)*Math.cos(t);p[i*3+1]=r*Math.sin(ph)*Math.sin(t);p[i*3+2]=r*Math.cos(ph) }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.BufferAttribute(p,3))
+  scene.add(new THREE.Points(g,new THREE.PointsMaterial({color:0x88aacc,size:0.12,transparent:true,opacity:0.6}))) })()
+
+const NOISE = /* glsl */`
+  float hash31(vec3 p){ p=fract(p*0.3183099+0.1); p*=17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
+  float vnoise3(vec3 x){ vec3 i=floor(x),f=fract(x); f=f*f*(3.0-2.0*f);
+    return mix(mix(mix(hash31(i+vec3(0,0,0)),hash31(i+vec3(1,0,0)),f.x),mix(hash31(i+vec3(0,1,0)),hash31(i+vec3(1,1,0)),f.x),f.y),
+               mix(mix(hash31(i+vec3(0,0,1)),hash31(i+vec3(1,0,1)),f.x),mix(hash31(i+vec3(0,1,1)),hash31(i+vec3(1,1,1)),f.x),f.y),f.z); }
+  float fbm7(vec3 p){ float v=0.0,a=0.5; for(int i=0;i<7;i++){ v+=a*vnoise3(p); p=p*2.03+1.3; a*=0.52; } return v; }
+  float ridged3(vec3 p){ float v=0.0,a=0.5; for(int i=0;i<6;i++){ float r=1.0-abs(2.0*vnoise3(p)-1.0); v+=a*r*r; p=p*2.05+0.7; a*=0.5; } return v; }
+`
+const VERT = /* glsl */`
+  varying vec3 vPos; varying vec3 vWN; varying vec3 vVN; varying vec3 vView; varying vec3 vWPos;
+  void main(){ vPos=position; vWN=normalize(mat3(modelMatrix)*normal); vVN=normalize(normalMatrix*normal);
+    vWPos=(modelMatrix*vec4(position,1.0)).xyz; vec4 mv=modelViewMatrix*vec4(position,1.0); vView=normalize(-mv.xyz);
+    gl_Position=projectionMatrix*mv; }
+`
+const FRAG = NOISE + /* glsl */`
+  uniform vec3 uColor; uniform float uType,uTime,uBump,uDetail,uContrast,uSpec,uRim; uniform vec3 uLightDir;
+  varying vec3 vPos; varying vec3 vWN; varying vec3 vVN; varying vec3 vView; varying vec3 vWPos;
+  float ctr(float x){ return clamp((x-0.5)*uContrast+0.5, 0.0, 1.0); }
+  void main(){
+    vec3 p = normalize(vPos); float lat = p.y; float d = uDetail;
+    vec3 surf = vec3(0.0); float height = 0.0; float gas = step(2.5, uType);
+
+    if (uType < 0.5) {
+      float c = ctr(fbm7(p*2.4*d)); float land = smoothstep(0.44,0.58,c);
+      float mtn = ridged3(p*5.0*d) * land;
+      surf = mix(vec3(0.03,0.07,0.05), uColor*0.85, land);
+      surf = mix(surf, mix(uColor, vec3(0.9,1.0,0.85), 0.4), mtn*0.85);
+      height = c*0.5 + mtn*0.7;
+    } else if (uType < 1.5) {
+      float c = ctr(fbm7(p*2.2*d)); float land = smoothstep(0.52,0.60,c);
+      float det = fbm7(p*6.5*d);
+      vec3 water = mix(vec3(0.01,0.05,0.20), vec3(0.04,0.20,0.46), det);
+      vec3 ground= mix(vec3(0.18,0.46,0.5), uColor, 0.45)*(0.7+0.5*det);
+      surf = mix(water, ground, land);
+      float ice = smoothstep(0.78,0.9, abs(lat)+fbm7(p*4.0)*0.12);
+      surf = mix(surf, vec3(0.9,0.96,1.0), ice);
+      height = land*0.5 + det*0.15;
+    } else if (uType < 2.5) {
+      float bands = ctr(fbm7(p*1.7*d + vec3(0.0,lat*4.0,0.0)));
+      float ripple = ridged3(p*9.0*d);
+      surf = mix(uColor*0.4, mix(uColor, vec3(1.0,0.88,0.62),0.55), bands*0.6+ripple*0.4);
+      height = bands*0.35 + ripple*0.55;
+    } else {
+      vec3 warp = vec3(fbm7(p*2.0*d), fbm7(p*2.0*d+5.2), fbm7(p*2.0*d+9.1));
+      float turb = fbm7(p*3.0*d + warp*1.6 + vec3(uTime*0.02,0,0));
+      float bands = sin(lat*11.0 + turb*5.0)*0.5+0.5; bands = ctr(bands);
+      surf = mix(uColor*0.4+vec3(0.06,0.0,0.10), uColor, bands);
+      float storm = smoothstep(0.74,0.94, fbm7(p*4.0*d+warp));
+      surf = mix(surf, vec3(0.95,0.88,1.0), storm*0.4);
+    }
+
+    vec3 N = normalize(vWN);
+    if (gas < 0.5) {
+      vec3 sx=dFdx(vWPos), sy=dFdy(vWPos);
+      vec2 dH = vec2(dFdx(height),dFdy(height))*uBump;
+      vec3 R1=cross(sy,N), R2=cross(N,sx); float det=dot(sx,R1);
+      vec3 grad = sign(det)*(dH.x*R1+dH.y*R2);
+      N = normalize(abs(det)*N - grad);
+    }
+    vec3 L = normalize(uLightDir);
+    float diff = max(dot(N,L),0.0);
+    vec3 lit = surf*(0.15 + diff*1.15);
+    float shin = (uType>0.5&&uType<1.5)?28.0:10.0;
+    lit += vec3(0.75,0.88,1.0)*pow(diff,shin)*uSpec;
+    float fres = pow(1.0-max(dot(vVN,vView),0.0),3.0);
+    lit += uColor*fres*uRim;
+    gl_FragColor = vec4(lit, 1.0);
+  }
+`
+
+const GLOW = {
+  v: `varying vec3 vN; varying vec3 vV; void main(){ vN=normalize(normalMatrix*normal); vec4 mv=modelViewMatrix*vec4(position,1.0); vV=normalize(-mv.xyz); gl_Position=projectionMatrix*mv; }`,
+  f: `uniform vec3 uColor; varying vec3 vN; varying vec3 vV; void main(){ float f=pow(1.0-max(dot(vN,vV),0.0),3.0); gl_FragColor=vec4(uColor*f, f*0.8); }`,
+}
+
+function labelSprite(text, hex, scale = 1) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 64; const x = c.getContext('2d')
+  x.font = '800 30px ui-monospace, Menlo, monospace'; x.textAlign='center'; x.textBaseline='middle'
+  x.shadowColor = hex; x.shadowBlur = 12; x.fillStyle = hex; x.fillText(text.toUpperCase(), 128, 34)
+  const tex = new THREE.CanvasTexture(c); tex.anisotropy = 4
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }))
+  s.scale.set(1.6*scale, 0.4*scale, 1); return s
+}
+
+const PLANETS = [
+  { type: 0, label: 'Gym', color: 0x4ade80 },
+  { type: 1, label: 'Health', color: 0x3b82f6 },
+  { type: 2, label: 'Journal', color: 0xfb923c },
+  { type: 3, label: 'Mentor', color: 0xa855f7 },
+]
+const shared = { uBump: 0.5, uDetail: 1.0, uContrast: 1.4, uSpec: 0.6, uRim: 0.5 }
+const mats = [], glows = [], meshes = []
+PLANETS.forEach((pl, i) => {
+  const x = -6.6 + i * 4.4
+  const grp = new THREE.Group(); grp.position.set(x, -2.4, 0); scene.add(grp)
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uColor: { value: new THREE.Color(pl.color) }, uType: { value: pl.type }, uTime: { value: 0 }, uLightDir: { value: new THREE.Vector3(1,0.6,0.8).normalize() },
+      uBump: { value: shared.uBump }, uDetail: { value: shared.uDetail }, uContrast: { value: shared.uContrast }, uSpec: { value: shared.uSpec }, uRim: { value: shared.uRim } },
+    vertexShader: VERT, fragmentShader: FRAG,
+  })
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1.5, 96, 96), mat); grp.add(mesh)
+  const glow = new THREE.Mesh(new THREE.SphereGeometry(1.5*1.14, 32, 32),
+    new THREE.ShaderMaterial({ transparent:true, blending:THREE.AdditiveBlending, side:THREE.BackSide, depthWrite:false,
+      uniforms:{ uColor:{ value:new THREE.Color(pl.color) } }, vertexShader: GLOW.v, fragmentShader: GLOW.f }))
+  grp.add(glow)
+  const lbl = labelSprite(pl.label, '#'+pl.color.toString(16).padStart(6,'0')); lbl.position.set(0, 2.1, 0); grp.add(lbl)
+  mats.push(mat); glows.push(glow); meshes.push(mesh)
+})
+
+// dim Atlas globe + subtle label preview (top center)
+const atlas = new THREE.Mesh(new THREE.SphereGeometry(1.9, 64, 64),
+  new THREE.ShaderMaterial({ transparent:true, side:THREE.DoubleSide, depthWrite:false,
+    vertexShader:`varying vec3 vN; varying vec3 vV; varying vec2 vUv; void main(){ vUv=uv; vN=normalize(normalMatrix*normal); vec4 mv=modelViewMatrix*vec4(position,1.0); vV=normalize(-mv.xyz); gl_Position=projectionMatrix*mv; }`,
+    fragmentShader:`varying vec3 vN; varying vec3 vV; varying vec2 vUv; void main(){ float fres=pow(1.0-max(dot(vN,vV),0.0),3.0);
+      vec2 g=vUv*vec2(44.0,22.0); vec2 gr=abs(fract(g-0.5)-0.5)/fwidth(g); float line=(1.0-clamp(min(gr.x,gr.y),0.0,1.0))*0.3;
+      vec3 col=vec3(0.13,0.55,1.0)*(fres*1.0+line); gl_FragColor=vec4(col, fres*0.6+line*0.4); }` }))
+atlas.position.set(0, 2.6, 0); scene.add(atlas)
+
+// subtle ATLAS label (mono, low opacity) just above the globe
+const atlasLabel = labelSprite('Atlas', '#bfe0ff', 1.0)
+atlasLabel.material.opacity = 0.5
+atlasLabel.position.set(0, 2.6 + 2.4, 0); scene.add(atlasLabel)
+
+// controls
+const $ = (id) => document.getElementById(id)
+function slider(id, key, fmt = (v) => v.toFixed(2).slice(0)) {
+  const el = $(id), v = $(id + '-v')
+  el.addEventListener('input', () => { shared[key] = parseFloat(el.value); v.textContent = fmt(shared[key])
+    mats.forEach(m => m.uniforms[key].value = shared[key]) })
+}
+slider('bump', 'uBump', v => v.toFixed(2).slice(1)); slider('detail', 'uDetail', v => v.toFixed(1))
+slider('contrast', 'uContrast', v => v.toFixed(1)); slider('spec', 'uSpec', v => v.toFixed(2).slice(1))
+slider('rim', 'uRim', v => v.toFixed(2).slice(1))
+let spin = true
+$('t-spin').addEventListener('click', e => { e.target.classList.toggle('on'); spin = e.target.classList.contains('on') })
+$('t-label').addEventListener('click', e => { e.target.classList.toggle('on'); atlasLabel.visible = e.target.classList.contains('on') })
+$('t-glow').addEventListener('click', e => { e.target.classList.toggle('on'); glows.forEach(g => g.visible = e.target.classList.contains('on')) })
+
+addEventListener('resize', () => { camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight) })
+const clock = new THREE.Clock()
+function tick() {
+  const t = clock.getElapsedTime()
+  mats.forEach((m, i) => { m.uniforms.uTime.value = t; if (spin) meshes[i].rotation.y = t * 0.18 + i })
+  atlas.rotation.y = t * 0.05
+  controls.update(); renderer.render(scene, camera); requestAnimationFrame(tick)
+}
+tick()
+</script>
+</body>
+</html>

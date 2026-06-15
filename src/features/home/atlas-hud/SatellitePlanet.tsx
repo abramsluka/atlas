@@ -44,16 +44,21 @@ const NOISE3 = /* glsl */ `
                mix(mix(hash31(i + vec3(0,0,1)), hash31(i + vec3(1,0,1)), f.x),
                    mix(hash31(i + vec3(0,1,1)), hash31(i + vec3(1,1,1)), f.x), f.y), f.z);
   }
-  float fbm3(vec3 p){ float v = 0.0, a = 0.5;
-    for(int i = 0; i < 5; i++){ v += a * vnoise3(p); p *= 2.0; a *= 0.5; } return v; }
+  // 7-octave fbm for fine surface detail
+  float fbm7(vec3 p){ float v = 0.0, a = 0.5;
+    for(int i = 0; i < 7; i++){ v += a * vnoise3(p); p = p * 2.03 + 1.3; a *= 0.52; } return v; }
+  // ridged multifractal — sharp ridges (mountains, dunes)
+  float ridged3(vec3 p){ float v = 0.0, a = 0.5;
+    for(int i = 0; i < 6; i++){ float r = 1.0 - abs(2.0 * vnoise3(p) - 1.0); v += a * r * r; p = p * 2.05 + 0.7; a *= 0.5; } return v; }
 `
 
 const PLANET_VERT = /* glsl */ `
-  varying vec3 vPos; varying vec3 vWN; varying vec3 vVN; varying vec3 vView;
+  varying vec3 vPos; varying vec3 vWN; varying vec3 vVN; varying vec3 vView; varying vec3 vWPos;
   void main(){
     vPos = position;                              // object space → noise
     vWN  = normalize(mat3(modelMatrix) * normal); // world normal → lighting
     vVN  = normalize(normalMatrix * normal);      // view normal → fresnel
+    vWPos = (modelMatrix * vec4(position, 1.0)).xyz; // world pos → derivative bump
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     vView = normalize(-mv.xyz);
     gl_Position = projectionMatrix * mv;
@@ -64,58 +69,80 @@ const PLANET_FRAG =
   NOISE3 +
   /* glsl */ `
   uniform vec3 uColor; uniform float uType; uniform float uTime; uniform vec3 uLightDir;
-  varying vec3 vPos; varying vec3 vWN; varying vec3 vVN; varying vec3 vView;
+  varying vec3 vPos; varying vec3 vWN; varying vec3 vVN; varying vec3 vView; varying vec3 vWPos;
+  float ctr(float x){ return clamp((x - 0.5) * 1.1 + 0.5, 0.0, 1.0); }   // contrast 1.1
 
   void main(){
     vec3 p = normalize(vPos);
     float lat = p.y;
+    float d = 0.8;   // detail
     vec3 surf = vec3(0.0);
+    float height = 0.0;   // drives bump-mapped relief
+    float gas = step(2.5, uType);
 
     if (uType < 0.5) {
-      // rocky — green continents over dark crust
-      float n = fbm3(p * 2.6);
-      float land = smoothstep(0.46, 0.60, n);
-      surf = mix(vec3(0.04, 0.10, 0.07), uColor, land);
-      surf = mix(surf, uColor * 1.35, smoothstep(0.64, 0.78, n));
+      // rocky — continents, mountain ridges, dark basins
+      float c = ctr(fbm7(p * 2.4 * d));
+      float land = smoothstep(0.44, 0.58, c);
+      float mtn = ridged3(p * 5.0 * d) * land;
+      vec3 dirt   = vec3(0.20, 0.12, 0.06);  // brown rock/soil base (not black)
+      vec3 forest = uColor * 0.48;           // green vegetation
+      vec3 ridge  = uColor * 0.78;           // lighter green ridges
+      surf = mix(dirt, forest, land);
+      surf = mix(surf, ridge, mtn * 0.55);
+      height = c * 0.5 + mtn * 0.7;
     } else if (uType < 1.5) {
-      // ocean — deep-blue water, lighter landmasses, white ice caps
-      float n = fbm3(p * 2.3);
-      float land = smoothstep(0.52, 0.60, n);
-      surf = mix(vec3(0.02, 0.10, 0.30), mix(vec3(0.25, 0.55, 0.75), uColor, 0.5), land);
-      surf = mix(surf, vec3(0.90, 0.95, 1.0), smoothstep(0.80, 0.92, abs(lat)));
+      // ocean — deep water, landmasses, ice caps, fine wave detail
+      float c = ctr(fbm7(p * 2.2 * d));
+      float land = smoothstep(0.52, 0.60, c);
+      float detail = fbm7(p * 6.5 * d);
+      vec3 water = mix(vec3(0.01, 0.05, 0.20), vec3(0.04, 0.20, 0.46), detail);
+      vec3 ground = mix(vec3(0.18, 0.46, 0.5), uColor, 0.45) * (0.7 + 0.5 * detail);
+      surf = mix(water, ground, land);
+      float ice = smoothstep(0.78, 0.9, abs(lat) + fbm7(p * 4.0) * 0.12);
+      surf = mix(surf, vec3(0.9, 0.96, 1.0), ice);
+      height = land * 0.5 + detail * 0.15;
     } else if (uType < 2.5) {
-      // desert — banded amber / sand
-      float bands = fbm3(p * 1.5 + vec3(0.0, lat * 3.0, 0.0));
-      float n = fbm3(p * 4.5);
-      surf = mix(uColor * 0.45, mix(uColor, vec3(1.0, 0.85, 0.6), 0.5), bands * 0.7 + n * 0.3);
+      // desert — dune bands with fine ridged ripples
+      float bands = ctr(fbm7(p * 1.7 * d + vec3(0.0, lat * 4.0, 0.0)));
+      float ripple = ridged3(p * 9.0 * d);
+      surf = mix(uColor * 0.4, mix(uColor, vec3(1.0, 0.88, 0.62), 0.55), bands * 0.6 + ripple * 0.4);
+      height = bands * 0.35 + ripple * 0.55;
     } else {
-      // gas giant — horizontal bands with turbulence + bright streaks
-      float turb = fbm3(p * 3.0 + vec3(uTime * 0.02, 0.0, 0.0)) * 0.5;
-      float bands = sin(lat * 9.0 + turb * 4.0);
-      surf = mix(uColor, uColor * 0.45 + vec3(0.05, 0.0, 0.08), smoothstep(-0.2, 0.2, bands));
-      surf = mix(surf, vec3(0.92, 0.86, 1.0), smoothstep(0.82, 1.0, bands) * 0.35);
+      // gas giant — domain-warped turbulent bands + a storm spot (smooth, no bump)
+      vec3 warp = vec3(fbm7(p * 2.0 * d), fbm7(p * 2.0 * d + 5.2), fbm7(p * 2.0 * d + 9.1));
+      float turb = fbm7(p * 3.0 * d + warp * 1.6 + vec3(uTime * 0.02, 0.0, 0.0));
+      float bands = ctr(sin(lat * 11.0 + turb * 5.0) * 0.5 + 0.5);
+      surf = mix(uColor * 0.4 + vec3(0.06, 0.0, 0.10), uColor, bands);
+      float storm = smoothstep(0.74, 0.94, fbm7(p * 4.0 * d + warp));
+      surf = mix(surf, vec3(0.95, 0.88, 1.0), storm * 0.4);
     }
 
-    // day/night lighting + rim
-    float diff = max(dot(normalize(vWN), normalize(uLightDir)), 0.0);
-    vec3 lit = surf * (0.18 + diff * 1.05);
+    // derivative-based bump: perturb the world normal from the height field (relief)
+    vec3 N = normalize(vWN);
+    if (gas < 0.5) {
+      vec3 sx = dFdx(vWPos), sy = dFdy(vWPos);
+      vec2 dH = vec2(dFdx(height), dFdy(height)) * 0.05;
+      vec3 R1 = cross(sy, N), R2 = cross(N, sx);
+      float det = dot(sx, R1);
+      vec3 grad = sign(det) * (dH.x * R1 + dH.y * R2);
+      N = normalize(abs(det) * N - grad);
+    }
+
+    vec3 L = normalize(uLightDir);
+    float diff = max(dot(N, L), 0.0);
+    vec3 lit = surf * (0.15 + diff * 1.15);
+
+    // specular sun-glint (water shiniest)
+    float shin = (uType > 0.5 && uType < 1.5) ? 28.0 : 10.0;
+    lit += vec3(0.75, 0.88, 1.0) * pow(diff, shin) * 0.6;
+
+    // atmospheric rim
     float fres = pow(1.0 - max(dot(vVN, vView), 0.0), 3.0);
-    lit += uColor * fres * 0.5;
+    lit += uColor * fres * 0.3;
 
     gl_FragColor = vec4(lit, 1.0);
   }
-`
-
-const GLOW_VERT = /* glsl */ `
-  varying vec3 vN; varying vec3 vV;
-  void main(){ vN = normalize(normalMatrix * normal);
-    vec4 mv = modelViewMatrix * vec4(position, 1.0); vV = normalize(-mv.xyz);
-    gl_Position = projectionMatrix * mv; }
-`
-const GLOW_FRAG = /* glsl */ `
-  uniform vec3 uColor; varying vec3 vN; varying vec3 vV;
-  void main(){ float f = pow(1.0 - max(dot(vN, vV), 0.0), 3.0);
-    gl_FragColor = vec4(uColor * f, f * 0.8); }
 `
 
 export default function SatellitePlanet({
@@ -144,20 +171,6 @@ export default function SatellitePlanet({
         fragmentShader: PLANET_FRAG,
       }),
     [planet.color, planet.kind],
-  )
-
-  const glowMat = useMemo(
-    () =>
-      new THREE.ShaderMaterial({
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        side: THREE.BackSide,
-        depthWrite: false,
-        uniforms: { uColor: { value: new THREE.Color(planet.color) } },
-        vertexShader: GLOW_VERT,
-        fragmentShader: GLOW_FRAG,
-      }),
-    [planet.color],
   )
 
   const label = useMemo(() => makeLabelSprite(planet.label, planet.color), [planet.label, planet.color])
@@ -197,14 +210,8 @@ export default function SatellitePlanet({
             document.body.style.cursor = 'default'
           }}
         >
-          <sphereGeometry args={[planet.size, 64, 64]} />
+          <sphereGeometry args={[planet.size, 96, 96]} />
           <primitive object={planetMat} attach="material" />
-        </mesh>
-
-        {/* glow shell */}
-        <mesh scale={1.14}>
-          <sphereGeometry args={[planet.size, 32, 32]} />
-          <primitive object={glowMat} attach="material" />
         </mesh>
 
         {/* billboard label */}
