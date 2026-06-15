@@ -22,12 +22,12 @@ function MealEditSheet({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/65 p-4"
-      style={{ backdropFilter: 'blur(6px)' }}
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-black/65 p-4"
+      style={{ backdropFilter: 'blur(6px)', paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-2xl bg-[#111113] border border-white/[0.14] p-5 space-y-4"
+        className="w-full max-w-md rounded-2xl bg-[#111113] border border-white/[0.14] p-5 space-y-4 max-h-[88vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
         {meal.photo_url && (
