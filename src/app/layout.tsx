@@ -53,8 +53,9 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full`}
+      style={{ background: '#050508' }}
     >
-      <body className="min-h-full text-white antialiased" style={{ background: 'var(--background)' }}>
+      <body className="min-h-full text-white antialiased" style={{ background: '#050508' }}>
         <StarField />
         <div style={{ position: 'relative', zIndex: 1 }}>
           <Providers>
