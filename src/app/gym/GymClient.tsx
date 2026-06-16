@@ -16,6 +16,10 @@ import {
 } from '@/features/gym/mutations'
 import type { GymConfig, GymExercise, GymLog, BodyWeight, Prescription, ProgressPhoto } from '@/features/gym/types'
 import ProtocolCard from './ProtocolCard'
+import SetTimerRing, { fmtClock, type TimerPhase } from './SetTimerRing'
+
+type SetTimerState = { phase: TimerPhase; phaseStart: number | null; sessionStart: number | null }
+const SET_TIMER_KEY = 'atlas.gym.timer'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -443,6 +447,49 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const [coachMode, setCoachMode] = useState<'devil' | 'angel' | null>(null)
   const [logSetFlash, setLogSetFlash] = useState(false)
 
+  // ── set timer (active / rest stopwatch, client-only, survives remount) ─────
+  const [timer, setTimer] = useState<SetTimerState>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SET_TIMER_KEY) || 'null')
+      // only restore a recent session (< 6h) so a stale next-day timer resets
+      if (saved?.phase && saved.phase !== 'idle' && saved.phaseStart && Date.now() - saved.phaseStart < 6 * 3600_000) {
+        return saved as SetTimerState
+      }
+    } catch {}
+    return { phase: 'idle', phaseStart: null, sessionStart: null }
+  })
+  const [nowTs, setNowTs] = useState(() => Date.now())
+
+  useEffect(() => {
+    try {
+      if (timer.phase === 'idle') localStorage.removeItem(SET_TIMER_KEY)
+      else localStorage.setItem(SET_TIMER_KEY, JSON.stringify(timer))
+    } catch {}
+  }, [timer])
+
+  useEffect(() => {
+    if (timer.phase === 'idle') return
+    const id = setInterval(() => setNowTs(Date.now()), 250)
+    return () => clearInterval(id)
+  }, [timer.phase])
+
+  const phaseMs = timer.phaseStart ? nowTs - timer.phaseStart : 0
+  const sessionMs = timer.sessionStart ? nowTs - timer.sessionStart : 0
+
+  function handleSetButton() {
+    const t = Date.now()
+    setNowTs(t)
+    if (timer.phase === 'active') {
+      handleLogSet()
+      setTimer(s => ({ ...s, phase: 'rest', phaseStart: t }))
+    } else {
+      setTimer(s => ({ phase: 'active', phaseStart: t, sessionStart: s.sessionStart ?? t }))
+    }
+  }
+  function endSession() {
+    setTimer({ phase: 'idle', phaseStart: null, sessionStart: null })
+  }
+
   async function streamCoach(mode: 'devil' | 'angel') {
     setCoachMode(mode)
     setCoachStreaming(true)
@@ -515,12 +562,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     if (!currentEx) return null
     return getRx(exLogs, currentEx, config.upgrade_at_reps, config.units)
   }, [exLogs, currentEx, config.upgrade_at_reps, config.units])
-
-  const est1RM = useMemo(() => {
-    if (!exLogs.length || currentEx?.bodyweight) return null
-    const last = exLogs[exLogs.length - 1]
-    return compute1RM(last.weight, last.reps)
-  }, [exLogs, currentEx])
 
   const bestSet = useMemo(() => {
     if (!exLogs.length) return null
@@ -1417,9 +1458,35 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   </div>
                 </div>
 
-                {/* Log Set button */}
+                {/* Active / Rest timer */}
+                <div className="mb-5">
+                  <AnimatePresence>
+                    {timer.phase !== 'idle' && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.25, ease: EASE_OUT }}
+                        className="flex items-center justify-center gap-2 mb-3"
+                      >
+                        <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30 font-mono">
+                          Session · {fmtClock(sessionMs)}
+                        </span>
+                        <button
+                          onClick={endSession}
+                          className="text-[9px] font-semibold tracking-widest uppercase text-white/30 px-1.5 py-0.5 rounded-md border border-white/10 active:opacity-60"
+                        >
+                          End
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                  <SetTimerRing phase={timer.phase} ms={phaseMs} />
+                </div>
+
+                {/* Start / End Set button */}
                 <motion.button
-                  onClick={handleLogSet}
+                  onClick={handleSetButton}
                   disabled={logSet.isPending}
                   whileTap={{ scale: 0.93 }}
                   animate={{
@@ -1432,12 +1499,18 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   style={{
                     background: logSetFlash
                       ? 'rgba(74,222,128,0.2)'
+                      : timer.phase === 'active'
+                      ? 'rgba(255,255,255,0.04)'
                       : 'linear-gradient(135deg, #4ade80 0%, #16a34a 100%)',
-                    color: logSetFlash ? '#4ade80' : '#000',
-                    border: logSetFlash ? '1px solid rgba(74,222,128,0.4)' : 'none',
+                    color: logSetFlash ? '#4ade80' : timer.phase === 'active' ? '#fff' : '#000',
+                    border: logSetFlash
+                      ? '1px solid rgba(74,222,128,0.4)'
+                      : timer.phase === 'active'
+                      ? '1px solid rgba(255,255,255,0.22)'
+                      : 'none',
                   }}
                 >
-                  {logSet.isPending ? '…' : 'Log Set'}
+                  {logSet.isPending ? '…' : timer.phase === 'active' ? 'End Set' : 'Start Set'}
                 </motion.button>
 
                 {/* Prescription card */}
@@ -1487,45 +1560,21 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   </motion.div>
                 )}
 
-                {/* Stats row */}
-                <div className="grid grid-cols-3 gap-2 mt-5">
-                  {[
-                    {
-                      label: currentEx.bodyweight ? 'Best reps' : 'Est 1RM',
-                      value: est1RM != null ? Math.round(est1RM) : (currentEx.bodyweight && bestSet ? bestSet.reps : '—'),
-                      sub: est1RM != null ? config.units : null,
-                      accent: est1RM != null,
-                    },
-                    {
-                      label: 'Best set',
-                      value: bestSet ? (currentEx.bodyweight ? `${bestSet.reps}` : `${bestSet.weight}×${bestSet.reps}`) : '—',
-                      sub: null,
-                      accent: false,
-                    },
-                    {
-                      label: 'Sessions',
-                      value: exLogs.length,
-                      sub: null,
-                      accent: exLogs.length >= 10,
-                    },
-                  ].map((stat, i) => (
-                    <motion.div
-                      key={stat.label}
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.05 + i * 0.06, duration: 0.3, ease: EASE_OUT }}
-                      className="rounded-xl px-3 py-3.5 text-center"
-                      style={{
-                        background: stat.accent ? 'rgba(74,222,128,0.05)' : 'rgba(255,255,255,0.04)',
-                        border: stat.accent ? '1px solid rgba(74,222,128,0.12)' : '1px solid rgba(255,255,255,0.07)',
-                      }}
-                    >
-                      <p className="text-[10px] text-white/30 mb-1.5 uppercase tracking-widest font-semibold">{stat.label}</p>
-                      <p className={`text-base font-bold tabular-nums ${stat.accent ? 'text-green-400' : ''}`}>{stat.value}</p>
-                      {stat.sub && <p className="text-[10px] text-white/25 mt-0.5">{stat.sub}</p>}
-                    </motion.div>
-                  ))}
-                </div>
+                {/* Best set */}
+                {bestSet && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, ease: EASE_OUT }}
+                    className="mt-5 rounded-xl px-4 py-3.5 flex items-center justify-between"
+                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
+                  >
+                    <span className="text-[10px] text-white/30 uppercase tracking-widest font-semibold">Best set</span>
+                    <span className="text-base font-bold tabular-nums">
+                      {currentEx.bodyweight ? `${bestSet.reps} reps` : `${bestSet.weight}×${bestSet.reps}`}
+                    </span>
+                  </motion.div>
+                )}
 
                 {/* Sparkline */}
                 {exLogs.length >= 2 && (
