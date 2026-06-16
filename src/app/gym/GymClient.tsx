@@ -1560,34 +1560,36 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   </motion.div>
                 )}
 
-                {/* Best set */}
+                {/* Best set + trend — side by side to stay compact */}
                 {bestSet && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3, ease: EASE_OUT }}
-                    className="mt-5 rounded-xl px-4 py-3.5 flex items-center justify-between"
-                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
-                  >
-                    <span className="text-[10px] text-white/30 uppercase tracking-widest font-semibold">Best set</span>
-                    <span className="text-base font-bold tabular-nums">
-                      {currentEx.bodyweight ? `${bestSet.reps} reps` : `${bestSet.weight}×${bestSet.reps}`}
-                    </span>
-                  </motion.div>
-                )}
+                  <div className="mt-5 flex gap-3 items-stretch">
+                    <motion.div
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.3, ease: EASE_OUT }}
+                      className={`rounded-xl px-4 py-3.5 flex flex-col justify-center text-center ${exLogs.length >= 2 ? 'basis-2/5 shrink-0' : 'mx-auto px-10'}`}
+                      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
+                    >
+                      <p className="text-[10px] text-white/30 uppercase tracking-widest font-semibold mb-1">Best set</p>
+                      <p className="text-lg font-bold tabular-nums">
+                        {currentEx.bodyweight ? `${bestSet.reps} reps` : `${bestSet.weight}×${bestSet.reps}`}
+                      </p>
+                    </motion.div>
 
-                {/* Sparkline */}
-                {exLogs.length >= 2 && (
-                  <motion.div
-                    className="mt-4 rounded-xl bg-white/5 border border-white/8 overflow-hidden"
-                    initial={{ opacity: 0, y: 12 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ duration: 0.4, ease: EASE_OUT }}
-                  >
-                    <p className="text-xs text-white/30 uppercase tracking-widest px-3 pt-3 pb-1">Trend (last 15 sets)</p>
-                    <PoSparkline logs={exLogs} bodyweight={currentEx.bodyweight} />
-                  </motion.div>
+                    {exLogs.length >= 2 && (
+                      <motion.div
+                        className="flex-1 min-w-0 rounded-xl bg-white/5 border border-white/8 overflow-hidden flex flex-col"
+                        initial={{ opacity: 0, y: 12 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.4, ease: EASE_OUT }}
+                      >
+                        <p className="text-[10px] text-white/30 uppercase tracking-widest px-3 pt-3 pb-1 shrink-0">Trend</p>
+                        <div className="flex-1 flex items-end">
+                          <PoSparkline logs={exLogs} bodyweight={currentEx.bodyweight} />
+                        </div>
+                      </motion.div>
+                    )}
+                  </div>
                 )}
 
               </motion.div>
@@ -1678,7 +1680,11 @@ export default function GymClient({ today, initialConfig, initialExercises, init
               {/* Finish Workout — always visible */}
               <div className="px-5 py-4 border-t border-white/6">
                 <button
-                  onClick={() => setTodayDone(d => !d)}
+                  onClick={() => setTodayDone(d => {
+                    const next = !d
+                    if (next) endSession() // finishing the workout resets the set timer to idle
+                    return next
+                  })}
                   className={`w-full rounded-xl py-3.5 text-sm font-bold transition-all active:scale-[0.98] ${
                     todayDone
                       ? 'bg-green-500/20 border border-green-500/40 text-green-400'
