@@ -1538,65 +1538,58 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                         : '1px solid rgba(255,255,255,0.08)',
                     }}
                   >
-                    <div className="px-5 py-4 flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className={`text-base font-bold tracking-wide ${rxColors[rx.action].split(' ')[0]}`}>
-                            {rxIcons[rx.action]} {rx.action}
+                    <div className="px-5 py-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className={`text-base font-bold tracking-wide ${rxColors[rx.action].split(' ')[0]}`}>
+                          {rxIcons[rx.action]} {rx.action}
+                        </span>
+                        {rx.action === 'INCREASE' && (
+                          <span className="text-[9px] font-bold tracking-widest px-2 py-1 rounded-full"
+                            style={{ background: 'rgba(74,222,128,0.15)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.2)' }}>
+                            LEVEL UP
                           </span>
-                          {rx.action === 'INCREASE' && (
-                            <span className="text-[9px] font-bold tracking-widest px-2 py-1 rounded-full"
-                              style={{ background: 'rgba(74,222,128,0.15)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.2)' }}>
-                              LEVEL UP
-                            </span>
-                          )}
-                        </div>
-                        <p className={`text-sm leading-relaxed ${rxColors[rx.action].split(' ')[0] === 'text-green-400' ? 'text-green-200/60' : rxColors[rx.action].split(' ')[0] === 'text-yellow-400' ? 'text-yellow-200/60' : rxColors[rx.action].split(' ')[0] === 'text-red-400' ? 'text-red-200/60' : 'text-white/40'}`}>
-                          {rx.reason}
-                        </p>
-                        {rx.nextWeight != null && (
-                          <p className="text-xs mt-2 font-mono text-white/35">→ next: {rx.nextWeight} {config.units}</p>
                         )}
                       </div>
-                      {bestSet && (
-                        <div className="text-right shrink-0 self-center pl-3.5" style={{ borderLeft: '1px solid rgba(255,255,255,0.1)' }}>
-                          <p className="text-[9px] text-white/30 uppercase tracking-[0.18em] font-semibold mb-1">Best</p>
-                          <p className="text-xl font-bold tabular-nums leading-none whitespace-nowrap">
-                            {currentEx.bodyweight ? `${bestSet.reps}` : `${bestSet.weight}×${bestSet.reps}`}
-                          </p>
-                        </div>
+                      <p className={`text-sm leading-relaxed ${rxColors[rx.action].split(' ')[0] === 'text-green-400' ? 'text-green-200/60' : rxColors[rx.action].split(' ')[0] === 'text-yellow-400' ? 'text-yellow-200/60' : rxColors[rx.action].split(' ')[0] === 'text-red-400' ? 'text-red-200/60' : 'text-white/40'}`}>
+                        {rx.reason}
+                      </p>
+                      {rx.nextWeight != null && (
+                        <p className="text-xs mt-2 font-mono text-white/35">→ next: {rx.nextWeight} {config.units}</p>
                       )}
                     </div>
                   </motion.div>
                 )}
 
-                {/* Best set — standalone fallback only when there's no prescription banner to host it */}
-                {bestSet && !rx && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3, ease: EASE_OUT }}
-                    className="mt-5 rounded-xl px-5 py-4 flex items-center justify-center gap-3"
-                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
-                  >
-                    <span className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-semibold">Best set</span>
-                    <span className="text-2xl font-bold tabular-nums">
-                      {currentEx.bodyweight ? `${bestSet.reps} reps` : `${bestSet.weight}×${bestSet.reps}`}
-                    </span>
-                  </motion.div>
-                )}
+                {/* Best set + trend — side by side to stay compact */}
+                {bestSet && (
+                  <div className="mt-5 flex gap-3 items-stretch">
+                    <motion.div
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.3, ease: EASE_OUT }}
+                      className={`rounded-xl px-4 py-3.5 flex flex-col justify-center text-center ${exLogs.length >= 2 ? 'basis-2/5 shrink-0' : 'mx-auto px-10'}`}
+                      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
+                    >
+                      <p className="text-[10px] text-white/30 uppercase tracking-widest font-semibold mb-1">Best set</p>
+                      <p className="text-lg font-bold tabular-nums">
+                        {currentEx.bodyweight ? `${bestSet.reps} reps` : `${bestSet.weight}×${bestSet.reps}`}
+                      </p>
+                    </motion.div>
 
-                {/* Trend — full width */}
-                {exLogs.length >= 2 && (
-                  <motion.div
-                    className="mt-4 rounded-xl bg-white/5 border border-white/8 overflow-hidden"
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.4, ease: EASE_OUT }}
-                  >
-                    <p className="text-xs text-white/30 uppercase tracking-widest px-3 pt-3 pb-1">Trend (last 15 sets)</p>
-                    <PoSparkline logs={exLogs} bodyweight={currentEx.bodyweight} />
-                  </motion.div>
+                    {exLogs.length >= 2 && (
+                      <motion.div
+                        className="flex-1 min-w-0 rounded-xl bg-white/5 border border-white/8 overflow-hidden flex flex-col"
+                        initial={{ opacity: 0, y: 12 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.4, ease: EASE_OUT }}
+                      >
+                        <p className="text-[10px] text-white/30 uppercase tracking-widest px-3 pt-3 pb-1 shrink-0">Trend</p>
+                        <div className="flex-1 flex items-end">
+                          <PoSparkline logs={exLogs} bodyweight={currentEx.bodyweight} />
+                        </div>
+                      </motion.div>
+                    )}
+                  </div>
                 )}
 
               </motion.div>
