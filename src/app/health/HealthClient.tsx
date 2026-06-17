@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, type ReactNode, useCallback, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import {
   useSupplements,
@@ -2189,6 +2190,12 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
   const [waterNote, setWaterNote] = useState<number | null>(null)
   const labelHintRef = useRef(false)
   const updateProfile = useUpdateHealthProfile()
+  // Overlays must portal to document.body — the health page has ancestors with
+  // transform/backdrop-filter/isolation that trap `fixed` children in a local
+  // stacking context, so an inline modal renders off-screen and lets the page
+  // behind stay interactive. mounted guard avoids touching document during SSR.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
 
   const today = rolledDate()
 
@@ -2286,6 +2293,7 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
   }, [pendingFiles, description, logFood, clearPending])
 
   return (
+    <>
     <section>
       <div className="flex items-center gap-4 mb-3.5">
         <div className="flex-1 h-px bg-white/[0.10]" />
@@ -2486,7 +2494,10 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
           </a>
         </div>
       </div>
+    </section>
 
+    {mounted && createPortal(
+      <>
       {editingMeal && (
         <MealEditSheet
           meal={editingMeal}
@@ -2594,7 +2605,10 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
           </div>
         </div>
       )}
-    </section>
+      </>,
+      document.body
+    )}
+    </>
   )
 }
 
