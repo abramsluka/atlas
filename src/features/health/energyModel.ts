@@ -133,13 +133,23 @@ export function deriveSleepQuality(
   return 75
 }
 
+export const DEFAULT_WAKE_HOUR = 7
+
 export function deriveWakeHour(ouraData: OuraData | null): number {
   const be = ouraData?.sleep?.bedtime_end
   if (be) {
     const d = new Date(be)
-    if (!isNaN(d.getTime())) return d.getHours() + d.getMinutes() / 60
+    if (!isNaN(d.getTime())) {
+      const h = d.getHours() + d.getMinutes() / 60
+      // A genuine wake time lands in the morning. Oura sometimes stores a stale
+      // or mismatched session (e.g. a bedtime, or a record from a different
+      // night) whose bedtime_end is an evening time. Trusting that would push
+      // wakeHour into the night and zero out the entire energy curve, so reject
+      // anything outside a plausible wake window and fall back to the default.
+      if (h >= 3 && h < 12) return h
+    }
   }
-  return 7
+  return DEFAULT_WAKE_HOUR
 }
 
 // ── Dose mapping ──────────────────────────────────────────────────────────────
