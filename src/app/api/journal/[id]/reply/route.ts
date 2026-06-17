@@ -102,24 +102,25 @@ export async function POST(
               controller.enqueue(new TextEncoder().encode(chunk))
             }
           }
+
+          // Persist BEFORE closing the stream so the client's refetch reads fresh data
+          if (fullText) {
+            if (targetIndex === -1) {
+              await db
+                .from('journal_entries')
+                .update({ ai_reflection: fullText, updated_at: new Date().toISOString() })
+                .eq('id', id)
+            } else {
+              const updated = [...existingConversation]
+              updated[targetIndex] = { role: 'assistant', content: fullText }
+              await db
+                .from('journal_entries')
+                .update({ conversation: updated, updated_at: new Date().toISOString() })
+                .eq('id', id)
+            }
+          }
         } finally {
           controller.close()
-        }
-
-        if (fullText) {
-          if (targetIndex === -1) {
-            await db
-              .from('journal_entries')
-              .update({ ai_reflection: fullText, updated_at: new Date().toISOString() })
-              .eq('id', id)
-          } else {
-            const updated = [...existingConversation]
-            updated[targetIndex] = { role: 'assistant', content: fullText }
-            await db
-              .from('journal_entries')
-              .update({ conversation: updated, updated_at: new Date().toISOString() })
-              .eq('id', id)
-          }
         }
       },
     })
@@ -179,20 +180,21 @@ export async function POST(
             controller.enqueue(new TextEncoder().encode(chunk))
           }
         }
+
+        // Persist BEFORE closing the stream so the client's refetch reads fresh data
+        if (fullText) {
+          const updatedConversation: ConversationMessage[] = [
+            ...existingConversation,
+            { role: 'user', content: message!.trim(), ...(replyAudioPath ? { audio_path: replyAudioPath } : {}) },
+            { role: 'assistant', content: fullText },
+          ]
+          await db
+            .from('journal_entries')
+            .update({ conversation: updatedConversation, updated_at: new Date().toISOString() })
+            .eq('id', id)
+        }
       } finally {
         controller.close()
-      }
-
-      if (fullText) {
-        const updatedConversation: ConversationMessage[] = [
-          ...existingConversation,
-          { role: 'user', content: message!.trim(), ...(replyAudioPath ? { audio_path: replyAudioPath } : {}) },
-          { role: 'assistant', content: fullText },
-        ]
-        await db
-          .from('journal_entries')
-          .update({ conversation: updatedConversation, updated_at: new Date().toISOString() })
-          .eq('id', id)
       }
     },
   })
