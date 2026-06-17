@@ -23,6 +23,22 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans, Arial, Helvetica, sans-serif);
+  overscroll-behavior-y: contain;
+}
+
+/* ── Pull-to-refresh spinner ── */
+.ptr-ring {
+  width: 26px;
+  height: 26px;
+  border-radius: 9999px;
+  border: 2.5px solid rgba(255, 255, 255, 0.14);
+  border-top-color: var(--cosmic-green);
+}
+.ptr-spin .ptr-ring {
+  animation: ptr-rotate 0.7s linear infinite;
+}
+@keyframes ptr-rotate {
+  to { transform: rotate(360deg); }
 }
 
 /* ── Glassmorphism card ── */

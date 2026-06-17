@@ -5,6 +5,7 @@ import Providers from './providers'
 import TabBar from './TabBar'
 import StarField from '@/components/StarField'
 import PageTransition from '@/components/PageTransition'
+import PullToRefresh from '@/components/PullToRefresh'
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -59,7 +60,9 @@ export default function RootLayout({
         <StarField />
         <div style={{ position: 'relative', zIndex: 1 }}>
           <Providers>
-            <PageTransition>{children}</PageTransition>
+            <PullToRefresh>
+              <PageTransition>{children}</PageTransition>
+            </PullToRefresh>
           </Providers>
         </div>
         <TabBar />
