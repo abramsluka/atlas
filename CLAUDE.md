@@ -111,6 +111,7 @@ proxy.ts                            # Next.js 16 middleware (session refresh)
 - Journal (text + voice entries, mood tracking, AI reflection, follow-up conversation thread)
 - Mentor (cross-module AI coach — fetches all data sources on every message: workouts, Oura, food, water, weight, journal, check-ins, jots, health profile, PO logs, supplements)
 - Bottom tab bar navigation (Home, Gym, Health, Journal, Mentor)
+- Deployed to production on Vercel (live) — real mobile perf should be tested against the prod URL, not the local `next dev` server
 
 ## What's Next
 
@@ -126,7 +127,7 @@ proxy.ts                            # Next.js 16 middleware (session refresh)
 
 ## Deferred (don't build unless asked)
 
-Finances/subscriptions tab, goals module, Vercel deployment.
+Finances/subscriptions tab, goals module.
 
 ## Dev Server
 
