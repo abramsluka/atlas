@@ -166,10 +166,10 @@ type SupplementLogRow = {
   supplements: { name: string } | null
 }
 
-function formatSupplementLogs(logs: SupplementLogRow[]): string {
+function formatSupplementLogs(logs: SupplementLogRow[], tz: string): string {
   const byDate: Record<string, string[]> = {}
   for (const log of logs) {
-    const date = new Date(log.taken_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    const date = new Date(log.taken_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: tz })
     if (!byDate[date]) byDate[date] = []
     if (log.supplements?.name) byDate[date].push(log.supplements.name)
   }
@@ -350,7 +350,7 @@ When journal data is present: look for mood trends across entries (not just toda
   }
 
   if (supplementLogData.data?.length) {
-    const formatted = formatSupplementLogs(supplementLogData.data as unknown as SupplementLogRow[])
+    const formatted = formatSupplementLogs(supplementLogData.data as unknown as SupplementLogRow[], TZ)
     if (formatted) dataSections.push(`SUPPLEMENT LOGS (last 7 days):\n${formatted}`)
   }
 
