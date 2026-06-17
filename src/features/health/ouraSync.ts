@@ -107,20 +107,27 @@ export async function syncOuraToday(
 
   const scoreDay = sleepScore?.day as string | undefined
   const sleepDetailRecords: Array<Record<string, unknown>> = sleepDetailJson?.data ?? []
-  const sleepDetail = scoreDay
-    ? (sleepDetailRecords
-        .filter(r => r.day === scoreDay && r.type === 'long_sleep')
-        .sort((a, b) => String(b.bedtime_end ?? '').localeCompare(String(a.bedtime_end ?? '')))[0]
-      ?? sleepDetailRecords
-        .filter(r => r.day === scoreDay && r.type !== 'nap')
-        .sort((a, b) => String(b.bedtime_end ?? '').localeCompare(String(a.bedtime_end ?? '')))[0]
-      ?? sleepDetailRecords
-        .filter(r => r.day === scoreDay)
-        .sort((a, b) => String(b.bedtime_end ?? '').localeCompare(String(a.bedtime_end ?? '')))[0]
-      // Oura sometimes attributes a session to the previous calendar day (night it started);
-      // fall back to the most recent record regardless of day to avoid losing HRV/duration.
-      ?? pickLatest(sleepDetailRecords))
-    : pickLatest(sleepDetailRecords)
+
+  // The main nightly sleep is always type 'long_sleep'. The short 'sleep' sessions
+  // are naps or aborted recordings — some only a few minutes long and ending in the
+  // evening — and must never be chosen: picking one wrecks the derived wake hour
+  // (which then zeroes the whole energy curve) and the HRV/duration. Oura also
+  // publishes the daily_sleep score before the matching sleep *period* detail
+  // syncs, so the newest long_sleep can lag the score by a day.
+  const durSec = (r: Record<string, unknown>): number =>
+    typeof r.total_sleep_duration === 'number' ? r.total_sleep_duration : 0
+  const longSleeps = sleepDetailRecords
+    .filter(r => r.type === 'long_sleep')
+    .sort((a, b) => String(b.bedtime_end ?? '').localeCompare(String(a.bedtime_end ?? '')))
+
+  const sleepDetail =
+    // 1. the long_sleep for the score's day
+    longSleeps.find(r => r.day === scoreDay)
+    // 2. otherwise the most recent long_sleep we have (detail often lags the score)
+    ?? longSleeps[0]
+    // 3. only if no long_sleep exists at all, the longest session by actual sleep
+    //    duration — never the latest, which would favour an evening nap
+    ?? [...sleepDetailRecords].sort((a, b) => durSec(b) - durSec(a))[0]
 
   const num = (v: unknown): number | null => (typeof v === 'number' ? v : null)
   const readinessContrib =
