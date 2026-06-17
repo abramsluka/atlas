@@ -38,6 +38,9 @@ export async function POST(request: NextRequest) {
   const date: string = body.date ?? rolledDate(new Date())
   const question: string | undefined = body.question ? String(body.question).trim() : undefined
   const chipLabel: string | null = body.chip_label ? String(body.chip_label) : null
+  // Client's IANA timezone — without it the server formats taken_at in UTC,
+  // which shifts evening meals into the early morning of the next day.
+  const tz: string = typeof body.tz === 'string' && body.tz ? body.tz : 'UTC'
 
   const db = createServiceClient()
 
@@ -86,7 +89,7 @@ export async function POST(request: NextRequest) {
     lines.push(`Meals today (${date}):`)
     for (const m of mealList) {
       const time = m.taken_at
-        ? new Date(m.taken_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+        ? new Date(m.taken_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz })
         : ''
       lines.push(
         `  ${m.item_name} — ${m.calories} cal, ${Math.round(Number(m.protein_g))}g P, ${Math.round(Number(m.carbs_g))}g C${m.fat_g != null ? `, ${Math.round(Number(m.fat_g))}g F` : ''}${time ? ` (${time})` : ''}`,

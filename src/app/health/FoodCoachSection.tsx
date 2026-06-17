@@ -45,7 +45,7 @@ export function FoodCoachSection({ today, meals, profile }: Props) {
       const res = await fetch('/api/health/food/coach', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date: today }),
+        body: JSON.stringify({ date: today, tz: Intl.DateTimeFormat().resolvedOptions().timeZone }),
       })
       if (!res.ok || !res.body) return
       const reader = res.body.getReader()
@@ -74,7 +74,7 @@ export function FoodCoachSection({ today, meals, profile }: Props) {
       const res = await fetch('/api/health/food/coach', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date: today, question, chip_label: chipLabel ?? null }),
+        body: JSON.stringify({ date: today, question, chip_label: chipLabel ?? null, tz: Intl.DateTimeFormat().resolvedOptions().timeZone }),
       })
       if (!res.ok || !res.body) return
       const reader = res.body.getReader()

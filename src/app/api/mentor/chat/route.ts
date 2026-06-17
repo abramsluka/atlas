@@ -333,7 +333,7 @@ When journal data is present: look for mood trends across entries (not just toda
   if (jotData.data?.length) {
     const jots = jotData.data as Array<{ content: string; created_at: string }>
     const jotLines = jots.map(j => {
-      const ts = new Date(j.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+      const ts = new Date(j.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: TZ })
       return `${ts}: ${j.content}`
     }).join('\n')
     dataSections.push(`JOTS (last 14 days):\n${jotLines}`)
