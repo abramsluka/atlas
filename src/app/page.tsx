@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import HomeClient from './HomeClient'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
+import { getHomeInitialData } from '@/lib/home/getHomeInitialData'
 
 export default async function HomePage() {
   const authClient = await createClient()
@@ -12,12 +13,23 @@ export default async function HomePage() {
   const db = createServiceClient()
   const tz = await getUserTimezone(user.id)
   const today = toLocalDate(tz)
-  const { data: checkin } = await db
-    .from('daily_checkins')
-    .select('*')
-    .eq('user_id', user.id)
-    .eq('date', today)
-    .maybeSingle()
 
-  return <HomeClient today={today} timezone={tz} initialCheckin={checkin ?? null} />
+  // Fetch the checkin + all home-card data in parallel, server-side (next to
+  // Supabase) so the browser doesn't make ~5 cross-region calls on mount.
+  const [checkinRes, home] = await Promise.all([
+    db.from('daily_checkins').select('*').eq('user_id', user.id).eq('date', today).maybeSingle(),
+    getHomeInitialData(db, user.id, today),
+  ])
+
+  return (
+    <HomeClient
+      today={today}
+      timezone={tz}
+      initialCheckin={checkinRes.data ?? null}
+      initialBento={home.bento}
+      initialTodaysCall={home.todaysCall}
+      initialBriefing={home.briefing}
+      initialWeeklyReports={home.weeklyReports}
+    />
+  )
 }

@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation'
 import { useTodayCheckin } from '@/features/workouts/queries'
 import { useSaveEveningCheckin } from '@/features/workouts/mutations'
 import type { DailyCheckin } from '@/features/workouts/types'
-import type { BentoStats } from '@/app/api/home/bento-stats/route'
+import type { BentoStats } from '@/lib/home/bentoStats'
 import { computeRing, CIRC, type RingState } from '@/features/home/dayRing'
 
 // Code-split the Three.js HUD so it never enters the main bundle — loads only
@@ -408,11 +408,12 @@ function BentoCard({ href, color, label, headline, sub, wide, loading, dim, visu
   )
 }
 
-function BentoGrid() {
-  const [stats, setStats] = useState<BentoStats | null>(null)
-  const [loading, setLoading] = useState(true)
+function BentoGrid({ initial }: { initial?: BentoStats }) {
+  const [stats, setStats] = useState<BentoStats | null>(initial ?? null)
+  const [loading, setLoading] = useState(initial === undefined)
 
   useEffect(() => {
+    if (initial !== undefined) return // seeded server-side; skip the client fetch
     fetch('/api/home/bento-stats', { cache: 'no-store' })
       .then(r => r.json())
       .then((d: BentoStats & { error?: string }) => {
@@ -420,7 +421,7 @@ function BentoGrid() {
         setStats(d); setLoading(false)
       })
       .catch(() => setLoading(false))
-  }, [])
+  }, [initial])
 
   // Train — prefer recent check-in when no formal workout recently
   const msPerDay = 1000 * 60 * 60 * 24
@@ -582,8 +583,8 @@ const VERDICT_BORDER: Record<Verdict, string> = {
   RED:    'rgba(248,113,113,0.25)',
 }
 
-function TodaysCallCard() {
-  const [data, setData] = useState<TodaysCallData | null>(null)
+function TodaysCallCard({ initial }: { initial?: TodaysCallData | null }) {
+  const [data, setData] = useState<TodaysCallData | null>(initial ?? null)
   const [loading, setLoading] = useState(false)
   const [noData, setNoData] = useState(false)
   const fetched = useRef(false)
@@ -606,6 +607,7 @@ function TodaysCallCard() {
   useEffect(() => {
     if (fetched.current) return
     fetched.current = true
+    if (initial) return // seeded from server cache; skip the mount POST
     fetch_()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -666,17 +668,18 @@ function TodaysCallCard() {
 
 // ─── Briefing Card ────────────────────────────────────────────────────────────
 
-function BriefingCard() {
-  const [coachText, setCoachText] = useState('')
+function BriefingCard({ initialContent }: { initialContent?: string | null }) {
+  const [coachText, setCoachText] = useState(initialContent ?? '')
   const [coachStreaming, setCoachStreaming] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(initialContent === undefined)
 
   useEffect(() => {
+    if (initialContent !== undefined) return // seeded server-side; skip the client fetch
     fetch('/api/home/briefing')
       .then(r => r.json())
       .then(({ content }: { content: string | null }) => { if (content) setCoachText(content) })
       .finally(() => setLoading(false))
-  }, [])
+  }, [initialContent])
 
   async function streamBriefing() {
     if (coachStreaming) return
@@ -766,11 +769,18 @@ function getMostRecentSunday(): string {
   return d.toISOString().slice(0, 10)
 }
 
-function SundayModal({ onDismiss }: { onDismiss: () => void }) {
+function SundayModal({ onDismiss, initialReports }: { onDismiss: () => void; initialReports?: Array<{ report_text: string; week_of: string }> }) {
   const router = useRouter()
-  const [report, setReport] = useState<{ report_text: string; week_of: string } | null>(null)
+  const [report, setReport] = useState<{ report_text: string; week_of: string } | null>(() => {
+    if (initialReports) {
+      const weekOf = getMostRecentSunday()
+      return initialReports.find(r => r.week_of === weekOf) ?? null
+    }
+    return null
+  })
 
   useEffect(() => {
+    if (initialReports !== undefined) return // seeded server-side; skip the client fetch
     fetch('/api/mentor/weekly-reports')
       .then(r => r.json())
       .then((reports: Array<{ report_text: string; week_of: string }>) => {
@@ -779,7 +789,7 @@ function SundayModal({ onDismiss }: { onDismiss: () => void }) {
         if (current) setReport(current)
       })
       .catch(() => {})
-  }, [])
+  }, [initialReports])
 
   if (!report) return null
 
@@ -829,10 +839,18 @@ export default function HomeClient({
   today,
   timezone: _timezone,
   initialCheckin,
+  initialBento,
+  initialTodaysCall,
+  initialBriefing,
+  initialWeeklyReports,
 }: {
   today: string
   timezone: string
   initialCheckin: DailyCheckin | null
+  initialBento?: BentoStats
+  initialTodaysCall?: TodaysCallData | null
+  initialBriefing?: string | null
+  initialWeeklyReports?: Array<{ week_of: string; report_text: string }>
 }) {
   const queryClient = useQueryClient()
   if (initialCheckin) queryClient.setQueryData(['checkin', today], initialCheckin)
@@ -894,7 +912,7 @@ export default function HomeClient({
         </motion.button>
         <AtlasHUD onExit={toggleMapView} />
         {showSundayModal && (
-          <SundayModal onDismiss={() => {
+          <SundayModal initialReports={initialWeeklyReports} onDismiss={() => {
             setShowSundayModal(false)
             localStorage.setItem(`atlas_weekly_report_shown_${getMostRecentSunday()}`, 'true')
           }} />
@@ -949,7 +967,7 @@ export default function HomeClient({
           transition={{ duration: 0.4, ease: 'easeOut' }}
         >
           <DayRing />
-          <TodaysCallCard />
+          <TodaysCallCard initial={initialTodaysCall} />
         </motion.div>
 
         {/* Bento module grid */}
@@ -959,7 +977,7 @@ export default function HomeClient({
           transition={{ duration: 0.4, ease: 'easeOut', delay: 0.08 }}
         >
           <SectionTitle label="Modules" />
-          <BentoGrid />
+          <BentoGrid initial={initialBento} />
         </motion.div>
 
         {/* Check-in */}
@@ -991,7 +1009,7 @@ export default function HomeClient({
           transition={{ duration: 0.4, ease: 'easeOut', delay: 0.24 }}
           className="mt-4"
         >
-          <BriefingCard />
+          <BriefingCard initialContent={initialBriefing} />
         </motion.div>
 
         <div className="px-4 pb-6 flex justify-center mt-6">
