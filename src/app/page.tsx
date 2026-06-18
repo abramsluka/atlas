@@ -18,7 +18,7 @@ export default async function HomePage() {
   // Supabase) so the browser doesn't make ~5 cross-region calls on mount.
   const [checkinRes, home] = await Promise.all([
     db.from('daily_checkins').select('*').eq('user_id', user.id).eq('date', today).maybeSingle(),
-    getHomeInitialData(db, user.id, today),
+    getHomeInitialData(db, user.id, today, tz),
   ])
 
   return (
@@ -30,6 +30,7 @@ export default async function HomePage() {
       initialTodaysCall={home.todaysCall}
       initialBriefing={home.briefing}
       initialWeeklyReports={home.weeklyReports}
+      initialStreaks={home.streaks}
     />
   )
 }

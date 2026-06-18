@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { computeBentoStats, type BentoStats } from '@/lib/home/bentoStats'
+import { computeStreaks, type Streaks } from '@/lib/home/streaks'
 
 type DB = ReturnType<typeof createServiceClient>
 
@@ -15,16 +16,18 @@ export interface HomeInitialData {
   todaysCall?: TodaysCallCached | null
   briefing?: string | null
   weeklyReports?: WeeklyReportRow[]
+  streaks?: Streaks
 }
 
 // Runs all home-page reads in parallel, server-side, colocated with Supabase —
-// so the browser doesn't make 4 separate cross-region round trips on mount.
-export async function getHomeInitialData(db: DB, userId: string, today: string): Promise<HomeInitialData> {
-  const [bentoR, callR, briefR, weeklyR] = await Promise.allSettled([
+// so the browser doesn't make several separate cross-region round trips on mount.
+export async function getHomeInitialData(db: DB, userId: string, today: string, tz: string): Promise<HomeInitialData> {
+  const [bentoR, callR, briefR, weeklyR, streaksR] = await Promise.allSettled([
     computeBentoStats(db, userId, today),
     db.from('todays_call').select('color, headline, bullets').eq('user_id', userId).eq('date', today).maybeSingle(),
     db.from('daily_briefings').select('content').eq('user_id', userId).eq('date', today).maybeSingle(),
     db.from('weekly_reports').select('id, week_of, report_text, created_at').eq('user_id', userId).order('week_of', { ascending: false }).limit(12),
+    computeStreaks(db, userId, tz),
   ])
 
   return {
@@ -38,5 +41,6 @@ export async function getHomeInitialData(db: DB, userId: string, today: string):
     weeklyReports: weeklyR.status === 'fulfilled'
       ? ((weeklyR.value.data as WeeklyReportRow[] | null) ?? [])
       : undefined,
+    streaks: streaksR.status === 'fulfilled' ? streaksR.value : undefined,
   }
 }

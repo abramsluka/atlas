@@ -9,6 +9,8 @@ import { useTodayCheckin } from '@/features/workouts/queries'
 import { useSaveEveningCheckin } from '@/features/workouts/mutations'
 import type { DailyCheckin } from '@/features/workouts/types'
 import type { BentoStats } from '@/lib/home/bentoStats'
+import type { Streaks } from '@/lib/home/streaks'
+import StreakStrip from './StreakStrip'
 import { computeRing, CIRC, type RingState } from '@/features/home/dayRing'
 
 // Code-split the Three.js HUD so it never enters the main bundle — loads only
@@ -843,6 +845,7 @@ export default function HomeClient({
   initialTodaysCall,
   initialBriefing,
   initialWeeklyReports,
+  initialStreaks,
 }: {
   today: string
   timezone: string
@@ -851,6 +854,7 @@ export default function HomeClient({
   initialTodaysCall?: TodaysCallData | null
   initialBriefing?: string | null
   initialWeeklyReports?: Array<{ week_of: string; report_text: string }>
+  initialStreaks?: Streaks
 }) {
   const queryClient = useQueryClient()
   if (initialCheckin) queryClient.setQueryData(['checkin', today], initialCheckin)
@@ -968,6 +972,16 @@ export default function HomeClient({
         >
           <DayRing />
           <TodaysCallCard initial={initialTodaysCall} />
+        </motion.div>
+
+        {/* Consistency strip */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: 'easeOut', delay: 0.06 }}
+        >
+          <SectionTitle label="Consistency" />
+          <StreakStrip initial={initialStreaks} />
         </motion.div>
 
         {/* Bento module grid */}
