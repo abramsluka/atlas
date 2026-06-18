@@ -55,6 +55,36 @@ export function useUpdateExercise() {
   })
 }
 
+export function useReorderExercises() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      const res = await fetch('/api/gym/exercises/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      })
+      if (!res.ok) throw new Error('Failed to reorder exercises')
+      return res.json()
+    },
+    onMutate: async (ids: string[]) => {
+      await qc.cancelQueries({ queryKey: ['gym-exercises'] })
+      const prev = qc.getQueryData<GymExercise[]>(['gym-exercises'])
+      if (prev) {
+        const byId = new Map(prev.map(e => [e.id, e]))
+        const next = ids
+          .map((id, i) => { const e = byId.get(id); return e ? { ...e, order_index: i } : null })
+          .filter((e): e is GymExercise => e !== null)
+        qc.setQueryData<GymExercise[]>(['gym-exercises'], next)
+      }
+      return { prev }
+    },
+    onError: (_err, _ids, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['gym-exercises'], ctx.prev)
+    },
+  })
+}
+
 export function useDeleteExercise() {
   const qc = useQueryClient()
   return useMutation({

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion'
 
 const EASE_OUT = [0.16, 1, 0.3, 1] as const
 import { useQueryClient } from '@tanstack/react-query'
@@ -10,7 +10,7 @@ import { useGymConfig, useGymExercises, useAllGymLogs, useBodyWeights, useBodyMe
 import { useHealthProfile } from '@/features/health/queries'
 import {
   useSaveGymConfig,
-  useCreateExercise, useUpdateExercise, useDeleteExercise,
+  useCreateExercise, useUpdateExercise, useDeleteExercise, useReorderExercises,
   useLogSet, useDeleteLog,
   useLogBodyWeight, useLogBodyMeasurement, useUploadPhoto, useDeletePhoto,
 } from '@/features/gym/mutations'
@@ -290,6 +290,73 @@ interface Props {
   initialConfig: GymConfig
   initialExercises: GymExercise[]
   initialBodyWeights: BodyWeight[]
+}
+
+// Draggable exercise chip. Touch: press & hold to pick up, then drag to reorder
+// (a quick swipe still scrolls the row). Mouse: click-drag to reorder. A plain
+// tap/click still selects the exercise.
+function ExerciseChip({ ex, isActive, onSelect, onDragComplete }: {
+  ex: GymExercise
+  isActive: boolean
+  onSelect: (id: string) => void
+  onDragComplete: () => void
+}) {
+  const controls = useDragControls()
+  const pressTimer = useRef<number | undefined>(undefined)
+  const startPos = useRef({ x: 0, y: 0 })
+  const draggedRef = useRef(false)
+  const clearPress = () => {
+    if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = undefined }
+  }
+
+  return (
+    <Reorder.Item
+      value={ex}
+      as="div"
+      dragListener={false}
+      dragControls={controls}
+      whileDrag={{ scale: 1.06, zIndex: 20 }}
+      onDragStart={() => { draggedRef.current = true }}
+      onDragEnd={() => { onDragComplete(); setTimeout(() => { draggedRef.current = false }, 50) }}
+      onPointerDown={(e) => {
+        draggedRef.current = false
+        if (e.pointerType === 'mouse') {
+          controls.start(e) // desktop: drag begins on move; a stationary click still selects
+        } else {
+          startPos.current = { x: e.clientX, y: e.clientY }
+          pressTimer.current = window.setTimeout(() => controls.start(e), 200) // touch: press & hold
+        }
+      }}
+      onPointerMove={(e) => {
+        if (!pressTimer.current) return
+        // moved before the hold fired → it's a scroll/swipe, not a drag
+        if (Math.abs(e.clientX - startPos.current.x) > 8 || Math.abs(e.clientY - startPos.current.y) > 8) clearPress()
+      }}
+      onPointerUp={clearPress}
+      onPointerCancel={clearPress}
+      onClick={() => { if (!draggedRef.current) onSelect(ex.id) }}
+      className="relative px-4 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap flex-shrink-0 select-none cursor-grab"
+      style={isActive ? {
+        background: 'rgba(74,222,128,0.1)',
+        border: '1px solid rgba(74,222,128,0.35)',
+        color: '#4ade80',
+        boxShadow: '0 0 16px rgba(74,222,128,0.14), inset 0 0 10px rgba(74,222,128,0.05)',
+      } : {
+        background: 'rgba(255,255,255,0.04)',
+        border: '1px solid rgba(255,255,255,0.08)',
+        color: 'rgba(255,255,255,0.45)',
+      }}
+    >
+      {ex.name}
+      {isActive && (
+        <motion.span
+          layoutId="ex-active-dot"
+          className="absolute -bottom-px left-1/2 -translate-x-1/2 w-6 h-px rounded-full"
+          style={{ background: 'rgba(74,222,128,0.7)' }}
+        />
+      )}
+    </Reorder.Item>
+  )
 }
 
 export default function GymClient({ today, initialConfig, initialExercises, initialBodyWeights }: Props) {
@@ -578,6 +645,28 @@ export default function GymClient({ today, initialConfig, initialExercises, init
       localStorage.setItem(GYM_LAST_KEY, JSON.stringify({ exId: currentEx.id, weight: weightInput, reps: selectedReps }))
     } catch {}
   }, [currentEx, weightInput, selectedReps])
+
+  // Drag-to-reorder for the exercise chips. orderedEx mirrors filteredExercises
+  // but is the live source while dragging; on drop we persist the new order.
+  const reorderEx = useReorderExercises()
+  const [orderedEx, setOrderedEx] = useState<GymExercise[]>(filteredExercises)
+  useEffect(() => { setOrderedEx(filteredExercises) }, [filteredExercises])
+  const orderedExRef = useRef(orderedEx)
+  orderedExRef.current = orderedEx
+
+  function commitExerciseOrder() {
+    const newIds = orderedExRef.current.map(e => e.id)
+    const oldIds = filteredExercises.map(e => e.id)
+    const unchanged = newIds.length === oldIds.length && newIds.every((id, i) => id === oldIds[i])
+    if (unchanged) return
+    // Merge the reordered (filtered) chips back into the full global order so
+    // order_index stays sensible for exercises hidden by the current filter.
+    const filteredSet = new Set(oldIds)
+    const fullSorted = [...exercises].sort((a, b) => a.order_index - b.order_index)
+    let vi = 0
+    const newFullIds = fullSorted.map(e => filteredSet.has(e.id) ? newIds[vi++] : e.id)
+    reorderEx.mutate(newFullIds)
+  }
 
   const exLogs = useMemo(() =>
     allLogs.filter(l => l.exercise_id === currentEx?.id).sort((a, b) => a.logged_at.localeCompare(b.logged_at)),
@@ -1306,41 +1395,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 </div>
               </div>
               <div className="overflow-x-auto -mx-5 px-5 pb-0.5" style={{ scrollbarWidth: 'none' }}>
-                <div className="flex gap-2 min-w-max">
-                  {filteredExercises.map((ex, i) => {
-                    const isActive = currentEx?.id === ex.id
-                    return (
-                      <motion.button
-                        key={ex.id}
-                        initial={{ opacity: 0, x: -12 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: 0.05 + i * 0.05, ease: EASE_OUT, duration: 0.3 }}
-                        whileTap={{ scale: 0.93 }}
-                        onClick={() => selectEx(ex.id)}
-                        className="relative px-4 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap flex-shrink-0 transition-all duration-200"
-                        style={isActive ? {
-                          background: 'rgba(74,222,128,0.1)',
-                          border: '1px solid rgba(74,222,128,0.35)',
-                          color: '#4ade80',
-                          boxShadow: '0 0 16px rgba(74,222,128,0.14), inset 0 0 10px rgba(74,222,128,0.05)',
-                        } : {
-                          background: 'rgba(255,255,255,0.04)',
-                          border: '1px solid rgba(255,255,255,0.08)',
-                          color: 'rgba(255,255,255,0.45)',
-                        }}
-                      >
-                        {ex.name}
-                        {isActive && (
-                          <motion.span
-                            layoutId="ex-active-dot"
-                            className="absolute -bottom-px left-1/2 -translate-x-1/2 w-6 h-px rounded-full"
-                            style={{ background: 'rgba(74,222,128,0.7)' }}
-                          />
-                        )}
-                      </motion.button>
-                    )
-                  })}
-                  {filteredExercises.length === 0 && (
+                {orderedEx.length === 0 ? (
+                  <div className="flex gap-2 min-w-max">
                     <button
                       onClick={openAddEx}
                       className="px-4 py-2.5 rounded-xl border border-dashed text-white/25 text-sm whitespace-nowrap"
@@ -1348,8 +1404,26 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     >
                       No exercises — add one
                     </button>
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  <Reorder.Group
+                    as="div"
+                    axis="x"
+                    values={orderedEx}
+                    onReorder={setOrderedEx}
+                    className="flex gap-2 min-w-max"
+                  >
+                    {orderedEx.map((ex) => (
+                      <ExerciseChip
+                        key={ex.id}
+                        ex={ex}
+                        isActive={currentEx?.id === ex.id}
+                        onSelect={selectEx}
+                        onDragComplete={commitExerciseOrder}
+                      />
+                    ))}
+                  </Reorder.Group>
+                )}
               </div>
             </div>
 
