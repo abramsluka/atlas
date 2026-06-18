@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
+import { syncOuraToday } from '@/features/health/ouraSync'
 import type { OuraData, WhoopData } from '@/features/health/types'
 
 type Verdict = 'GREEN' | 'YELLOW' | 'RED'
@@ -23,6 +24,13 @@ function verdictFromWhoop(recoveryScore: number): Verdict {
   if (recoveryScore >= 67) return 'GREEN'
   if (recoveryScore >= 34) return 'YELLOW'
   return 'RED'
+}
+
+// Oura readiness is the primary signal; Whoop recovery is the fallback.
+function verdictFor(oura: OuraData | null, whoop: WhoopData | null): Verdict | null {
+  if (oura?.readiness?.score != null) return verdictFromOura(oura.readiness.score)
+  if (whoop?.recovery?.score != null) return verdictFromWhoop(whoop.recovery.score)
+  return null
 }
 
 async function generateCall(
@@ -93,31 +101,50 @@ export async function POST(req: Request) {
     if (cached) return NextResponse.json(cached)
   }
 
-  // Fetch wearable data
+  // The home page never triggers a wearable sync on its own, so without this
+  // the card is blank every morning until the Health page is opened. Pull
+  // today's Oura data first (syncOuraToday has its own 15-min cache, so this is
+  // cheap when already fresh).
+  await syncOuraToday(db, user.id, today).catch(() => null)
+
+  // Fetch wearable data for today
   const [ouraRes, whoopRes] = await Promise.all([
     db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'oura').eq('date', today).maybeSingle(),
     db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'whoop').eq('date', today).maybeSingle(),
   ])
 
-  const oura = ouraRes.data?.data as OuraData | null
-  const whoop = whoopRes.data?.data as WhoopData | null
+  let oura = ouraRes.data?.data as OuraData | null
+  let whoop = whoopRes.data?.data as WhoopData | null
+  let verdict = verdictFor(oura, whoop)
 
-  // Determine verdict — need at least one usable signal
-  let verdict: Verdict | null = null
-  if (oura?.readiness?.score != null) {
-    verdict = verdictFromOura(oura.readiness.score)
-  } else if (whoop?.recovery?.score != null) {
-    verdict = verdictFromWhoop(whoop.recovery.score)
+  // Fallback: if today still has no usable signal (provider lag, sync just
+  // failed), use the most recent wearable rows from the last few days so the
+  // card renders instead of disappearing entirely.
+  let usedFallback = false
+  if (!verdict) {
+    const [ouraRecent, whoopRecent] = await Promise.all([
+      db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'oura').lt('date', today).order('date', { ascending: false }).limit(1).maybeSingle(),
+      db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'whoop').lt('date', today).order('date', { ascending: false }).limit(1).maybeSingle(),
+    ])
+    oura = oura ?? (ouraRecent.data?.data as OuraData | null)
+    whoop = whoop ?? (whoopRecent.data?.data as WhoopData | null)
+    verdict = verdictFor(oura, whoop)
+    usedFallback = true
   }
 
   if (!verdict) return NextResponse.json({ noData: true })
 
   const { headline, bullets } = await generateCall(verdict, oura, whoop)
 
-  await db.from('todays_call').upsert(
-    { user_id: user.id, date: today, color: verdict, headline, bullets },
-    { onConflict: 'user_id,date' },
-  )
+  // Only cache as "today's" call when it was built from today's data. A
+  // fallback-derived call is left uncached so it self-heals once today's data
+  // lands, instead of pinning stale data under today's date.
+  if (!usedFallback) {
+    await db.from('todays_call').upsert(
+      { user_id: user.id, date: today, color: verdict, headline, bullets },
+      { onConflict: 'user_id,date' },
+    )
+  }
 
   return NextResponse.json({ color: verdict, headline, bullets })
 }
