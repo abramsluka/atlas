@@ -44,8 +44,8 @@ const GLOBE_FRAG =
     float topo = texture2D(uTopo, luv).r;
 
     vec2 g = vUv*vec2(56.0,28.0);
-    vec2 gr = abs(fract(g-0.5)-0.5)/fwidth(g);
-    float line = (1.0 - clamp(min(gr.x,gr.y),0.0,1.0)) * 0.5 * uGrid;
+    vec2 gd = abs(fract(g-0.5)-0.5);                                  // 0 at gridline → 0.5 between
+    float line = (1.0 - smoothstep(0.0, 0.06, min(gd.x,gd.y))) * 0.5 * uGrid;  // derivative-free (iOS-safe)
 
     // continents from real Earth mask → halftone dots (uDotSize opens the spacing)
     float land = smoothstep(0.42,0.55, landVal);

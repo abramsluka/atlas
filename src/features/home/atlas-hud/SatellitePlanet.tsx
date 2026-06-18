@@ -118,16 +118,9 @@ const PLANET_FRAG =
       surf = mix(surf, vec3(0.95, 0.88, 1.0), storm * 0.4);
     }
 
-    // derivative-based bump: perturb the world normal from the height field (relief)
+    // (bump removed — derivative funcs fail to compile on iOS Safari; it was
+    //  only 0.05 anyway, so the look is unchanged. height/gas now unused.)
     vec3 N = normalize(vWN);
-    if (gas < 0.5) {
-      vec3 sx = dFdx(vWPos), sy = dFdy(vWPos);
-      vec2 dH = vec2(dFdx(height), dFdy(height)) * 0.05;
-      vec3 R1 = cross(sy, N), R2 = cross(N, sx);
-      float det = dot(sx, R1);
-      vec3 grad = sign(det) * (dH.x * R1 + dH.y * R2);
-      N = normalize(abs(det) * N - grad);
-    }
 
     vec3 L = normalize(uLightDir);
     float diff = max(dot(N, L), 0.0);
