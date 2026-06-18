@@ -20,6 +20,7 @@ import SetTimerRing, { fmtClock, type TimerPhase } from './SetTimerRing'
 
 type SetTimerState = { phase: TimerPhase; phaseStart: number | null; sessionStart: number | null }
 const SET_TIMER_KEY = 'atlas.gym.timer'
+const GYM_LAST_KEY = 'atlas.gym.last' // last exercise + weight + reps, restored on app open
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -396,6 +397,26 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const [weightInput, setWeightInput] = useState<string>('0')
   const [selectedReps, setSelectedReps] = useState<number>(8)
 
+  // Restore the last exercise / weight / reps across app restarts (localStorage).
+  const restoredRef = useRef(false)
+  useEffect(() => {
+    if (restoredRef.current || exercises.length === 0) return
+    restoredRef.current = true
+    let saved: { exId?: string; weight?: string; reps?: number } | null = null
+    try { saved = JSON.parse(localStorage.getItem(GYM_LAST_KEY) || 'null') } catch {}
+    if (!saved?.exId) return
+    const ex = exercises.find(e => e.id === saved!.exId)
+    if (!ex) return
+    autoAdvancedRef.current = true // last-exercise restore wins over split auto-advance
+    if (ex.gym_id && ex.gym_id !== 'both') setFilterGym(ex.gym_id)
+    const dayId = ex.day_ids?.find(id => config.days.some(d => d.id === id))
+    setFilterDay(dayId ?? '')
+    setCurrentExId(ex.id)
+    if (typeof saved.weight === 'string') setWeightInput(saved.weight)
+    if (typeof saved.reps === 'number') setSelectedReps(saved.reps)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exercises])
+
   // Modals
   const [exModal, setExModal] = useState<ExModalState>(EMPTY_EX_MODAL)
   const [mounted, setMounted] = useState(false)
@@ -549,6 +570,14 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     filteredExercises.find(e => e.id === currentExId) ?? filteredExercises[0] ?? null,
     [filteredExercises, currentExId]
   )
+
+  // Persist current exercise + weight + reps so the page resumes where you left off.
+  useEffect(() => {
+    if (!restoredRef.current || !currentEx?.id) return
+    try {
+      localStorage.setItem(GYM_LAST_KEY, JSON.stringify({ exId: currentEx.id, weight: weightInput, reps: selectedReps }))
+    } catch {}
+  }, [currentEx, weightInput, selectedReps])
 
   const exLogs = useMemo(() =>
     allLogs.filter(l => l.exercise_id === currentEx?.id).sort((a, b) => a.logged_at.localeCompare(b.logged_at)),
