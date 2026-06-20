@@ -7,6 +7,7 @@ import { useGymConfig, useGymExercises, useAllGymLogs } from '@/features/gym/que
 import { useLogSet, useCreateExercise, useUpdateExercise, useDeleteExercise, useSaveGymConfig } from '@/features/gym/mutations'
 import type { GymCoachAction, CoachStreamEvent } from '@/features/gym/coachActions'
 import type { GymExercise } from '@/features/gym/types'
+import ChatText from '@/components/ChatText'
 
 const STORAGE_KEY = 'atlas-gym-coach-thread-v1'
 
@@ -306,12 +307,14 @@ export default function GymChatbot({ currentExId }: { currentExId: string | null
                     <div className={`max-w-[88%] ${m.role === 'user' ? '' : 'w-full'}`}>
                       {m.content && (
                         <div
-                          className="text-[13.5px] leading-relaxed whitespace-pre-wrap rounded-2xl px-3.5 py-2.5"
+                          className="text-[13.5px] leading-relaxed rounded-2xl px-3.5 py-2.5"
                           style={m.role === 'user'
                             ? { background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.2)', color: '#dcfce7' }
                             : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: '#e4e4e7' }}
                         >
-                          {m.content}
+                          {m.role === 'user'
+                            ? <span className="whitespace-pre-wrap">{m.content}</span>
+                            : <ChatText text={m.content} />}
                         </div>
                       )}
                       {/* Action cards */}

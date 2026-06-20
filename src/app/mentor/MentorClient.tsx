@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useId } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import ChatText from '@/components/ChatText'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   useJots,
@@ -963,7 +964,7 @@ export default function MentorClient() {
                                     borderLeft: '2px solid rgba(74,222,128,0.25)',
                                   }}
                                 >
-                                  <span className="whitespace-pre-wrap">{msg.content}</span>
+                                  <ChatText text={msg.content} />
                                   {isStreaming && <StreamingCursor done={false} />}
                                   {!isStreaming && isLast && <StreamingCursor done={true} />}
                                 </div>
