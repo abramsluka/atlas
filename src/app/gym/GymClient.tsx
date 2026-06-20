@@ -344,37 +344,6 @@ function ScrollChip({ ex, isActive, onSelect, onLongPress }: {
   )
 }
 
-// In-place draggable chip — rendered only in reorder mode. touch-action:none so
-// the horizontal drag engages on touch; the parent auto-scrolls the row at the
-// edges so off-screen chips are reachable.
-function ReorderChip({ ex, onDrag, onDragEnd }: {
-  ex: GymExercise
-  onDrag: (clientX: number) => void
-  onDragEnd: () => void
-}) {
-  return (
-    <Reorder.Item
-      value={ex}
-      as="div"
-      dragMomentum={false}
-      dragElastic={0.08}
-      dragTransition={{ bounceStiffness: 600, bounceDamping: 40 }}
-      whileDrag={{ scale: 1.08, zIndex: 30, boxShadow: '0 8px 24px rgba(0,0,0,0.45)' }}
-      onDrag={(_e, info) => onDrag(info.point.x)}
-      onDragEnd={onDragEnd}
-      className="relative px-4 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap flex-shrink-0 select-none cursor-grab"
-      style={{
-        touchAction: 'none',
-        background: 'rgba(74,222,128,0.07)',
-        border: '1px dashed rgba(74,222,128,0.55)',
-        color: 'rgba(255,255,255,0.88)',
-      }}
-    >
-      {ex.name}
-    </Reorder.Item>
-  )
-}
-
 // One row in the reorder sheet — vertical drag via the ⠿ handle.
 function ReorderRow({ ex }: { ex: GymExercise }) {
   const controls = useDragControls()
@@ -719,43 +688,9 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     } catch {}
   }, [currentEx, weightInput, selectedReps])
 
-  // Reorder: two ways in — the "reorder" button opens a vertical sheet, or
-  // long-press a chip enters in-place drag mode.
+  // Reorder via the bottom sheet — opened by the "reorder" button or a chip long-press.
   const reorderEx = useReorderExercises()
   const [sheetOpen, setSheetOpen] = useState(false)
-  const [reorderMode, setReorderMode] = useState(false)
-  const [orderEx, setOrderEx] = useState<GymExercise[]>([])
-  const orderExRef = useRef<GymExercise[]>([])
-  orderExRef.current = orderEx
-  const chipRowRef = useRef<HTMLDivElement>(null)
-  const autoScrollRAF = useRef<number | undefined>(undefined)
-
-  function enterReorder() { setOrderEx(filteredExercises); setReorderMode(true) }
-  // Persist on exit (not per-drop) so the optimistic cache update never churns
-  // the list mid-session — that was breaking the second+ drag.
-  function exitReorder() {
-    stopAutoScroll()
-    saveExerciseOrder(orderExRef.current.map(e => e.id))
-    setReorderMode(false)
-  }
-  function stopAutoScroll() {
-    if (autoScrollRAF.current) { cancelAnimationFrame(autoScrollRAF.current); autoScrollRAF.current = undefined }
-  }
-  // Drag near a horizontal edge → auto-scroll the row so off-screen chips are reachable.
-  function reorderEdgeScroll(clientX: number) {
-    const el = chipRowRef.current
-    if (!el) return
-    const r = el.getBoundingClientRect()
-    const EDGE = 56
-    const dir = clientX < r.left + EDGE ? -1 : clientX > r.right - EDGE ? 1 : 0
-    stopAutoScroll()
-    if (dir === 0) return
-    const step = () => { el.scrollLeft += 9 * dir; autoScrollRAF.current = requestAnimationFrame(step) }
-    autoScrollRAF.current = requestAnimationFrame(step)
-  }
-
-  // Leaving the filter would make the working set stale → drop out of reorder mode.
-  useEffect(() => { setReorderMode(false) }, [filterGym, filterDay])
 
   function saveExerciseOrder(newIds: string[]) {
     const oldIds = filteredExercises.map(e => e.id)
@@ -1484,62 +1419,46 @@ export default function GymClient({ today, initialConfig, initialExercises, init
             {/* Exercise chips */}
             <div className="mb-4">
               <div className="flex items-center justify-between mb-2.5">
-                <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30">
-                  {reorderMode ? 'Drag to reorder' : 'Exercise'}
-                </span>
+                <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30">Exercise</span>
                 <div className="flex items-center gap-3">
-                  {reorderMode ? (
-                    <button onClick={exitReorder} className="text-[11px] font-bold text-green-400 active:opacity-50">done</button>
+                  {filteredExercises.length > 1 && (
+                    <button onClick={() => setSheetOpen(true)} className="text-[11px] text-white/30 font-mono active:opacity-50">
+                      reorder
+                    </button>
+                  )}
+                  {currentEx && (
+                    <button onClick={openEditEx} className="text-[11px] text-white/30 font-mono active:opacity-50">
+                      edit
+                    </button>
+                  )}
+                  <button onClick={openAddEx} className="text-[11px] font-semibold active:opacity-50" style={{ color: 'rgba(74,222,128,0.7)' }}>
+                    + add
+                  </button>
+                </div>
+              </div>
+              <div className="overflow-x-auto -mx-5 px-5 pb-0.5" style={{ scrollbarWidth: 'none' }}>
+                <div className="flex gap-2 min-w-max">
+                  {filteredExercises.length === 0 ? (
+                    <button
+                      onClick={openAddEx}
+                      className="px-4 py-2.5 rounded-xl border border-dashed text-white/25 text-sm whitespace-nowrap"
+                      style={{ borderColor: 'rgba(255,255,255,0.12)' }}
+                    >
+                      No exercises — add one
+                    </button>
                   ) : (
-                    <>
-                      {filteredExercises.length > 1 && (
-                        <button onClick={() => setSheetOpen(true)} className="text-[11px] text-white/30 font-mono active:opacity-50">
-                          reorder
-                        </button>
-                      )}
-                      {currentEx && (
-                        <button onClick={openEditEx} className="text-[11px] text-white/30 font-mono active:opacity-50">
-                          edit
-                        </button>
-                      )}
-                      <button onClick={openAddEx} className="text-[11px] font-semibold active:opacity-50" style={{ color: 'rgba(74,222,128,0.7)' }}>
-                        + add
-                      </button>
-                    </>
+                    filteredExercises.map((ex) => (
+                      <ScrollChip
+                        key={ex.id}
+                        ex={ex}
+                        isActive={currentEx?.id === ex.id}
+                        onSelect={selectEx}
+                        onLongPress={() => setSheetOpen(true)}
+                      />
+                    ))
                   )}
                 </div>
               </div>
-              <motion.div ref={chipRowRef} layoutScroll className="overflow-x-auto -mx-5 px-5 pb-0.5" style={{ scrollbarWidth: 'none' }}>
-                {reorderMode ? (
-                  <Reorder.Group as="div" axis="x" values={orderEx} onReorder={setOrderEx} className="flex gap-2 min-w-max">
-                    {orderEx.map((ex) => (
-                      <ReorderChip key={ex.id} ex={ex} onDrag={reorderEdgeScroll} onDragEnd={stopAutoScroll} />
-                    ))}
-                  </Reorder.Group>
-                ) : (
-                  <div className="flex gap-2 min-w-max">
-                    {filteredExercises.length === 0 ? (
-                      <button
-                        onClick={openAddEx}
-                        className="px-4 py-2.5 rounded-xl border border-dashed text-white/25 text-sm whitespace-nowrap"
-                        style={{ borderColor: 'rgba(255,255,255,0.12)' }}
-                      >
-                        No exercises — add one
-                      </button>
-                    ) : (
-                      filteredExercises.map((ex) => (
-                        <ScrollChip
-                          key={ex.id}
-                          ex={ex}
-                          isActive={currentEx?.id === ex.id}
-                          onSelect={selectEx}
-                          onLongPress={enterReorder}
-                        />
-                      ))
-                    )}
-                  </div>
-                )}
-              </motion.div>
               {sheetOpen && (
                 <ReorderSheet
                   items={filteredExercises}
