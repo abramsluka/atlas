@@ -8,8 +8,7 @@ import { useLogSet, useCreateExercise, useUpdateExercise, useDeleteExercise, use
 import type { GymCoachAction, CoachStreamEvent } from '@/features/gym/coachActions'
 import type { GymExercise } from '@/features/gym/types'
 import ChatText from '@/components/ChatText'
-
-const STORAGE_KEY = 'atlas-gym-coach-thread-v1'
+import { usePersistentChat } from '@/lib/usePersistentChat'
 
 type ActionStatus = 'pending' | 'done' | 'dismissed' | 'error'
 interface ProposedAction { id: string; action: GymCoachAction; status: ActionStatus }
@@ -47,7 +46,7 @@ function describeAction(a: GymCoachAction, units: string): { title: string; deta
 export default function GymChatbot({ currentExId }: { currentExId: string | null }) {
   const [mounted, setMounted] = useState(false)
   const [open, setOpen] = useState(false)
-  const [messages, setMessages] = useState<CoachMsg[]>([])
+  const [messages, setMessages] = usePersistentChat<CoachMsg>('atlas-gym-coach-thread-v1', 40)
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -64,17 +63,6 @@ export default function GymChatbot({ currentExId }: { currentExId: string | null
   const saveConfig = useSaveGymConfig()
 
   useEffect(() => { setMounted(true) }, [])
-
-  // Load / persist thread (device-local, survives reloads).
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      if (raw) setMessages(JSON.parse(raw))
-    } catch {}
-  }, [])
-  useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-40))) } catch {}
-  }, [messages])
 
   // Auto-scroll
   useEffect(() => {

@@ -12,6 +12,7 @@ import {
   useLatestSynthesis,
 } from '@/features/mentor/queries'
 import { useCreateJot, useGenerateWeeklyReport, useRunSynthesis } from '@/features/mentor/mutations'
+import { usePersistentChat } from '@/lib/usePersistentChat'
 import type { ChatMessage } from '@/features/mentor/types'
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -632,7 +633,7 @@ export default function MentorClient() {
   const queryClient = useQueryClient()
 
   const [tab, setTab] = useState<'chat' | 'reports'>('chat')
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [messages, setMessages] = usePersistentChat<ChatMessage>('atlas-mentor-chat-thread-v1')
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [jotInput, setJotInput] = useState('')
