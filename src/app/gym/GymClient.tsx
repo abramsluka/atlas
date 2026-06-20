@@ -293,33 +293,17 @@ interface Props {
   initialBodyWeights: BodyWeight[]
 }
 
-// Scrollable exercise chip: tap selects; press & hold (no movement) opens the
-// reorder panel. A swipe still scrolls the row (no drag captured here).
-function ScrollChip({ ex, isActive, onSelect, onLongPress }: {
+// Scrollable exercise chip — tap selects. (Reorder is done via the "reorder"
+// button → sheet, not from the chip.)
+function ScrollChip({ ex, isActive, onSelect }: {
   ex: GymExercise
   isActive: boolean
   onSelect: (id: string) => void
-  onLongPress: () => void
 }) {
-  const timer = useRef<number | undefined>(undefined)
-  const start = useRef({ x: 0, y: 0 })
-  const fired = useRef(false)
-  const clear = () => { if (timer.current) { clearTimeout(timer.current); timer.current = undefined } }
-
   return (
     <motion.button
       whileTap={{ scale: 0.95 }}
-      onPointerDown={(e) => {
-        fired.current = false
-        start.current = { x: e.clientX, y: e.clientY }
-        timer.current = window.setTimeout(() => { fired.current = true; onLongPress() }, 450)
-      }}
-      onPointerMove={(e) => {
-        if (timer.current && (Math.abs(e.clientX - start.current.x) > 8 || Math.abs(e.clientY - start.current.y) > 8)) clear()
-      }}
-      onPointerUp={clear}
-      onPointerCancel={clear}
-      onClick={() => { if (!fired.current) onSelect(ex.id) }}
+      onClick={() => onSelect(ex.id)}
       className="relative px-4 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap flex-shrink-0 transition-all duration-200"
       style={isActive ? {
         background: 'rgba(74,222,128,0.1)',
@@ -1453,7 +1437,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                         ex={ex}
                         isActive={currentEx?.id === ex.id}
                         onSelect={selectEx}
-                        onLongPress={() => setSheetOpen(true)}
                       />
                     ))
                   )}
