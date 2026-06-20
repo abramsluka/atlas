@@ -1,0 +1,102 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import type {
+  TrainingProgram, GeneratedProgram, GenerateProgramRequest, ActiveProgramResponse,
+} from './programTypes'
+
+type ActiveResult = ActiveProgramResponse | { program: null }
+
+export function useActiveProgram() {
+  return useQuery<ActiveResult>({
+    queryKey: ['program-active'],
+    queryFn: async () => {
+      const res = await fetch('/api/gym/program/active')
+      if (!res.ok) throw new Error('Failed to fetch active program')
+      return res.json()
+    },
+    staleTime: 60_000,
+  })
+}
+
+export function usePrograms() {
+  return useQuery<TrainingProgram[]>({
+    queryKey: ['programs'],
+    queryFn: async () => {
+      const res = await fetch('/api/gym/program')
+      if (!res.ok) throw new Error('Failed to fetch programs')
+      return res.json()
+    },
+    staleTime: 60_000,
+  })
+}
+
+// One-shot generation (no caching) — returns the program for preview, unsaved.
+export function useGenerateProgram() {
+  return useMutation({
+    mutationFn: async (req: GenerateProgramRequest) => {
+      const res = await fetch('/api/gym/program/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req),
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => null)
+        throw new Error(j?.error ?? 'Generation failed')
+      }
+      return res.json() as Promise<GeneratedProgram>
+    },
+  })
+}
+
+export function useSaveProgram() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (program: GeneratedProgram) => {
+      const res = await fetch('/api/gym/program', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(program),
+      })
+      if (!res.ok) throw new Error('Failed to save program')
+      return res.json() as Promise<TrainingProgram>
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['program-active'] })
+      qc.invalidateQueries({ queryKey: ['programs'] })
+      qc.invalidateQueries({ queryKey: ['gym-exercises'] }) // new exercises may have been created
+    },
+  })
+}
+
+export function useUpdateProgram() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, ...updates }: { id: string; name?: string; status?: string; start_date?: string | null }) => {
+      const res = await fetch(`/api/gym/program/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      })
+      if (!res.ok) throw new Error('Failed to update program')
+      return res.json() as Promise<TrainingProgram>
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['program-active'] })
+      qc.invalidateQueries({ queryKey: ['programs'] })
+    },
+  })
+}
+
+export function useDeleteProgram() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/gym/program/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to delete program')
+      return res.json()
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['program-active'] })
+      qc.invalidateQueries({ queryKey: ['programs'] })
+    },
+  })
+}

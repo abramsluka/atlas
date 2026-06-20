@@ -7,6 +7,7 @@ import { toLocalDate } from '@/lib/date'
 import type { OuraData, WhoopData } from '@/features/health/types'
 import type { GymConfig, GymExercise } from '@/features/gym/types'
 import type { GymCoachAction, CoachStreamEvent } from '@/features/gym/coachActions'
+import type { ProgramGoal, ProgramStructure } from '@/features/gym/programTypes'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -122,6 +123,8 @@ UNITS: ${units}.
 
 YOU CAN TAKE ACTIONS via tools. When Luka wants to log a set, change an exercise, or build a workout, CALL THE MATCHING TOOL to PROPOSE it. The proposal becomes a confirm card he taps — so do NOT say "done" or "logged" yourself; say what you're proposing ("Logging 135×8 — confirm below?"). Reference exercises by their [id] from the catalog. Only propose actions he actually asked for or clearly implied; don't surprise him with changes.
 
+When he asks for a multi-week PROGRAM or periodized plan ("build me a program", "I want an 8-week hypertrophy block"), use the generate_program tool. Infer goal / duration / days-per-week from what he said; if unspecified, default to hypertrophy, 8 weeks, and his usual days/week. That tool opens a preview he reviews and saves — it does NOT generate inline, so keep your text brief ("Opening an 8-week hypertrophy build — tweak it in the preview").
+
 — TODAY'S RECOVERY: ${recoveryLine}
 — PROFILE: ${profileLine}
 — CURRENTLY VIEWING: ${focusLine}
@@ -233,6 +236,20 @@ ${catalog || '(no exercises yet)'}`
         required: ['day_name', 'exercises'],
       },
     },
+    {
+      name: 'generate_program',
+      description: 'Open the program generator for a multi-week periodized plan. Use when he asks for a program/block, not a single workout.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          goal: { type: 'string', enum: ['strength', 'hypertrophy', 'recomp'] },
+          duration_weeks: { type: 'integer', enum: [4, 6, 8] },
+          days_per_week: { type: 'integer', enum: [3, 4, 5] },
+          structure: { type: 'string', enum: ['overlay', 'standalone'], description: "'overlay' layers onto his existing days; 'standalone' is its own plan. Default overlay." },
+        },
+        required: ['goal', 'duration_weeks', 'days_per_week'],
+      },
+    },
   ]
 
   // ── Turn a Claude tool call into a GymCoachAction proposal ──
@@ -290,6 +307,14 @@ ${catalog || '(no exercises yet)'}`
           day_name: String(input.day_name || (validExisting ? dayName(validExisting) : 'New Workout')),
           existing_day_id: validExisting, gym_id: String(input.gym_id || 'both'), exercises: exs,
         }
+      }
+      case 'generate_program': {
+        const goal: ProgramGoal = (['strength', 'hypertrophy', 'recomp'] as const).includes(input.goal as ProgramGoal)
+          ? (input.goal as ProgramGoal) : 'hypertrophy'
+        const duration_weeks = [4, 6, 8].includes(Number(input.duration_weeks)) ? Number(input.duration_weeks) : 8
+        const days_per_week = [3, 4, 5].includes(Number(input.days_per_week)) ? Number(input.days_per_week) : 4
+        const structure: ProgramStructure = input.structure === 'standalone' ? 'standalone' : 'overlay'
+        return { kind: 'generate_program', goal, duration_weeks, days_per_week, structure }
       }
       default:
         return null

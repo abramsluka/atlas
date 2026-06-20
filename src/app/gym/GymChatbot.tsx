@@ -5,8 +5,10 @@ import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useGymConfig, useGymExercises, useAllGymLogs } from '@/features/gym/queries'
 import { useLogSet, useCreateExercise, useUpdateExercise, useDeleteExercise, useSaveGymConfig } from '@/features/gym/mutations'
+import { useActiveProgram } from '@/features/gym/programQueries'
 import type { GymCoachAction, CoachStreamEvent } from '@/features/gym/coachActions'
 import type { GymExercise } from '@/features/gym/types'
+import type { GeneratorPrefill } from './ProgramGenerator'
 import ChatText from '@/components/ChatText'
 import { usePersistentChat } from '@/lib/usePersistentChat'
 
@@ -38,12 +40,18 @@ function describeAction(a: GymCoachAction, units: string): { title: string; deta
         detail: `${a.exercises.length} exercise${a.exercises.length === 1 ? '' : 's'} → ${a.existing_day_id ? 'existing day' : 'new day'}`,
         confirmLabel: 'Add to my days', doneLabel: 'Added to your days',
       }
+    case 'generate_program':
+      return {
+        title: 'Build a program',
+        detail: `${a.duration_weeks}-wk ${a.goal} · ${a.days_per_week}/wk · ${a.structure === 'overlay' ? 'overlays your days' : 'standalone'}`,
+        confirmLabel: 'Open generator', doneLabel: 'Opened generator',
+      }
   }
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function GymChatbot({ currentExId }: { currentExId: string | null }) {
+export default function GymChatbot({ currentExId, onGenerateProgram }: { currentExId: string | null; onGenerateProgram: (prefill: GeneratorPrefill) => void }) {
   const [mounted, setMounted] = useState(false)
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = usePersistentChat<CoachMsg>('atlas-gym-coach-thread-v1', 40)
@@ -54,6 +62,8 @@ export default function GymChatbot({ currentExId }: { currentExId: string | null
   const { data: config } = useGymConfig()
   const { data: exercises = [] } = useGymExercises()
   const { data: allLogs = [] } = useAllGymLogs()
+  const { data: activeProgram } = useActiveProgram()
+  const hasActiveProgram = !!(activeProgram && 'program' in activeProgram && activeProgram.program)
   const units = config?.units ?? 'lbs'
 
   const logSet = useLogSet()
@@ -119,6 +129,10 @@ export default function GymChatbot({ currentExId }: { currentExId: string | null
             start_weight: 0, rep_min: ex.rep_min, rep_max: ex.rep_max, step: ex.step, order_index: order++,
           })
         }
+      } else if (a.kind === 'generate_program') {
+        // Doesn't mutate — opens the generator pre-filled and auto-starts.
+        onGenerateProgram({ goal: a.goal, duration_weeks: a.duration_weeks, days_per_week: a.days_per_week, structure: a.structure, auto: true })
+        setOpen(false)
       }
       updateMsg(msgId, m => ({ ...m, actions: m.actions?.map(x => (x.id === pa.id ? { ...x, status: 'done' } : x)) }))
     } catch {
@@ -360,6 +374,14 @@ export default function GymChatbot({ currentExId }: { currentExId: string | null
 
               {/* Input */}
               <div className="shrink-0 px-3 pt-2 pb-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}>
+                {/* Subtle program-generation entry — only when you have no active program */}
+                {!hasActiveProgram && !streaming && (
+                  <button onClick={() => send('Build me a training program')}
+                    className="mb-2 inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-full"
+                    style={{ background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.22)', color: '#86efac' }}>
+                    <span style={{ fontSize: 11 }}>✦</span> Generate a training program
+                  </button>
+                )}
                 <form onSubmit={e => { e.preventDefault(); send(input) }} className="flex items-end gap-2">
                   <textarea
                     value={input}

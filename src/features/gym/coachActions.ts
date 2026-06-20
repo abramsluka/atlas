@@ -2,6 +2,8 @@
 // The route turns Claude tool calls into these proposals; the client renders
 // them as confirm cards and only mutates on confirm.
 
+import type { ProgramGoal, ProgramStructure } from './programTypes'
+
 export type GymCoachAction =
   | {
       kind: 'log_set'
@@ -59,6 +61,15 @@ export type GymCoachAction =
         step: number
         bodyweight: boolean
       }>
+    }
+  | {
+      // Doesn't mutate on confirm — it opens the Program Generator sheet
+      // pre-filled with these params and kicks off generation.
+      kind: 'generate_program'
+      goal: ProgramGoal
+      duration_weeks: number
+      days_per_week: number
+      structure: ProgramStructure
     }
 
 // NDJSON stream events (one JSON object per line) from /api/gym/chat.

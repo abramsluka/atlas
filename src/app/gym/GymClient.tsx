@@ -17,6 +17,8 @@ import {
 import type { GymConfig, GymExercise, GymLog, BodyWeight, Prescription, ProgressPhoto } from '@/features/gym/types'
 import ProtocolCard from './ProtocolCard'
 import GymChatbot from './GymChatbot'
+import ActiveProgramCard from './ActiveProgramCard'
+import ProgramGenerator, { type GeneratorPrefill } from './ProgramGenerator'
 import SetTimerRing, { fmtClock, type TimerPhase } from './SetTimerRing'
 
 type SetTimerState = { phase: TimerPhase; phaseStart: number | null; sessionStart: number | null }
@@ -649,9 +651,38 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const [coachStepLoading, setCoachStepLoading] = useState(false)
   const importRef = useRef<HTMLInputElement>(null)
 
+  // ── Program generator (opened from the coach or settings) ──
+  const [programGenOpen, setProgramGenOpen] = useState(false)
+  const [programGenPrefill, setProgramGenPrefill] = useState<GeneratorPrefill | null>(null)
+  const openProgramGenerator = useCallback((prefill: GeneratorPrefill | null) => {
+    setProgramGenPrefill(prefill)
+    setProgramGenOpen(true)
+  }, [])
+
   // ── derived ──────────────────────────────────────────────────────────────
 
   const split = useMemo(() => computeSplit(config), [config])
+
+  // Today's actual training day (for the program card's "today" highlight),
+  // independent of the manual day filter. Mirrors the filterDay initializer.
+  const todayDayId = useMemo(() => {
+    const rot = config.split_rotation
+    let effectiveName = split.name
+    if (isRest(effectiveName) && rot.length > 0) {
+      for (let i = 1; i < rot.length; i++) {
+        const candidate = rot[(split.index + i) % rot.length]
+        if (!isRest(candidate)) { effectiveName = candidate; break }
+      }
+    }
+    return config.days.find(d => d.name.toLowerCase() === effectiveName.toLowerCase())?.id ?? null
+  }, [config, split])
+
+  // How many sets logged today, per exercise — feeds the program card's progress ticks.
+  const todayCountByEx = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const l of allLogs) if (logDatePST(l.logged_at) === today) map[l.exercise_id] = (map[l.exercise_id] ?? 0) + 1
+    return map
+  }, [allLogs, today])
 
   const filteredExercises = useMemo(() => exercises.filter(ex => {
     const gymOk = ex.gym_id === 'both' || ex.gym_id === filterGym
@@ -1736,6 +1767,9 @@ export default function GymClient({ today, initialConfig, initialExercises, init
           </div>
         </motion.section>
 
+        {/* ── Active Program ────────────────────────────────────── */}
+        <ActiveProgramCard todayDayId={todayDayId} todayCountByEx={todayCountByEx} />
+
         {/* ── Today's Workout ───────────────────────────────────── */}
         {todayAllLogs.length > 0 && (
           <section>
@@ -2455,6 +2489,19 @@ export default function GymClient({ today, initialConfig, initialExercises, init
             </div>
 
             <div className="space-y-6">
+              {/* Training program */}
+              <div>
+                <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Training program</label>
+                <button
+                  onClick={() => { setShowSettings(false); openProgramGenerator(null) }}
+                  className="w-full rounded-xl py-3 text-sm font-semibold text-black active:scale-[0.98] transition-transform flex items-center justify-center gap-2"
+                  style={{ background: 'linear-gradient(180deg,#6ee7b7 0%,#34d399 100%)' }}
+                >
+                  ✦ Generate a program
+                </button>
+                <p className="text-xs text-white/30 mt-1">A periodized block from your lifts &amp; recovery. Your coach can also build one.</p>
+              </div>
+
               {/* Units */}
               <div>
                 <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Weight unit</label>
@@ -2561,7 +2608,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
       </>,
       document.body
     )}
-    <GymChatbot currentExId={currentExId} />
+    <GymChatbot currentExId={currentExId} onGenerateProgram={openProgramGenerator} />
+    <ProgramGenerator open={programGenOpen} onClose={() => setProgramGenOpen(false)} prefill={programGenPrefill} />
     </>
   )
 }
