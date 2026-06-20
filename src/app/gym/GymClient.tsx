@@ -356,7 +356,10 @@ function ReorderChip({ ex, onDrag, onDragEnd }: {
     <Reorder.Item
       value={ex}
       as="div"
-      whileDrag={{ scale: 1.1, zIndex: 30, boxShadow: '0 8px 24px rgba(0,0,0,0.45)' }}
+      dragMomentum={false}
+      dragElastic={0.08}
+      dragTransition={{ bounceStiffness: 600, bounceDamping: 40 }}
+      whileDrag={{ scale: 1.08, zIndex: 30, boxShadow: '0 8px 24px rgba(0,0,0,0.45)' }}
       onDrag={(_e, info) => onDrag(info.point.x)}
       onDragEnd={onDragEnd}
       className="relative px-4 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap flex-shrink-0 select-none cursor-grab"
@@ -1442,7 +1445,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   )}
                 </div>
               </div>
-              <div ref={chipRowRef} className="overflow-x-auto -mx-5 px-5 pb-0.5" style={{ scrollbarWidth: 'none' }}>
+              <motion.div ref={chipRowRef} layoutScroll className="overflow-x-auto -mx-5 px-5 pb-0.5" style={{ scrollbarWidth: 'none' }}>
                 {reorderMode ? (
                   <Reorder.Group as="div" axis="x" values={orderEx} onReorder={setOrderEx} className="flex gap-2 min-w-max">
                     {orderEx.map((ex) => (
@@ -1472,7 +1475,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     )}
                   </div>
                 )}
-              </div>
+              </motion.div>
             </div>
 
             {currentEx && (
