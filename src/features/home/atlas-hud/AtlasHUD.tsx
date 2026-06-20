@@ -29,12 +29,28 @@ export default function AtlasHUD({ onExit }: { onExit: () => void }) {
     const orig = console.error
     console.error = (...a: unknown[]) => {
       const m = a.map((x) => (typeof x === 'string' ? x : (x as Error)?.message ?? String(x))).join(' ')
-      if (/shader|webgl|program|gl_|compile|context|hydrat|three/i.test(m)) setDiag((d) => [...d, m.slice(0, 600)].slice(-12))
+      setDiag((d) => [...d, 'ERR: ' + m.slice(0, 700)].slice(-16))
       orig.apply(console, a as [])
     }
-    const onErr = (e: ErrorEvent) => setDiag((d) => [...d, 'JS: ' + (e.message || String(e.error))].slice(-12))
+    const onErr = (e: ErrorEvent) => setDiag((d) => [...d, 'JS: ' + (e.message || String(e.error))].slice(-16))
+    const onRej = (e: PromiseRejectionEvent) =>
+      setDiag((d) => [...d, 'REJECT: ' + String((e.reason as Error)?.message ?? e.reason)].slice(-16))
     window.addEventListener('error', onErr)
-    return () => { console.error = orig; window.removeEventListener('error', onErr) }
+    window.addEventListener('unhandledrejection', onRej)
+
+    // Probe the Earth textures: confirms whether /textures/* serves a PNG or gets
+    // auth-redirected to /login HTML (which would silently suspend/break the globe).
+    ;['/textures/earth-water.png', '/textures/earth-topology.png'].forEach((u) => {
+      fetch(u, { cache: 'no-store' })
+        .then((r) => setDiag((d) => [...d, `TEX ${u.split('/').pop()}: ${r.status} ${r.headers.get('content-type')}`].slice(-16)))
+        .catch((err) => setDiag((d) => [...d, `TEX ${u} FAIL ${String(err)}`].slice(-16)))
+    })
+
+    return () => {
+      console.error = orig
+      window.removeEventListener('error', onErr)
+      window.removeEventListener('unhandledrejection', onRej)
+    }
   }, [])
 
   return (
@@ -64,19 +80,19 @@ export default function AtlasHUD({ onExit }: { onExit: () => void }) {
       </SceneBoundary>
       <HudOverlay />
 
-      {/* always-on marker — confirms THIS build is live + WebGL version */}
+      {/* always-on marker — TOP (the bottom is covered by the tab bar) */}
       <div style={{
-        position: 'fixed', left: 10, bottom: 84, zIndex: 9999, pointerEvents: 'none',
-        font: '11px ui-monospace, Menlo, monospace', color: '#5fd8ff',
-        background: 'rgba(0,0,0,0.6)', padding: '3px 7px', borderRadius: 5,
+        position: 'fixed', left: 8, top: 54, zIndex: 99999, pointerEvents: 'none',
+        font: '12px ui-monospace, Menlo, monospace', color: '#5fd8ff',
+        background: 'rgba(0,0,0,0.75)', padding: '4px 8px', borderRadius: 5,
       }}>
-        DIAG6 · {info} · {diag.length} err
+        DIAG7 · {info} · {diag.length} err
       </div>
 
       {diag.length > 0 && (
         <div style={{
-          position: 'fixed', left: 8, right: 8, bottom: 108, zIndex: 9999, maxHeight: '42vh', overflow: 'auto',
-          background: 'rgba(20,2,2,0.92)', border: '1px solid #f66', borderRadius: 8, padding: 8,
+          position: 'fixed', left: 8, right: 8, top: 84, zIndex: 99999, maxHeight: '60vh', overflow: 'auto',
+          background: 'rgba(20,2,2,0.94)', border: '1px solid #f66', borderRadius: 8, padding: 8,
           font: '10px/1.4 ui-monospace, Menlo, monospace', color: '#ffc2c2', whiteSpace: 'pre-wrap', pointerEvents: 'auto',
         }}>
           {diag.map((m, i) => <div key={i}>{m}</div>)}
