@@ -400,10 +400,12 @@ function BentoCard({ href, color, label, headline, sub, wide, loading, dim, visu
         {loading ? (
           <div className="h-4 w-3/4 rounded bg-white/[0.06] animate-pulse" />
         ) : (
-          <span className="text-[13px] font-bold text-white leading-snug truncate block">{headline}</span>
+          // suppressHydrationWarning: headline/sub can contain "now"-relative time
+          // (fmtRelTime) + toLocaleString, which differ server vs client → React #418
+          <span suppressHydrationWarning className="text-[13px] font-bold text-white leading-snug truncate block">{headline}</span>
         )}
         {sub && !loading && (
-          <p className="text-[11px] text-zinc-500 mt-0.5 leading-snug truncate">{sub}</p>
+          <p suppressHydrationWarning className="text-[11px] text-zinc-500 mt-0.5 leading-snug truncate">{sub}</p>
         )}
       </div>
     </motion.button>
