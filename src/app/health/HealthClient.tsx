@@ -84,6 +84,14 @@ function scoreColor(score: number | null | undefined): string {
   return 'text-red-400'
 }
 
+// Whoop recovery bands: green 67–99, yellow 34–66, red 1–33
+function recoveryColor(score: number | null | undefined): string {
+  if (score == null) return 'text-zinc-400'
+  if (score >= 67) return 'text-green-400'
+  if (score >= 34) return 'text-yellow-400'
+  return 'text-red-400'
+}
+
 function formatDuration(seconds: number | null | undefined): string {
   if (seconds == null) return '--'
   const h = Math.floor(seconds / 3600)
@@ -219,7 +227,7 @@ function WearablesSection({
               {whoop.recovery?.score != null && (
                 <div>
                   <p className="text-[10px] uppercase tracking-wide text-zinc-500">Recovery</p>
-                  <p className={`text-3xl font-bold ${scoreColor(whoop.recovery.score)}`}>
+                  <p className={`text-3xl font-bold ${recoveryColor(whoop.recovery.score)}`}>
                     {whoop.recovery.score}%
                   </p>
                 </div>
