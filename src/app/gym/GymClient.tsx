@@ -292,50 +292,34 @@ interface Props {
   initialBodyWeights: BodyWeight[]
 }
 
-// Draggable exercise chip. Touch: press & hold to pick up, then drag to reorder
-// (a quick swipe still scrolls the row). Mouse: click-drag to reorder. A plain
-// tap/click still selects the exercise.
-function ExerciseChip({ ex, isActive, onSelect, onDragComplete }: {
+// Scrollable exercise chip: tap selects; press & hold (no movement) opens the
+// reorder panel. A swipe still scrolls the row (no drag captured here).
+function ScrollChip({ ex, isActive, onSelect, onLongPress }: {
   ex: GymExercise
   isActive: boolean
   onSelect: (id: string) => void
-  onDragComplete: () => void
+  onLongPress: () => void
 }) {
-  const controls = useDragControls()
-  const pressTimer = useRef<number | undefined>(undefined)
-  const startPos = useRef({ x: 0, y: 0 })
-  const draggedRef = useRef(false)
-  const clearPress = () => {
-    if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = undefined }
-  }
+  const timer = useRef<number | undefined>(undefined)
+  const start = useRef({ x: 0, y: 0 })
+  const fired = useRef(false)
+  const clear = () => { if (timer.current) { clearTimeout(timer.current); timer.current = undefined } }
 
   return (
-    <Reorder.Item
-      value={ex}
-      as="div"
-      dragListener={false}
-      dragControls={controls}
-      whileDrag={{ scale: 1.06, zIndex: 20 }}
-      onDragStart={() => { draggedRef.current = true }}
-      onDragEnd={() => { onDragComplete(); setTimeout(() => { draggedRef.current = false }, 50) }}
+    <motion.button
+      whileTap={{ scale: 0.95 }}
       onPointerDown={(e) => {
-        draggedRef.current = false
-        if (e.pointerType === 'mouse') {
-          controls.start(e) // desktop: drag begins on move; a stationary click still selects
-        } else {
-          startPos.current = { x: e.clientX, y: e.clientY }
-          pressTimer.current = window.setTimeout(() => controls.start(e), 200) // touch: press & hold
-        }
+        fired.current = false
+        start.current = { x: e.clientX, y: e.clientY }
+        timer.current = window.setTimeout(() => { fired.current = true; onLongPress() }, 450)
       }}
       onPointerMove={(e) => {
-        if (!pressTimer.current) return
-        // moved before the hold fired → it's a scroll/swipe, not a drag
-        if (Math.abs(e.clientX - startPos.current.x) > 8 || Math.abs(e.clientY - startPos.current.y) > 8) clearPress()
+        if (timer.current && (Math.abs(e.clientX - start.current.x) > 8 || Math.abs(e.clientY - start.current.y) > 8)) clear()
       }}
-      onPointerUp={clearPress}
-      onPointerCancel={clearPress}
-      onClick={() => { if (!draggedRef.current) onSelect(ex.id) }}
-      className="relative px-4 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap flex-shrink-0 select-none cursor-grab"
+      onPointerUp={clear}
+      onPointerCancel={clear}
+      onClick={() => { if (!fired.current) onSelect(ex.id) }}
+      className="relative px-4 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap flex-shrink-0 transition-all duration-200"
       style={isActive ? {
         background: 'rgba(74,222,128,0.1)',
         border: '1px solid rgba(74,222,128,0.35)',
@@ -355,7 +339,66 @@ function ExerciseChip({ ex, isActive, onSelect, onDragComplete }: {
           style={{ background: 'rgba(74,222,128,0.7)' }}
         />
       )}
+    </motion.button>
+  )
+}
+
+// One row in the reorder panel — vertical drag via the ⠿ handle (touch-action
+// none on the handle so it never fights the panel's scroll).
+function ReorderRow({ ex }: { ex: GymExercise }) {
+  const controls = useDragControls()
+  return (
+    <Reorder.Item
+      value={ex}
+      as="div"
+      dragListener={false}
+      dragControls={controls}
+      whileDrag={{ scale: 1.03, backgroundColor: 'rgba(74,222,128,0.08)' }}
+      className="flex items-center gap-3 px-3 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] select-none"
+    >
+      <span className="flex-1 text-sm font-semibold text-white/85 truncate">{ex.name}</span>
+      <span
+        onPointerDown={(e) => controls.start(e)}
+        className="cursor-grab text-white/30 text-lg leading-none px-2 -mr-1"
+        style={{ touchAction: 'none' }}
+        aria-label="Drag to reorder"
+      >⠿</span>
     </Reorder.Item>
+  )
+}
+
+// Bottom-sheet reorder panel: a vertical drag list, no horizontal-scroll
+// conflict. Reliable on touch + desktop.
+function ReorderSheet({ items, onClose, onSave }: {
+  items: GymExercise[]
+  onClose: () => void
+  onSave: (orderedIds: string[]) => void
+}) {
+  const [order, setOrder] = useState(items)
+  const done = () => { onSave(order.map(e => e.id)); onClose() }
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-black/65 p-4"
+      style={{ backdropFilter: 'blur(6px)', paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}
+      onClick={done}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl bg-[#111113] border border-white/[0.14] p-4 max-h-[80vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h3 className="text-base font-bold text-white">Reorder exercises</h3>
+            <p className="text-[11px] text-white/35 mt-0.5">Drag the ⠿ handle</p>
+          </div>
+          <button onClick={done} className="text-sm font-semibold text-green-400 active:opacity-60 px-2 py-1">Done</button>
+        </div>
+        <Reorder.Group as="div" axis="y" values={order} onReorder={setOrder} className="space-y-2">
+          {order.map(ex => <ReorderRow key={ex.id} ex={ex} />)}
+        </Reorder.Group>
+      </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -646,20 +689,15 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     } catch {}
   }, [currentEx, weightInput, selectedReps])
 
-  // Drag-to-reorder for the exercise chips. orderedEx mirrors filteredExercises
-  // but is the live source while dragging; on drop we persist the new order.
+  // Reorder panel (vertical drag list). Saves the new order back to order_index.
   const reorderEx = useReorderExercises()
-  const [orderedEx, setOrderedEx] = useState<GymExercise[]>(filteredExercises)
-  useEffect(() => { setOrderedEx(filteredExercises) }, [filteredExercises])
-  const orderedExRef = useRef(orderedEx)
-  orderedExRef.current = orderedEx
+  const [reorderOpen, setReorderOpen] = useState(false)
 
-  function commitExerciseOrder() {
-    const newIds = orderedExRef.current.map(e => e.id)
+  function saveExerciseOrder(newIds: string[]) {
     const oldIds = filteredExercises.map(e => e.id)
     const unchanged = newIds.length === oldIds.length && newIds.every((id, i) => id === oldIds[i])
     if (unchanged) return
-    // Merge the reordered (filtered) chips back into the full global order so
+    // Merge the reordered (filtered) list back into the full global order so
     // order_index stays sensible for exercises hidden by the current filter.
     const filteredSet = new Set(oldIds)
     const fullSorted = [...exercises].sort((a, b) => a.order_index - b.order_index)
@@ -1384,6 +1422,11 @@ export default function GymClient({ today, initialConfig, initialExercises, init
               <div className="flex items-center justify-between mb-2.5">
                 <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30">Exercise</span>
                 <div className="flex items-center gap-3">
+                  {filteredExercises.length > 1 && (
+                    <button onClick={() => setReorderOpen(true)} className="text-[11px] text-white/30 font-mono active:opacity-50">
+                      reorder
+                    </button>
+                  )}
                   {currentEx && (
                     <button onClick={openEditEx} className="text-[11px] text-white/30 font-mono active:opacity-50">
                       edit
@@ -1395,8 +1438,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 </div>
               </div>
               <div className="overflow-x-auto -mx-5 px-5 pb-0.5" style={{ scrollbarWidth: 'none' }}>
-                {orderedEx.length === 0 ? (
-                  <div className="flex gap-2 min-w-max">
+                <div className="flex gap-2 min-w-max">
+                  {filteredExercises.length === 0 ? (
                     <button
                       onClick={openAddEx}
                       className="px-4 py-2.5 rounded-xl border border-dashed text-white/25 text-sm whitespace-nowrap"
@@ -1404,27 +1447,26 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     >
                       No exercises — add one
                     </button>
-                  </div>
-                ) : (
-                  <Reorder.Group
-                    as="div"
-                    axis="x"
-                    values={orderedEx}
-                    onReorder={setOrderedEx}
-                    className="flex gap-2 min-w-max"
-                  >
-                    {orderedEx.map((ex) => (
-                      <ExerciseChip
+                  ) : (
+                    filteredExercises.map((ex) => (
+                      <ScrollChip
                         key={ex.id}
                         ex={ex}
                         isActive={currentEx?.id === ex.id}
                         onSelect={selectEx}
-                        onDragComplete={commitExerciseOrder}
+                        onLongPress={() => setReorderOpen(true)}
                       />
-                    ))}
-                  </Reorder.Group>
-                )}
+                    ))
+                  )}
+                </div>
               </div>
+              {reorderOpen && (
+                <ReorderSheet
+                  items={filteredExercises}
+                  onClose={() => setReorderOpen(false)}
+                  onSave={saveExerciseOrder}
+                />
+              )}
             </div>
 
             {currentEx && (
