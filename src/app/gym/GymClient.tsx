@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { motion, AnimatePresence, Reorder } from 'framer-motion'
+import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion'
 
 const EASE_OUT = [0.16, 1, 0.3, 1] as const
 import { useQueryClient } from '@tanstack/react-query'
@@ -375,6 +375,63 @@ function ReorderChip({ ex, onDrag, onDragEnd }: {
   )
 }
 
+// One row in the reorder sheet — vertical drag via the ⠿ handle.
+function ReorderRow({ ex }: { ex: GymExercise }) {
+  const controls = useDragControls()
+  return (
+    <Reorder.Item
+      value={ex}
+      as="div"
+      dragListener={false}
+      dragControls={controls}
+      whileDrag={{ scale: 1.03, backgroundColor: 'rgba(74,222,128,0.08)' }}
+      className="flex items-center gap-3 px-3 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] select-none"
+    >
+      <span className="flex-1 text-sm font-semibold text-white/85 truncate">{ex.name}</span>
+      <span
+        onPointerDown={(e) => controls.start(e)}
+        className="cursor-grab text-white/30 text-lg leading-none px-2 -mr-1"
+        style={{ touchAction: 'none' }}
+        aria-label="Drag to reorder"
+      >⠿</span>
+    </Reorder.Item>
+  )
+}
+
+// Bottom-sheet reorder menu: a vertical drag list (no horizontal-scroll conflict).
+function ReorderSheet({ items, onClose, onSave }: {
+  items: GymExercise[]
+  onClose: () => void
+  onSave: (orderedIds: string[]) => void
+}) {
+  const [order, setOrder] = useState(items)
+  const done = () => { onSave(order.map(e => e.id)); onClose() }
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-black/65 p-4"
+      style={{ backdropFilter: 'blur(6px)', paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}
+      onClick={done}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl bg-[#111113] border border-white/[0.14] p-4 max-h-[80vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h3 className="text-base font-bold text-white">Reorder exercises</h3>
+            <p className="text-[11px] text-white/35 mt-0.5">Drag the ⠿ handle</p>
+          </div>
+          <button onClick={done} className="text-sm font-semibold text-green-400 active:opacity-60 px-2 py-1">Done</button>
+        </div>
+        <Reorder.Group as="div" axis="y" values={order} onReorder={setOrder} className="space-y-2">
+          {order.map(ex => <ReorderRow key={ex.id} ex={ex} />)}
+        </Reorder.Group>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 export default function GymClient({ today, initialConfig, initialExercises, initialBodyWeights }: Props) {
   const qc = useQueryClient()
 
@@ -662,8 +719,10 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     } catch {}
   }, [currentEx, weightInput, selectedReps])
 
-  // Reorder mode: long-press a chip (or tap "reorder") to drag chips in place.
+  // Reorder: two ways in — the "reorder" button opens a vertical sheet, or
+  // long-press a chip enters in-place drag mode.
   const reorderEx = useReorderExercises()
+  const [sheetOpen, setSheetOpen] = useState(false)
   const [reorderMode, setReorderMode] = useState(false)
   const [orderEx, setOrderEx] = useState<GymExercise[]>([])
   const orderExRef = useRef<GymExercise[]>([])
@@ -672,7 +731,13 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const autoScrollRAF = useRef<number | undefined>(undefined)
 
   function enterReorder() { setOrderEx(filteredExercises); setReorderMode(true) }
-  function exitReorder() { stopAutoScroll(); setReorderMode(false) }
+  // Persist on exit (not per-drop) so the optimistic cache update never churns
+  // the list mid-session — that was breaking the second+ drag.
+  function exitReorder() {
+    stopAutoScroll()
+    saveExerciseOrder(orderExRef.current.map(e => e.id))
+    setReorderMode(false)
+  }
   function stopAutoScroll() {
     if (autoScrollRAF.current) { cancelAnimationFrame(autoScrollRAF.current); autoScrollRAF.current = undefined }
   }
@@ -688,9 +753,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     const step = () => { el.scrollLeft += 9 * dir; autoScrollRAF.current = requestAnimationFrame(step) }
     autoScrollRAF.current = requestAnimationFrame(step)
   }
-  function commitReorderDrop() { stopAutoScroll(); saveExerciseOrder(orderExRef.current.map(e => e.id)) }
 
-  // Leaving the filter would make the working set stale → exit reorder mode.
+  // Leaving the filter would make the working set stale → drop out of reorder mode.
   useEffect(() => { setReorderMode(false) }, [filterGym, filterDay])
 
   function saveExerciseOrder(newIds: string[]) {
@@ -1429,7 +1493,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   ) : (
                     <>
                       {filteredExercises.length > 1 && (
-                        <button onClick={enterReorder} className="text-[11px] text-white/30 font-mono active:opacity-50">
+                        <button onClick={() => setSheetOpen(true)} className="text-[11px] text-white/30 font-mono active:opacity-50">
                           reorder
                         </button>
                       )}
@@ -1449,7 +1513,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 {reorderMode ? (
                   <Reorder.Group as="div" axis="x" values={orderEx} onReorder={setOrderEx} className="flex gap-2 min-w-max">
                     {orderEx.map((ex) => (
-                      <ReorderChip key={ex.id} ex={ex} onDrag={reorderEdgeScroll} onDragEnd={commitReorderDrop} />
+                      <ReorderChip key={ex.id} ex={ex} onDrag={reorderEdgeScroll} onDragEnd={stopAutoScroll} />
                     ))}
                   </Reorder.Group>
                 ) : (
@@ -1476,6 +1540,13 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   </div>
                 )}
               </motion.div>
+              {sheetOpen && (
+                <ReorderSheet
+                  items={filteredExercises}
+                  onClose={() => setSheetOpen(false)}
+                  onSave={saveExerciseOrder}
+                />
+              )}
             </div>
 
             {currentEx && (
