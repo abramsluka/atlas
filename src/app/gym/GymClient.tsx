@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion'
+import { motion, AnimatePresence, Reorder } from 'framer-motion'
 
 const EASE_OUT = [0.16, 1, 0.3, 1] as const
 import { useQueryClient } from '@tanstack/react-query'
@@ -16,6 +16,7 @@ import {
 } from '@/features/gym/mutations'
 import type { GymConfig, GymExercise, GymLog, BodyWeight, Prescription, ProgressPhoto } from '@/features/gym/types'
 import ProtocolCard from './ProtocolCard'
+import GymChatbot from './GymChatbot'
 import SetTimerRing, { fmtClock, type TimerPhase } from './SetTimerRing'
 
 type SetTimerState = { phase: TimerPhase; phaseStart: number | null; sessionStart: number | null }
@@ -343,62 +344,31 @@ function ScrollChip({ ex, isActive, onSelect, onLongPress }: {
   )
 }
 
-// One row in the reorder panel — vertical drag via the ⠿ handle (touch-action
-// none on the handle so it never fights the panel's scroll).
-function ReorderRow({ ex }: { ex: GymExercise }) {
-  const controls = useDragControls()
+// In-place draggable chip — rendered only in reorder mode. touch-action:none so
+// the horizontal drag engages on touch; the parent auto-scrolls the row at the
+// edges so off-screen chips are reachable.
+function ReorderChip({ ex, onDrag, onDragEnd }: {
+  ex: GymExercise
+  onDrag: (clientX: number) => void
+  onDragEnd: () => void
+}) {
   return (
     <Reorder.Item
       value={ex}
       as="div"
-      dragListener={false}
-      dragControls={controls}
-      whileDrag={{ scale: 1.03, backgroundColor: 'rgba(74,222,128,0.08)' }}
-      className="flex items-center gap-3 px-3 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] select-none"
+      whileDrag={{ scale: 1.1, zIndex: 30, boxShadow: '0 8px 24px rgba(0,0,0,0.45)' }}
+      onDrag={(_e, info) => onDrag(info.point.x)}
+      onDragEnd={onDragEnd}
+      className="relative px-4 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap flex-shrink-0 select-none cursor-grab"
+      style={{
+        touchAction: 'none',
+        background: 'rgba(74,222,128,0.07)',
+        border: '1px dashed rgba(74,222,128,0.55)',
+        color: 'rgba(255,255,255,0.88)',
+      }}
     >
-      <span className="flex-1 text-sm font-semibold text-white/85 truncate">{ex.name}</span>
-      <span
-        onPointerDown={(e) => controls.start(e)}
-        className="cursor-grab text-white/30 text-lg leading-none px-2 -mr-1"
-        style={{ touchAction: 'none' }}
-        aria-label="Drag to reorder"
-      >⠿</span>
+      {ex.name}
     </Reorder.Item>
-  )
-}
-
-// Bottom-sheet reorder panel: a vertical drag list, no horizontal-scroll
-// conflict. Reliable on touch + desktop.
-function ReorderSheet({ items, onClose, onSave }: {
-  items: GymExercise[]
-  onClose: () => void
-  onSave: (orderedIds: string[]) => void
-}) {
-  const [order, setOrder] = useState(items)
-  const done = () => { onSave(order.map(e => e.id)); onClose() }
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[60] flex items-end justify-center bg-black/65 p-4"
-      style={{ backdropFilter: 'blur(6px)', paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}
-      onClick={done}
-    >
-      <div
-        className="w-full max-w-md rounded-2xl bg-[#111113] border border-white/[0.14] p-4 max-h-[80vh] overflow-y-auto"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h3 className="text-base font-bold text-white">Reorder exercises</h3>
-            <p className="text-[11px] text-white/35 mt-0.5">Drag the ⠿ handle</p>
-          </div>
-          <button onClick={done} className="text-sm font-semibold text-green-400 active:opacity-60 px-2 py-1">Done</button>
-        </div>
-        <Reorder.Group as="div" axis="y" values={order} onReorder={setOrder} className="space-y-2">
-          {order.map(ex => <ReorderRow key={ex.id} ex={ex} />)}
-        </Reorder.Group>
-      </div>
-    </div>,
-    document.body,
   )
 }
 
@@ -689,9 +659,36 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     } catch {}
   }, [currentEx, weightInput, selectedReps])
 
-  // Reorder panel (vertical drag list). Saves the new order back to order_index.
+  // Reorder mode: long-press a chip (or tap "reorder") to drag chips in place.
   const reorderEx = useReorderExercises()
-  const [reorderOpen, setReorderOpen] = useState(false)
+  const [reorderMode, setReorderMode] = useState(false)
+  const [orderEx, setOrderEx] = useState<GymExercise[]>([])
+  const orderExRef = useRef<GymExercise[]>([])
+  orderExRef.current = orderEx
+  const chipRowRef = useRef<HTMLDivElement>(null)
+  const autoScrollRAF = useRef<number | undefined>(undefined)
+
+  function enterReorder() { setOrderEx(filteredExercises); setReorderMode(true) }
+  function exitReorder() { stopAutoScroll(); setReorderMode(false) }
+  function stopAutoScroll() {
+    if (autoScrollRAF.current) { cancelAnimationFrame(autoScrollRAF.current); autoScrollRAF.current = undefined }
+  }
+  // Drag near a horizontal edge → auto-scroll the row so off-screen chips are reachable.
+  function reorderEdgeScroll(clientX: number) {
+    const el = chipRowRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    const EDGE = 56
+    const dir = clientX < r.left + EDGE ? -1 : clientX > r.right - EDGE ? 1 : 0
+    stopAutoScroll()
+    if (dir === 0) return
+    const step = () => { el.scrollLeft += 9 * dir; autoScrollRAF.current = requestAnimationFrame(step) }
+    autoScrollRAF.current = requestAnimationFrame(step)
+  }
+  function commitReorderDrop() { stopAutoScroll(); saveExerciseOrder(orderExRef.current.map(e => e.id)) }
+
+  // Leaving the filter would make the working set stale → exit reorder mode.
+  useEffect(() => { setReorderMode(false) }, [filterGym, filterDay])
 
   function saveExerciseOrder(newIds: string[]) {
     const oldIds = filteredExercises.map(e => e.id)
@@ -1420,53 +1417,62 @@ export default function GymClient({ today, initialConfig, initialExercises, init
             {/* Exercise chips */}
             <div className="mb-4">
               <div className="flex items-center justify-between mb-2.5">
-                <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30">Exercise</span>
+                <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30">
+                  {reorderMode ? 'Drag to reorder' : 'Exercise'}
+                </span>
                 <div className="flex items-center gap-3">
-                  {filteredExercises.length > 1 && (
-                    <button onClick={() => setReorderOpen(true)} className="text-[11px] text-white/30 font-mono active:opacity-50">
-                      reorder
-                    </button>
-                  )}
-                  {currentEx && (
-                    <button onClick={openEditEx} className="text-[11px] text-white/30 font-mono active:opacity-50">
-                      edit
-                    </button>
-                  )}
-                  <button onClick={openAddEx} className="text-[11px] font-semibold active:opacity-50" style={{ color: 'rgba(74,222,128,0.7)' }}>
-                    + add
-                  </button>
-                </div>
-              </div>
-              <div className="overflow-x-auto -mx-5 px-5 pb-0.5" style={{ scrollbarWidth: 'none' }}>
-                <div className="flex gap-2 min-w-max">
-                  {filteredExercises.length === 0 ? (
-                    <button
-                      onClick={openAddEx}
-                      className="px-4 py-2.5 rounded-xl border border-dashed text-white/25 text-sm whitespace-nowrap"
-                      style={{ borderColor: 'rgba(255,255,255,0.12)' }}
-                    >
-                      No exercises — add one
-                    </button>
+                  {reorderMode ? (
+                    <button onClick={exitReorder} className="text-[11px] font-bold text-green-400 active:opacity-50">done</button>
                   ) : (
-                    filteredExercises.map((ex) => (
-                      <ScrollChip
-                        key={ex.id}
-                        ex={ex}
-                        isActive={currentEx?.id === ex.id}
-                        onSelect={selectEx}
-                        onLongPress={() => setReorderOpen(true)}
-                      />
-                    ))
+                    <>
+                      {filteredExercises.length > 1 && (
+                        <button onClick={enterReorder} className="text-[11px] text-white/30 font-mono active:opacity-50">
+                          reorder
+                        </button>
+                      )}
+                      {currentEx && (
+                        <button onClick={openEditEx} className="text-[11px] text-white/30 font-mono active:opacity-50">
+                          edit
+                        </button>
+                      )}
+                      <button onClick={openAddEx} className="text-[11px] font-semibold active:opacity-50" style={{ color: 'rgba(74,222,128,0.7)' }}>
+                        + add
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
-              {reorderOpen && (
-                <ReorderSheet
-                  items={filteredExercises}
-                  onClose={() => setReorderOpen(false)}
-                  onSave={saveExerciseOrder}
-                />
-              )}
+              <div ref={chipRowRef} className="overflow-x-auto -mx-5 px-5 pb-0.5" style={{ scrollbarWidth: 'none' }}>
+                {reorderMode ? (
+                  <Reorder.Group as="div" axis="x" values={orderEx} onReorder={setOrderEx} className="flex gap-2 min-w-max">
+                    {orderEx.map((ex) => (
+                      <ReorderChip key={ex.id} ex={ex} onDrag={reorderEdgeScroll} onDragEnd={commitReorderDrop} />
+                    ))}
+                  </Reorder.Group>
+                ) : (
+                  <div className="flex gap-2 min-w-max">
+                    {filteredExercises.length === 0 ? (
+                      <button
+                        onClick={openAddEx}
+                        className="px-4 py-2.5 rounded-xl border border-dashed text-white/25 text-sm whitespace-nowrap"
+                        style={{ borderColor: 'rgba(255,255,255,0.12)' }}
+                      >
+                        No exercises — add one
+                      </button>
+                    ) : (
+                      filteredExercises.map((ex) => (
+                        <ScrollChip
+                          key={ex.id}
+                          ex={ex}
+                          isActive={currentEx?.id === ex.id}
+                          onSelect={selectEx}
+                          onLongPress={enterReorder}
+                        />
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {currentEx && (
@@ -2579,6 +2585,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
       </>,
       document.body
     )}
+    <GymChatbot currentExId={currentExId} />
     </>
   )
 }
