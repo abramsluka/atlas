@@ -19,6 +19,7 @@ import ProtocolCard from './ProtocolCard'
 import GymChatbot from './GymChatbot'
 import ActiveProgramCard from './ActiveProgramCard'
 import ProgramGenerator, { type GeneratorPrefill } from './ProgramGenerator'
+import ProgramHistory from './ProgramHistory'
 import SetTimerRing, { fmtClock, type TimerPhase } from './SetTimerRing'
 
 type SetTimerState = { phase: TimerPhase; phaseStart: number | null; sessionStart: number | null }
@@ -658,6 +659,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     setProgramGenPrefill(prefill)
     setProgramGenOpen(true)
   }, [])
+  const [programHistoryOpen, setProgramHistoryOpen] = useState(false)
 
   // ── derived ──────────────────────────────────────────────────────────────
 
@@ -1768,7 +1770,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
         </motion.section>
 
         {/* ── Active Program ────────────────────────────────────── */}
-        <ActiveProgramCard todayDayId={todayDayId} todayCountByEx={todayCountByEx} />
+        <ActiveProgramCard todayDayId={todayDayId} todayCountByEx={todayCountByEx} onOpenHistory={() => setProgramHistoryOpen(true)} />
 
         {/* ── Today's Workout ───────────────────────────────────── */}
         {todayAllLogs.length > 0 && (
@@ -2499,6 +2501,13 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 >
                   ✦ Generate a program
                 </button>
+                <button
+                  onClick={() => { setShowSettings(false); setProgramHistoryOpen(true) }}
+                  className="w-full mt-2 rounded-xl py-2.5 text-sm font-semibold text-white/70 active:scale-[0.98] transition-transform"
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
+                >
+                  Program history
+                </button>
                 <p className="text-xs text-white/30 mt-1">A periodized block from your lifts &amp; recovery. Your coach can also build one.</p>
               </div>
 
@@ -2610,6 +2619,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     )}
     <GymChatbot currentExId={currentExId} onGenerateProgram={openProgramGenerator} />
     <ProgramGenerator open={programGenOpen} onClose={() => setProgramGenOpen(false)} prefill={programGenPrefill} />
+    <ProgramHistory open={programHistoryOpen} onClose={() => setProgramHistoryOpen(false)} />
     </>
   )
 }

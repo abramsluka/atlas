@@ -67,3 +67,9 @@ export interface ActiveProgramResponse {
   currentWeek: number
   weekSessions: ProgramSession[]
 }
+
+// Full program detail — every session across every week.
+export interface ProgramDetailResponse {
+  program: TrainingProgram
+  sessions: ProgramSession[]
+}

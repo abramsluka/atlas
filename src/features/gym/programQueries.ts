@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type {
-  TrainingProgram, GeneratedProgram, GenerateProgramRequest, ActiveProgramResponse,
+  TrainingProgram, GeneratedProgram, GenerateProgramRequest, ActiveProgramResponse, ProgramDetailResponse,
 } from './programTypes'
 
 type ActiveResult = ActiveProgramResponse | { program: null }
@@ -25,6 +25,19 @@ export function usePrograms() {
       if (!res.ok) throw new Error('Failed to fetch programs')
       return res.json()
     },
+    staleTime: 60_000,
+  })
+}
+
+export function useProgramDetail(id: string | null) {
+  return useQuery<ProgramDetailResponse>({
+    queryKey: ['program-detail', id],
+    queryFn: async () => {
+      const res = await fetch(`/api/gym/program/${id}`)
+      if (!res.ok) throw new Error('Failed to fetch program')
+      return res.json()
+    },
+    enabled: !!id,
     staleTime: 60_000,
   })
 }
@@ -82,6 +95,7 @@ export function useUpdateProgram() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['program-active'] })
       qc.invalidateQueries({ queryKey: ['programs'] })
+      qc.invalidateQueries({ queryKey: ['program-detail'] })
     },
   })
 }
@@ -97,6 +111,7 @@ export function useDeleteProgram() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['program-active'] })
       qc.invalidateQueries({ queryKey: ['programs'] })
+      qc.invalidateQueries({ queryKey: ['program-detail'] })
     },
   })
 }

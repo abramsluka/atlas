@@ -48,7 +48,7 @@ function SessionBlock({ s, todayCountByEx, isToday }: { s: ProgramSession; today
   )
 }
 
-export default function ActiveProgramCard({ todayDayId, todayCountByEx }: { todayDayId: string | null; todayCountByEx: Record<string, number> }) {
+export default function ActiveProgramCard({ todayDayId, todayCountByEx, onOpenHistory }: { todayDayId: string | null; todayCountByEx: Record<string, number>; onOpenHistory: () => void }) {
   const { data, isLoading } = useActiveProgram()
   const updateProgram = useUpdateProgram()
   const [expanded, setExpanded] = useState(false)
@@ -76,7 +76,12 @@ export default function ActiveProgramCard({ todayDayId, todayCountByEx }: { toda
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
           </button>
           {menuOpen && (
-            <div className="absolute right-0 top-6 z-10 rounded-xl overflow-hidden min-w-[140px]" style={{ background: '#14161b', border: '1px solid rgba(255,255,255,0.1)' }}>
+            <div className="absolute right-0 top-6 z-10 rounded-xl overflow-hidden min-w-[150px]" style={{ background: '#14161b', border: '1px solid rgba(255,255,255,0.1)' }}>
+              <button
+                onClick={() => { onOpenHistory(); setMenuOpen(false) }}
+                className="block w-full text-left text-[12.5px] text-zinc-300 px-3.5 py-2.5 active:bg-white/5 border-b border-white/5">
+                Program history
+              </button>
               <button
                 onClick={() => { updateProgram.mutate({ id: program.id, status: 'archived' }); setMenuOpen(false) }}
                 className="block w-full text-left text-[12.5px] text-zinc-300 px-3.5 py-2.5 active:bg-white/5">
