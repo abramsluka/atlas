@@ -30,6 +30,7 @@ export default function PullToRefresh({ children }: { children: React.ReactNode 
 
     const draw = (pull: number) => {
       content.style.transition = 'none'
+      content.style.willChange = 'transform'   // hint only during an active pull
       content.style.transform = `translateY(${pull}px)`
       const p = Math.min(pull / THRESHOLD, 1)
       spinner.style.transition = 'none'
@@ -43,11 +44,14 @@ export default function PullToRefresh({ children }: { children: React.ReactNode 
       spinner.style.transition = 'opacity 0.25s ease, transform 0.3s ease'
       spinner.style.opacity = '0'
       spinner.classList.remove('ptr-spin')
-      // clear the transform once settled so it never creates a containing block
-      // for position:fixed descendants (modals, sheets) at rest
+      // Clear BOTH transform and will-change once settled. Either one, while set,
+      // makes this element a containing block for position:fixed descendants — which
+      // breaks the full-screen WebGL HUD (its fixed inset-0 canvas measures 0×0 and
+      // r3f never initializes) and any modals/sheets. At rest there must be neither.
       drag.current.settleTimer = window.setTimeout(() => {
         content.style.transition = 'none'
         content.style.transform = 'none'
+        content.style.willChange = 'auto'
       }, 320)
     }
 
@@ -125,7 +129,7 @@ export default function PullToRefresh({ children }: { children: React.ReactNode 
       >
         <div className="ptr-ring" />
       </div>
-      <div ref={contentRef} style={{ willChange: 'transform' }}>
+      <div ref={contentRef}>
         {children}
       </div>
     </>
