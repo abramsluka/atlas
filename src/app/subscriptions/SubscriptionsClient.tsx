@@ -40,6 +40,49 @@ function formatRenewalLabel(nextRenewal: string | null): string {
   return dateLabel
 }
 
+function todayISO(): string {
+  const t = new Date()
+  const y = t.getFullYear()
+  const m = String(t.getMonth() + 1).padStart(2, '0')
+  const d = String(t.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+// Adds one billing cycle to a YYYY-MM-DD string, clamping the day to the
+// target month's length (so Jan 31 + 1mo → Feb 28/29, not Mar 3).
+function addBillingPeriod(dateStr: string, period: 'weekly' | 'monthly' | 'yearly'): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  if (period === 'weekly') {
+    const dt = new Date(Date.UTC(y, m - 1, d))
+    dt.setUTCDate(dt.getUTCDate() + 7)
+    return dt.toISOString().slice(0, 10)
+  }
+  const monthsToAdd = period === 'yearly' ? 12 : 1
+  const flatIndex = (m - 1) + monthsToAdd
+  const targetYear = y + Math.floor(flatIndex / 12)
+  const targetMonth = (flatIndex % 12) + 1
+  const lastDay = new Date(Date.UTC(targetYear, targetMonth, 0)).getUTCDate()
+  const day = Math.min(d, lastDay)
+  return `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+// The renewal date after paying the current cycle: always advance at least once,
+// then keep advancing past any further missed cycles until it lands in the future.
+function nextRenewalAfterPayment(dateStr: string, period: 'weekly' | 'monthly' | 'yearly'): string {
+  const today = todayISO()
+  let next = addBillingPeriod(dateStr, period)
+  let guard = 0
+  while (next <= today && guard < 1200) {
+    next = addBillingPeriod(next, period)
+    guard++
+  }
+  return next
+}
+
+function shortDateLabel(dateStr: string): string {
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
 function enrichSubscription(sub: Subscription): SubscriptionWithMeta {
   const days = daysUntilRenewal(sub.next_renewal)
   return {
@@ -427,10 +470,20 @@ function SubscriptionRow({
   onEdit: (s: Subscription) => void
 }) {
   const deleteSubscription = useDeleteSubscription()
+  const updateSubscription = useUpdateSubscription()
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   function handleDelete() {
     deleteSubscription.mutate(sub.id, { onSuccess: () => setConfirmDelete(false) })
+  }
+
+  // Show "mark paid" once a dated subscription reaches or passes its renewal day.
+  const isDueOrOverdue = sub.next_renewal !== null && sub.daysUntilRenewal !== null && sub.daysUntilRenewal <= 0
+  const rolledRenewal = sub.next_renewal ? nextRenewalAfterPayment(sub.next_renewal, sub.billing_period) : null
+
+  function handleMarkPaid() {
+    if (!rolledRenewal) return
+    updateSubscription.mutate({ id: sub.id, updates: { next_renewal: rolledRenewal } })
   }
 
   const periodLabel = sub.billing_period === 'monthly' ? '/month' :
@@ -494,6 +547,25 @@ function SubscriptionRow({
           </div>
         </div>
       </div>
+
+      {isDueOrOverdue && !confirmDelete && (
+        <button
+          onClick={handleMarkPaid}
+          disabled={updateSubscription.isPending}
+          className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 py-2.5 text-xs font-semibold text-emerald-400 active:bg-emerald-500/20 disabled:opacity-50"
+        >
+          {updateSubscription.isPending ? (
+            'Updating…'
+          ) : (
+            <>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5">
+                <path d="M20 6 9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Mark paid{rolledRenewal ? ` · rolls to ${shortDateLabel(rolledRenewal)}` : ''}
+            </>
+          )}
+        </button>
+      )}
 
       {confirmDelete && (
         <div className="mt-3 flex items-center gap-2 border-t border-zinc-800 pt-3">
