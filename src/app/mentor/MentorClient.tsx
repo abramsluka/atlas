@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback, useId } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import ChatText from '@/components/ChatText'
+import InsightsTab from './InsightsTab'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   useJots,
@@ -632,7 +633,7 @@ export default function MentorClient() {
   const rm = useReducedMotion()
   const queryClient = useQueryClient()
 
-  const [tab, setTab] = useState<'chat' | 'reports'>('chat')
+  const [tab, setTab] = useState<'chat' | 'insights' | 'reports'>('chat')
   const [messages, setMessages] = usePersistentChat<ChatMessage>('atlas-mentor-chat-thread-v1')
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -873,7 +874,7 @@ export default function MentorClient() {
 
         {/* Tabs */}
         <div className="flex gap-4 mb-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-          {(['chat', 'reports'] as const).map(t => (
+          {(['chat', 'insights', 'reports'] as const).map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -885,6 +886,8 @@ export default function MentorClient() {
         </div>
 
         {tab === 'reports' && <ReportsTab />}
+
+        {tab === 'insights' && <InsightsTab />}
 
         {tab === 'chat' && (
           <>
