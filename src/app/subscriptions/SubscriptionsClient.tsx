@@ -434,10 +434,11 @@ function EditSheet({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm p-4"
+      style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="w-full max-w-md rounded-t-2xl bg-zinc-900 p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+      <div className="w-full max-w-md rounded-2xl bg-zinc-900 p-5 space-y-4 max-h-[88vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-widest text-zinc-500">
             Edit subscription
