@@ -58,7 +58,11 @@ export default function RootLayout({
     >
       <body className="min-h-full text-white antialiased" style={{ background: '#050508' }}>
         <StarField />
-        <div style={{ position: 'relative', zIndex: 1 }}>
+        {/* position:relative WITHOUT z-index keeps content above the fixed StarField
+            (both paint in DOM order) but avoids creating a stacking context. With a
+            z-index here, every modal inside gets trapped below the fixed TabBar
+            (z-50) and can never overlay it. */}
+        <div style={{ position: 'relative' }}>
           <Providers>
             <PullToRefresh>
               <PageTransition>{children}</PageTransition>
