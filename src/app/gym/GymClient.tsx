@@ -525,6 +525,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
 
   // Body weight input
   const [bwInput, setBwInput] = useState<string>('')
+  const [editingBw, setEditingBw] = useState(false)
   const [showMeasureModal, setShowMeasureModal] = useState(false)
   const [nudgeDismissed, setNudgeDismissed] = useState(false)
   const [neckIn, setNeckIn] = useState('')
@@ -757,7 +758,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     const logs = allLogs.filter(l => l.exercise_id === id).sort((a, b) => a.logged_at.localeCompare(b.logged_at))
     const lastLog = logs[logs.length - 1]
     setWeightInput(String(lastLog?.weight ?? 0))
-    setSelectedReps(ex.rep_max)
+    setSelectedReps(lastLog?.reps ?? ex.rep_max)
   }
 
   function handleLogSet() {
@@ -1233,14 +1234,14 @@ export default function GymClient({ today, initialConfig, initialExercises, init
           )}
 
           <div className="px-5 pb-5 pt-3">
-            {todayBw ? (
+            {todayBw && !editingBw ? (
               <div className="flex items-center justify-between rounded-xl bg-white/5 px-4 py-3">
                 <div>
                   <p className="text-xs text-white/40">Logged today</p>
                   <p className="text-base font-semibold">{todayBw.weight.toFixed(1)} {config.units}</p>
                 </div>
                 <button
-                  onClick={() => { setBwInput(String(todayBw.weight)); }}
+                  onClick={() => { setBwInput(String(todayBw.weight)); setEditingBw(true) }}
                   className="text-xs text-white/40 underline active:opacity-60"
                 >
                   edit
@@ -1263,14 +1264,24 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     onClick={() => {
                       const w = parseFloat(bwInput)
                       if (!w || w <= 0) return
-                      logBw.mutate({ date_key: today, weight: w }, { onSuccess: () => setBwInput('') })
+                      logBw.mutate({ date_key: today, weight: w }, {
+                        onSuccess: () => { setBwInput(''); setEditingBw(false) },
+                      })
                     }}
                     disabled={!bwInput || logBw.isPending}
                     className="rounded-xl bg-white/10 border border-white/10 px-5 py-3 text-sm font-semibold active:opacity-70 disabled:opacity-40"
                   >
-                    {logBw.isPending ? '…' : 'Log'}
+                    {logBw.isPending ? '…' : editingBw ? 'Save' : 'Log'}
                   </button>
                 </div>
+                {editingBw && (
+                  <button
+                    onClick={() => { setBwInput(''); setEditingBw(false) }}
+                    className="text-xs text-white/40 underline px-1 active:opacity-60"
+                  >
+                    cancel
+                  </button>
+                )}
                 {logBw.isError && (
                   <p className="text-xs text-red-400 px-1">
                     Failed — have you run the DB migration?
