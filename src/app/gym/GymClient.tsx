@@ -757,7 +757,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     const logs = allLogs.filter(l => l.exercise_id === id).sort((a, b) => a.logged_at.localeCompare(b.logged_at))
     const lastLog = logs[logs.length - 1]
     setWeightInput(String(lastLog?.weight ?? 0))
-    setSelectedReps(ex.rep_max)
+    setSelectedReps(lastLog?.reps ?? ex.rep_max)
   }
 
   function handleLogSet() {
