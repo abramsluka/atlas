@@ -206,16 +206,21 @@ export default function OrbAssistant() {
               width: 54, height: 54, borderRadius: 27,
               background: 'linear-gradient(145deg, rgba(74,222,128,0.18), rgba(34,211,238,0.10))',
               border: '1px solid rgba(74,222,128,0.4)',
-              boxShadow: '0 6px 24px rgba(74,222,128,0.18), inset 0 0 16px rgba(74,222,128,0.06)',
+              boxShadow: '0 6px 28px rgba(74,222,128,0.35), 0 0 14px rgba(74,222,128,0.22), inset 0 0 16px rgba(74,222,128,0.08)',
               backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
             }}
             aria-label="Open Atlas assistant"
           >
-            {/* Globe glyph — placeholder mark, final icon TBD in the icon lab */}
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="1.5" strokeLinecap="round">
-              <circle cx="12" cy="12" r="9" />
-              <ellipse cx="12" cy="12" rx="4" ry="9" />
-              <path d="M3.6 9h16.8M3.6 15h16.8" />
+            {/* The Orb — glowing core with halo rings and a specular shine (static, no pulse) */}
+            <svg
+              width="28" height="28" viewBox="0 0 24 24" fill="none"
+              stroke="#4ade80" strokeWidth="1.5" strokeLinecap="round"
+              style={{ filter: 'drop-shadow(0 0 5px rgba(74,222,128,0.85)) drop-shadow(0 0 12px rgba(74,222,128,0.35))' }}
+            >
+              <circle cx="12" cy="12" r="4.4" fill="#4ade80" stroke="none" opacity="0.9" />
+              <circle cx="12" cy="12" r="7.4" opacity="0.55" />
+              <circle cx="12" cy="12" r="10" opacity="0.25" />
+              <ellipse cx="10.3" cy="10.1" rx="1.6" ry="0.95" fill="rgba(255,255,255,0.8)" stroke="none" transform="rotate(-32 10.3 10.1)" />
             </svg>
           </motion.button>
         )}
