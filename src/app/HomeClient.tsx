@@ -291,9 +291,17 @@ function JournalMood({ mood, color }: { mood: number | null; color: string }) {
 /** ENERGY: Mini circadian energy arc with current-position dot */
 function EnergyArc({ color }: { color: string }) {
   const W = 82, H = 48
-  const now = new Date()
-  const hoursAwake = Math.max(0, now.getHours() + now.getMinutes() / 60 - 6.5)
   const totalAwake = 17
+  // Time-dependent — resolve only after mount so the server HTML and the first
+  // client render match (otherwise the gradient offset + marker position differ
+  // and React throws a hydration mismatch). Before mount we render a neutral midday.
+  const [now, setNow] = useState<Date | null>(null)
+  useEffect(() => {
+    setNow(new Date())
+    const id = setInterval(() => setNow(new Date()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+  const hoursAwake = now ? Math.max(0, now.getHours() + now.getMinutes() / 60 - 6.5) : totalAwake / 2
 
   function energyAt(t: number): number {
     // Circadian model: peaks ~3h after wake, gentle afternoon dip, evening decline
@@ -337,9 +345,11 @@ function EnergyArc({ color }: { color: string }) {
         <animate attributeName="opacity" values="0;0.85;0.85;0" keyTimes="0;0.08;0.92;1"
           dur="5.5s" repeatCount="indefinite" />
       </circle>
-      {/* Current-position marker */}
-      <circle cx={curX.toFixed(1)} cy={curY.toFixed(1)} r="3.5" fill={color}
-        style={{ filter: `drop-shadow(0 0 6px ${color}cc)`, animation: 'bentoGlow 2.5s ease-in-out infinite' }} />
+      {/* Current-position marker — only after mount (time-dependent) */}
+      {now && (
+        <circle cx={curX.toFixed(1)} cy={curY.toFixed(1)} r="3.5" fill={color}
+          style={{ filter: `drop-shadow(0 0 6px ${color}cc)`, animation: 'bentoGlow 2.5s ease-in-out infinite' }} />
+      )}
     </svg>
   )
 }
