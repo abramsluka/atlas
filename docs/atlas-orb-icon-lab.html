@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Atlas orb icon — design lab</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: #050508;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; color: #cfeeff; }
+  body { padding: 24px 18px 80px; }
+  h1 { font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; color: #7fffb0; margin: 0 0 4px; }
+  .sub { font-size: 10.5px; color: #5a8a6d; margin: 0 0 20px; line-height: 1.6; max-width: 560px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+  .controls button { cursor: pointer; font: inherit; font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; padding: 6px 10px; color: #9fd6b4; background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(120,255,180,0.16); border-radius: 8px; }
+  .controls button.on { color: #01160a; background: linear-gradient(180deg,#a8ffcf,#4ade80); border-color: #a8ffcf; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); gap: 14px; max-width: 900px; }
+  .card { background: rgba(10,14,12,0.85); border: 1px solid rgba(74,222,128,0.12); border-radius: 16px;
+    padding: 16px 12px 12px; text-align: center; }
+  .card.picked { border-color: rgba(74,222,128,0.65); box-shadow: 0 0 24px rgba(74,222,128,0.12); }
+  .card h2 { font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: #86b598; margin: 12px 0 2px; font-weight: 700; }
+  .card p { font-size: 9px; color: #4d6b58; margin: 0 0 10px; line-height: 1.5; min-height: 26px; }
+  .stage { display: flex; align-items: center; justify-content: center; gap: 14px; }
+  /* Exact FAB replica from OrbAssistant.tsx */
+  .fab { width: 54px; height: 54px; border-radius: 27px; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(145deg, rgba(74,222,128,0.18), rgba(34,211,238,0.10));
+    border: 1px solid rgba(74,222,128,0.4);
+    box-shadow: 0 6px 24px rgba(74,222,128,0.18), inset 0 0 16px rgba(74,222,128,0.06);
+    backdrop-filter: blur(8px); }
+  .fab.small { width: 40px; height: 40px; border-radius: 20px; }
+  .fab.small svg { transform: scale(0.72); }
+  .zoom { margin-top: 12px; opacity: 0.9; }
+  .zoom svg { width: 96px; height: 96px; }
+  .pick { margin-top: 10px; }
+  .pick button { cursor: pointer; font: inherit; font-size: 9px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; padding: 5px 10px; color: #9fd6b4; background: rgba(74,222,128,0.08);
+    border: 1px solid rgba(74,222,128,0.3); border-radius: 999px; }
+  .hint { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); white-space: nowrap;
+    font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #3d6350; }
+  #picked-name { color: #7fffb0; }
+</style>
+</head>
+<body>
+<h1>Atlas Orb · Icon Lab</h1>
+<p class="sub">Candidates for the Orb FAB glyph, rendered inside the exact FAB from OrbAssistant.tsx (54px + 40px), plus a 4× zoom.
+Toggle stroke color and pulse to preview states. Tap PICK to copy that candidate's SVG to the clipboard — paste it over the placeholder in OrbAssistant.tsx.</p>
+
+<div class="controls">
+  <button id="c-green" class="on">green #4ade80</button>
+  <button id="c-white">white</button>
+  <button id="c-cyan">cyan mix</button>
+  <button id="pulse">pulse anim</button>
+</div>
+
+<div class="grid" id="grid"></div>
+<div class="hint">picked: <span id="picked-name">none</span> · pick = copy svg to clipboard</div>
+
+<script>
+// Each candidate is an SVG inner-markup factory: stroke color is injected.
+// All are 24×24 viewBox, stroke-based, no fill (except noted), 1.5 weight.
+const CANDIDATES = [
+  {
+    id: 'pwa-wireframe',
+    name: 'PWA wireframe',
+    desc: 'The app icon mark: sphere with meridian + 3 latitudes',
+    svg: (c) => `
+      <circle cx="12" cy="12" r="9"/>
+      <ellipse cx="12" cy="12" rx="4.2" ry="9"/>
+      <ellipse cx="12" cy="12" rx="9" ry="3.6"/>
+      <path d="M4.9 8.2c1.9-1.5 4.4-2.3 7.1-2.3s5.2 .8 7.1 2.3"/>
+      <path d="M4.9 15.8c1.9 1.5 4.4 2.3 7.1 2.3s5.2-.8 7.1-2.3"/>`,
+  },
+  {
+    id: 'pwa-simple',
+    name: 'PWA simplified',
+    desc: 'Same mark, fewer lines — reads cleaner at 24px',
+    svg: (c) => `
+      <circle cx="12" cy="12" r="9"/>
+      <ellipse cx="12" cy="12" rx="4.2" ry="9"/>
+      <ellipse cx="12" cy="12" rx="9" ry="3.6"/>`,
+  },
+  {
+    id: 'current',
+    name: 'Current placeholder',
+    desc: 'What ships today: circle + meridian + straight latitudes',
+    svg: (c) => `
+      <circle cx="12" cy="12" r="9"/>
+      <ellipse cx="12" cy="12" rx="4" ry="9"/>
+      <path d="M3.6 9h16.8M3.6 15h16.8"/>`,
+  },
+  {
+    id: 'orbit-ring',
+    name: 'Planet + ring',
+    desc: 'HUD-planet vibe: solid-ish core with a tilted orbit ring',
+    svg: (c) => `
+      <circle cx="12" cy="12" r="6.2"/>
+      <circle cx="12" cy="12" r="2.4" fill="${'${c}'}" stroke="none" opacity="0.85"/>
+      <ellipse cx="12" cy="12" rx="10.2" ry="4" transform="rotate(-18 12 12)"/>`,
+  },
+  {
+    id: 'glow-core',
+    name: 'Glowing core',
+    desc: 'Filled orb + halo — least "icon", most "energy"',
+    svg: (c) => `
+      <circle cx="12" cy="12" r="4.4" fill="${'${c}'}" stroke="none" opacity="0.9"/>
+      <circle cx="12" cy="12" r="7.4" opacity="0.55"/>
+      <circle cx="12" cy="12" r="10" opacity="0.25"/>`,
+  },
+  {
+    id: 'meridian-dots',
+    name: 'Globe + poles',
+    desc: 'Simplified globe with node dots — nods to the HUD map',
+    svg: (c) => `
+      <circle cx="12" cy="12" r="8.6"/>
+      <ellipse cx="12" cy="12" rx="8.6" ry="3.4"/>
+      <circle cx="12" cy="3.4" r="1.5" fill="${'${c}'}" stroke="none"/>
+      <circle cx="12" cy="20.6" r="1.5" fill="${'${c}'}" stroke="none"/>`,
+  },
+  {
+    id: 'atlas-a',
+    name: 'Orbital A',
+    desc: 'An "A" built from an orbit — wordmark direction',
+    svg: (c) => `
+      <path d="M6 19L12 5l6 14"/>
+      <path d="M8.4 14h7.2"/>
+      <ellipse cx="12" cy="13.4" rx="10" ry="4.6" opacity="0.5"/>`,
+  },
+  {
+    id: 'mic-globe',
+    name: 'Globe + mic hint',
+    desc: 'Globe with a tiny voice arc — says "talk to me"',
+    svg: (c) => `
+      <circle cx="12" cy="11" r="7.4"/>
+      <ellipse cx="12" cy="11" rx="3.4" ry="7.4"/>
+      <path d="M4.9 11h14.2"/>
+      <path d="M8.2 21c1.1.6 2.4 1 3.8 1s2.7-.4 3.8-1"/>`,
+  },
+]
+
+const grid = document.getElementById('grid')
+let color = '#4ade80'
+let picked = null
+
+function svgFor(cand, c, extra = '') {
+  const inner = cand.svg(c).replaceAll('${c}', c)
+  return `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.5" stroke-linecap="round" ${extra}>${inner}</svg>`
+}
+
+function render() {
+  grid.innerHTML = ''
+  for (const cand of CANDIDATES) {
+    const card = document.createElement('div')
+    card.className = 'card' + (picked === cand.id ? ' picked' : '')
+    card.innerHTML = `
+      <div class="stage">
+        <div class="fab">${svgFor(cand, color)}</div>
+        <div class="fab small">${svgFor(cand, color)}</div>
+      </div>
+      <div class="zoom">${svgFor(cand, color)}</div>
+      <h2>${cand.name}</h2>
+      <p>${cand.desc}</p>
+      <div class="pick"><button data-id="${cand.id}">pick</button></div>`
+    card.querySelector('button').onclick = async () => {
+      picked = cand.id
+      document.getElementById('picked-name').textContent = cand.name
+      try { await navigator.clipboard.writeText(svgFor(cand, '#4ade80')) } catch {}
+      render()
+    }
+    grid.appendChild(card)
+  }
+  document.querySelectorAll('.zoom svg').forEach(s => { s.setAttribute('width', 96); s.setAttribute('height', 96) })
+  if (document.getElementById('pulse').classList.contains('on')) {
+    document.querySelectorAll('.fab').forEach(f => f.animate(
+      [{ transform: 'scale(1)' }, { transform: 'scale(1.06)' }, { transform: 'scale(1)' }],
+      { duration: 1600, iterations: Infinity }
+    ))
+  }
+}
+
+const colorBtns = { 'c-green': '#4ade80', 'c-white': '#e8f5ee', 'c-cyan': '#5eead4' }
+for (const [id, c] of Object.entries(colorBtns)) {
+  document.getElementById(id).onclick = () => {
+    color = c
+    document.querySelectorAll('.controls button').forEach(b => b.classList.remove('on'))
+    document.getElementById(id).classList.add('on')
+    document.getElementById('pulse').classList.toggle('on', false)
+    render()
+  }
+}
+document.getElementById('pulse').onclick = (e) => { e.target.classList.toggle('on'); render() }
+
+render()
+</script>
+</body>
+</html>

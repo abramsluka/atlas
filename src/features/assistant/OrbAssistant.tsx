@@ -38,7 +38,9 @@ export default function OrbAssistant() {
   const [busyActionId, setBusyActionId] = useState<string | null>(null)
   const [micNote, setMicNote] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const wantTranscribe = useRef(false)
+  // What to do with the transcript once the recording stops:
+  // 'send' → straight into the chat; 'fill' → into the input box for editing.
+  const micIntent = useRef<'send' | 'fill' | null>(null)
 
   const { executeAction, units } = useAssistantActions()
   const rec = useVoiceRecorder()
@@ -113,10 +115,11 @@ export default function OrbAssistant() {
     }
   }, [messages, streaming, pathname, units, setMessages, updateMsg]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Voice: record → transcribe → auto-send ──
+  // ── Voice: record → transcribe → send or fill the input, per intent ──
   useEffect(() => {
-    if (!rec.blob || !wantTranscribe.current) return
-    wantTranscribe.current = false
+    if (!rec.blob || !micIntent.current) return
+    const intent = micIntent.current
+    micIntent.current = null
     const file = rec.toFile()
     rec.reset()
     if (!file) return
@@ -132,7 +135,8 @@ export default function OrbAssistant() {
           setMicNote("Didn't hear anything — try again.")
           return
         }
-        await send(text)
+        if (intent === 'send') await send(text)
+        else setInput(prev => (prev.trim() ? `${prev.trim()} ${text}` : text))
       } catch {
         setMicNote('Transcription failed — try again.')
       } finally {
@@ -141,14 +145,13 @@ export default function OrbAssistant() {
     })()
   }, [rec.blob]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const toggleMic = () => {
-    if (rec.recording) {
-      wantTranscribe.current = true
-      rec.stop()
-    } else {
-      setMicNote(null)
-      rec.start()
-    }
+  const startMic = () => {
+    setMicNote(null)
+    rec.start()
+  }
+  const stopMic = (intent: 'send' | 'fill') => {
+    micIntent.current = intent
+    rec.stop()
   }
 
   // ── Confirm / dismiss ──
@@ -363,53 +366,69 @@ export default function OrbAssistant() {
                 <div className="flex items-end gap-2 rounded-2xl px-3 py-2"
                   style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)' }}>
                   {rec.recording ? (
-                    <div className="flex-1 flex items-center gap-2 py-1.5">
-                      <motion.span className="w-2 h-2 rounded-full" style={{ background: '#f87171' }}
-                        animate={{ opacity: [1, 0.3, 1] }} transition={{ repeat: Infinity, duration: 1 }} />
-                      <span className="text-[13px] text-zinc-300">Listening… {formatElapsed(rec.elapsed)}</span>
-                    </div>
+                    <>
+                      {/* Stop (left): end recording, transcribe into the input box — no send */}
+                      <button
+                        onClick={() => stopMic('fill')}
+                        className="p-2 rounded-full shrink-0"
+                        style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.16)' }}
+                        aria-label="Stop — keep transcript in the input box"
+                      >
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="#e4e4e7"><rect x="6" y="6" width="12" height="12" rx="2.5" /></svg>
+                      </button>
+                      <div className="flex-1 flex items-center justify-center gap-2 py-1.5 min-w-0">
+                        <motion.span className="w-2 h-2 rounded-full shrink-0" style={{ background: '#f87171' }}
+                          animate={{ opacity: [1, 0.3, 1] }} transition={{ repeat: Infinity, duration: 1 }} />
+                        <span className="text-[13px] text-zinc-300 truncate">Listening… {formatElapsed(rec.elapsed)}</span>
+                      </div>
+                      {/* Send (right): end recording, transcribe, and send immediately */}
+                      <button
+                        onClick={() => stopMic('send')}
+                        className="p-2 rounded-full shrink-0"
+                        style={{ background: 'rgba(74,222,128,0.18)', border: '1px solid rgba(74,222,128,0.45)' }}
+                        aria-label="Stop and send"
+                      >
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M12 19V5M5 12l7-7 7 7" />
+                        </svg>
+                      </button>
+                    </>
                   ) : (
-                    <textarea
-                      value={input}
-                      onChange={e => setInput(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) }
-                      }}
-                      placeholder="Log anything…"
-                      rows={1}
-                      className="flex-1 bg-transparent resize-none outline-none text-[13.5px] text-zinc-100 placeholder-zinc-600 py-1.5 max-h-24"
-                    />
-                  )}
-                  <button
-                    onClick={toggleMic}
-                    disabled={transcribing || streaming}
-                    className="p-2 rounded-full disabled:opacity-40"
-                    style={rec.recording
-                      ? { background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.4)' }
-                      : { background: 'rgba(74,222,128,0.10)', border: '1px solid rgba(74,222,128,0.25)' }}
-                    aria-label={rec.recording ? 'Stop and send' : 'Record voice'}
-                  >
-                    {rec.recording ? (
-                      <svg width="17" height="17" viewBox="0 0 24 24" fill="#f87171"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
-                    ) : (
-                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="1.8" strokeLinecap="round">
-                        <rect x="9" y="3" width="6" height="11" rx="3" />
-                        <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
-                      </svg>
-                    )}
-                  </button>
-                  {!rec.recording && (
-                    <button
-                      onClick={() => send(input)}
-                      disabled={!input.trim() || streaming}
-                      className="p-2 rounded-full disabled:opacity-40"
-                      style={{ background: 'rgba(74,222,128,0.14)', border: '1px solid rgba(74,222,128,0.3)' }}
-                      aria-label="Send"
-                    >
-                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 19V5M5 12l7-7 7 7" />
-                      </svg>
-                    </button>
+                    <>
+                      <textarea
+                        value={input}
+                        onChange={e => setInput(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) }
+                        }}
+                        placeholder="Log anything…"
+                        rows={1}
+                        className="flex-1 bg-transparent resize-none outline-none text-[13.5px] text-zinc-100 placeholder-zinc-600 py-1.5 max-h-24"
+                      />
+                      <button
+                        onClick={startMic}
+                        disabled={transcribing || streaming}
+                        className="p-2 rounded-full disabled:opacity-40"
+                        style={{ background: 'rgba(74,222,128,0.10)', border: '1px solid rgba(74,222,128,0.25)' }}
+                        aria-label="Record voice"
+                      >
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="1.8" strokeLinecap="round">
+                          <rect x="9" y="3" width="6" height="11" rx="3" />
+                          <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => send(input)}
+                        disabled={!input.trim() || streaming}
+                        className="p-2 rounded-full disabled:opacity-40"
+                        style={{ background: 'rgba(74,222,128,0.14)', border: '1px solid rgba(74,222,128,0.3)' }}
+                        aria-label="Send"
+                      >
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M12 19V5M5 12l7-7 7 7" />
+                        </svg>
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
