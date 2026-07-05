@@ -3,8 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
-const HIDDEN_ON = ['/login', '/workouts/new', '/journal/new']
-// Note: /workouts (history) and /workouts/[id] keep the tab bar visible
+const HIDDEN_ON = ['/login', '/journal/new']
 
 const tabs = [
   {

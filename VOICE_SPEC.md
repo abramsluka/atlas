@@ -15,7 +15,7 @@ The feature: **promote the gym coach into a global "Atlas Orb" assistant — sam
 Decisions (Luka, 2026-07-05):
 - **The Orb replaces the Gym Star.** One globe orb on every page except Mentor. The gym coach's abilities fold into the Orb; GymChatbot and its dedicated route are retired at the end of the migration.
 - **Both surfaces day one**: the Orb AND voice logging through Mentor chat. Same action backend — you can log anything from either.
-- **Separate threads, deliberately.** Mentor is for long conversations; the Orb is for quick capture and actions. They are NOT merged. The Orb has exactly one thread, synced across every page it appears on (Home, Gym, Health, Journal — plus the legacy `/workouts` pages, which are no longer linked from the tab bar but still exist) — opening it anywhere shows the same conversation.
+- **Separate threads, deliberately.** Mentor is for long conversations; the Orb is for quick capture and actions. They are NOT merged. The Orb has exactly one thread, synced across every page it appears on (Home, Gym, Health, Journal) — opening it anywhere shows the same conversation. (The legacy `/workouts` module was deleted 2026-07-05; check-in hooks now live in `src/features/checkins/`.)
 - **Mentor chats get saved.** Mentor moves from a single localStorage thread to DB-backed conversations with browsable history (see §8).
 - **Confidence-based confirm**: parsed entries show as pre-approved cards with one-tap "Confirm all"; ambiguous ones become clarifying questions with tappable options; nothing writes silently.
 - **V1 scope**: workout sets, supplements, body weight, water, caffeine, journal/check-in notes, plus the inherited gym-coach actions. **Food deferred** (its OpenAI wizard flow stays untouched).
@@ -133,13 +133,13 @@ Risky change (mentor works today). Do it last; verify plain conversation still s
 
 ## 4. UI — the Orb
 
-**Component**: `src/features/assistant/OrbAssistant.tsx`, portal-rendered (same pattern as GymChatbot). Mounted **once** from `layout.tsx` next to `TabBar`, with `HIDDEN_ON`: `/login`, `/mentor`. Present everywhere else — including `/gym`, the HUD map view, the focus screens (`/workouts/new`, `/journal/new`), and the legacy `/workouts` history pages — and because it's a single component with a single thread key, the conversation is identical on every page.
+**Component**: `src/features/assistant/OrbAssistant.tsx`, portal-rendered (same pattern as GymChatbot). Mounted **once** from `layout.tsx` next to `TabBar`, with `HIDDEN_ON`: `/login`, `/mentor`. Present everywhere else — including `/gym`, the HUD map view, and the `/journal/new` focus screen — and because it's a single component with a single thread key, the conversation is identical on every page.
 
 - **FAB**: 44px round button, `fixed right-4 z-50` above the TabBar (`bottom: ~72px` + safe-area; final position/size to be tuned in build), Atlas-globe glyph (mini version of the HUD globe mark), same translucent style + `whileTap` scale as the existing view-toggle buttons. Takes over the slot the Gym Star occupied on `/gym`.
 - **Sheet**: bottom sheet (Framer Motion slide-up, `fixed inset-x-0 bottom-0 z-[70]` + scrim `z-[60]`, mirroring GymChatbot's layout). Contents top-to-bottom: thread (last messages), clarify chips row when pending, input row = text field + mic button + send.
 - **Mic flow** (mirrors Mentor's `useVoiceInput`, but built on the shared `useVoiceRecorder`): tap mic → recording state with `Waveform` + elapsed; tap again → stop → transcribe → **auto-send** transcript. Mic-permission error surfaces inline (copy from `useVoiceRecorder`'s error string).
 - **ActionCard** (`src/features/assistant/ActionCard.tsx`, extracted from GymChatbot's card rendering + `describeAction`, extended with the new kinds): title + detail (e.g. "Magnesium — evening slot"), per-card Confirm/Dismiss, plus a **"Confirm all (n)"** button when ≥2 pending cards. States: pending → done (✓ label) / dismissed / error (inline message, retry).
-- **Thread**: `usePersistentChat('atlas-orb-thread-v1', 40)` — device-local, one key, so Home/Gym/Health/Journal/Workouts all open the same conversation. Pending (unconfirmed) actions persist with the thread so a refresh doesn't lose them; a "Clear" affordance in the sheet header resets the thread.
+- **Thread**: `usePersistentChat('atlas-orb-thread-v1', 40)` — device-local, one key, so Home/Gym/Health/Journal all open the same conversation. Pending (unconfirmed) actions persist with the thread so a refresh doesn't lose them; a "Clear" affordance in the sheet header resets the thread.
 
 ## 5. Files
 
