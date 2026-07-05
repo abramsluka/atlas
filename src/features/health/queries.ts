@@ -143,3 +143,18 @@ export function useWhoopData(today: string, enabled: boolean, initialData?: Whoo
     retry: false,
   })
 }
+
+// Today's Apple Health steps (synced via the Shortcuts bridge). Backend-only
+// data surfaced as a single tile; null when nothing synced today.
+export function useAppleSteps(today: string) {
+  return useQuery({
+    queryKey: ['apple-status', today],
+    queryFn: async (): Promise<{ todaySteps: number | null }> => {
+      const res = await fetch('/api/health/apple/status')
+      if (!res.ok) return { todaySteps: null }
+      return res.json()
+    },
+    staleTime: 60_000,
+    retry: false,
+  })
+}
