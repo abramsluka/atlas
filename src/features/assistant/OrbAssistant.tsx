@@ -338,14 +338,14 @@ export default function OrbAssistant() {
                   )
                 })}
 
-                {(streaming || transcribing) && (!lastMsg || lastMsg.role !== 'assistant' || !lastMsg.content) && (
+                {/* Thinking dots — streaming only; transcribing lives in the input box */}
+                {streaming && (!lastMsg || lastMsg.role !== 'assistant' || !lastMsg.content) && (
                   <div className="flex items-center gap-1.5 px-1">
                     {[0, 1, 2].map(i => (
                       <motion.span key={i} className="w-1.5 h-1.5 rounded-full" style={{ background: '#4ade80' }}
                         animate={{ opacity: [0.25, 1, 0.25] }}
                         transition={{ repeat: Infinity, duration: 1.1, delay: i * 0.18 }} />
                     ))}
-                    {transcribing && <span className="text-[11px] text-zinc-500 ml-1.5">transcribing…</span>}
                   </div>
                 )}
               </div>
@@ -394,6 +394,22 @@ export default function OrbAssistant() {
                         aria-label="Stop and send"
                       >
                         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M12 19V5M5 12l7-7 7 7" />
+                        </svg>
+                      </button>
+                    </>
+                  ) : transcribing ? (
+                    <>
+                      {/* ChatGPT-style: spinner + label inline in the input box */}
+                      <div className="flex-1 flex items-center gap-2 py-1.5">
+                        <svg className="animate-spin shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" strokeWidth="2.5" strokeLinecap="round">
+                          <path d="M12 3a9 9 0 1 1-9 9" />
+                        </svg>
+                        <span className="text-[13.5px] text-zinc-500 animate-pulse">Transcribing</span>
+                      </div>
+                      <button disabled className="p-2 rounded-full opacity-40"
+                        style={{ background: 'rgba(74,222,128,0.14)', border: '1px solid rgba(74,222,128,0.3)' }} aria-label="Send">
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M12 19V5M5 12l7-7 7 7" />
                         </svg>
                       </button>
