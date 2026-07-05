@@ -33,7 +33,9 @@ function Corner({ pos }: { pos: 'tl' | 'tr' | 'bl' | 'br' }) {
 function Panel({ label, children, className = '' }: { label: string; children: React.ReactNode; className?: string }) {
   return (
     <div
-      className={`pointer-events-none rounded-xl px-4 py-3 ${className}`}
+      // pointer-events-auto + cursor-default: panels catch the pointer so the
+      // grab-hand (drag-to-orbit affordance) only shows over open space
+      className={`pointer-events-auto cursor-default rounded-xl px-4 py-3 ${className}`}
       style={{
         background: 'rgba(4,10,16,0.55)',
         border: '1px solid rgba(127,223,255,0.16)',

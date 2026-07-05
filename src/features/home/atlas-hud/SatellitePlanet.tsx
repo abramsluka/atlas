@@ -194,13 +194,14 @@ export default function SatellitePlanet({
         <mesh
           ref={meshRef}
           onClick={handleClick}
-          onPointerOver={() => {
+          onPointerOver={(e) => {
             setHovered(true)
-            document.body.style.cursor = 'pointer'
+            // set on the canvas itself so it overrides the wrapper's grab cursor
+            ;(e.nativeEvent.target as HTMLElement).style.cursor = 'pointer'
           }}
-          onPointerOut={() => {
+          onPointerOut={(e) => {
             setHovered(false)
-            document.body.style.cursor = 'default'
+            ;(e.nativeEvent.target as HTMLElement).style.cursor = ''
           }}
         >
           <sphereGeometry args={[planet.size, 96, 96]} />

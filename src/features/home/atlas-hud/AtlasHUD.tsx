@@ -14,7 +14,14 @@ export default function AtlasHUD() {
   const router = useRouter()
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#000' }}>
+    // grab/grabbing cursor signals the drag-to-orbit affordance; HUD panels set
+    // their own cursor so the hand only shows over draggable space
+    <div
+      style={{ position: 'fixed', inset: 0, background: '#000', cursor: 'grab' }}
+      onPointerDown={(e) => { e.currentTarget.style.cursor = 'grabbing' }}
+      onPointerUp={(e) => { e.currentTarget.style.cursor = 'grab' }}
+      onPointerLeave={(e) => { e.currentTarget.style.cursor = 'grab' }}
+    >
       <Canvas
         flat
         camera={{ position: [0, 0.7, 9.5], fov: 45 }}
