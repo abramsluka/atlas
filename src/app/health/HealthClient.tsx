@@ -51,6 +51,7 @@ import {
 } from '@/features/health/supplementDb'
 import { SUBSTANCE_DB } from '@/features/health/substanceDb'
 import DebloatSection from './DebloatSection'
+import AppleHealthCard from './AppleHealthCard'
 import { rolledDate } from '@/features/food/date'
 import {
   currentEnergyFromLogs,
@@ -259,6 +260,8 @@ function WearablesSection({
             </div>
           )}
         </div>
+
+        <AppleHealthCard />
       </div>
 
       {/* Freshness footer */}
@@ -383,7 +386,6 @@ function SupplementRow({
   onToggleLow,
   onUpdateName,
   onUpdateMeta,
-  togglePending,
   deletePending,
 }: {
   supplement: Supplement
@@ -397,7 +399,6 @@ function SupplementRow({
   onToggleLow: () => void
   onUpdateName: (name: string) => void
   onUpdateMeta: (dose: string, notes: string) => void
-  togglePending: boolean
   deletePending: boolean
 }) {
   const taken = !!log
@@ -470,10 +471,9 @@ function SupplementRow({
       {/* Checkbox */}
       <button
         onClick={onToggle}
-        disabled={togglePending}
         aria-label="Mark taken"
         className={[
-          'w-7 h-7 rounded-full border-2 flex items-center justify-center text-sm font-medium transition-all duration-200 disabled:opacity-60',
+          'w-7 h-7 rounded-full border-2 flex items-center justify-center text-sm font-medium transition-all duration-200',
           taken
             ? 'bg-[#1D9E75] border-[#1D9E75] text-white shadow-[0_0_12px_rgba(29,158,117,0.35)]'
             : missed
@@ -579,7 +579,6 @@ function StackWindowSection({
   supplements,
   logs,
   confirmDeleteId,
-  togglePending,
   deletePending,
   onToggle,
   onConfirmDelete,
@@ -593,7 +592,6 @@ function StackWindowSection({
   supplements: Supplement[]
   logs: SupplementLog[]
   confirmDeleteId: string | null
-  togglePending: boolean
   deletePending: boolean
   onToggle: (s: Supplement) => void
   onConfirmDelete: (id: string) => void
@@ -629,7 +627,6 @@ function StackWindowSection({
             onToggleLow={() => onToggleLow(s)}
             onUpdateName={(name) => onUpdateName(s.id, name)}
             onUpdateMeta={(dose, notes) => onUpdateMeta(s.id, dose, notes)}
-            togglePending={togglePending}
             deletePending={deletePending}
           />
         ))}
@@ -878,13 +875,15 @@ function StackTracker({
   const takenCount = allSupplements.filter(s => allLogs.some(l => l.supplement_id === s.id)).length
   const pct = totalSlots > 0 ? takenCount / totalSlots : 0
 
-  async function handleToggle(s: Supplement) {
+  function handleToggle(s: Supplement) {
     const slot = (s.times[0] as TimeSlot | undefined) ?? 'anytime'
     const existingLog = allLogs.find(l => l.supplement_id === s.id && l.time_slot === slot)
     if (existingLog) {
-      await unlogDose.mutateAsync(existingLog.id)
+      // Optimistic row whose real id hasn't landed yet — can't delete it server-side.
+      if (existingLog.id.startsWith('optimistic-')) return
+      unlogDose.mutate(existingLog.id)
     } else {
-      await logDose.mutateAsync({ supplement_id: s.id, time_slot: slot })
+      logDose.mutate({ supplement_id: s.id, time_slot: slot })
     }
   }
 
@@ -911,7 +910,6 @@ function StackTracker({
     updateSupplement.mutate({ id, dose: dose || null, notes: notes || null })
   }
 
-  const togglePending = logDose.isPending || unlogDose.isPending
   const deletePending = deleteSupplement.isPending
 
   return (
@@ -954,7 +952,6 @@ function StackTracker({
           supplements={grouped.get(win.key) ?? []}
           logs={allLogs}
           confirmDeleteId={confirmDeleteId}
-          togglePending={togglePending}
           deletePending={deletePending}
           onToggle={handleToggle}
           onConfirmDelete={setConfirmDeleteId}
