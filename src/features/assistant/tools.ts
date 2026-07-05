@@ -10,6 +10,7 @@ import { toLocalDate } from '@/lib/date'
 import type { GymConfig, GymExercise } from '@/features/gym/types'
 import type { TimeSlot } from '@/features/health/types'
 import type { ProgramGoal, ProgramStructure } from '@/features/gym/programTypes'
+import { PORTION_STYLE_RULES } from '@/features/food/portionStyle'
 import type { AssistantAction } from './actions'
 
 type DB = ReturnType<typeof createServiceClient>
@@ -127,7 +128,10 @@ HARD RULES:
 - "same as last time" → use the exercise's last set from the catalog.
 - Keep text terse — one short line, then the cards speak for themselves.
 - NEVER reply with tool calls alone. Structure every reply as: FIRST your text (1-3 short sentences — including the answer to anything he asked; the cards only confirm logging, they don't answer questions), THEN the tool calls.
-- When you call clarify, include likely answers as options when you can (e.g. offer his latest logged weight when clarifying a weight).`
+- When you call clarify, include likely answers as options when you can (e.g. offer his latest logged weight when clarifying a weight).
+
+FOOD: when he says he ate or drank something caloric, call log_food with a calorie/macro estimate. Set is_hydrating + volume_oz for water-like drinks (juice, milk, sports drinks, soda); false for coffee/alcohol/milkshakes. Only ask a portion question (via clarify) when it's genuinely ambiguous AND high-impact — otherwise estimate and set confidence honestly (low if you had to guess). PLAIN WATER is NOT food: "drank 20 oz of water" → log_water, never log_food.
+${PORTION_STYLE_RULES}`
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
 
@@ -187,6 +191,25 @@ export function buildAssistantTools(units: string): Anthropic.Tool[] {
           amount_mg: { type: 'number' },
         },
         required: ['source', 'amount_mg'],
+      },
+    },
+    {
+      name: 'log_food',
+      description: 'Propose logging food or a caloric/flavored drink. Call when Luka says he ate or drank something with calories ("had a chicken burrito", "drank a 12oz orange juice"). Estimate calories + macros from the description using the portion rules. Do NOT use for plain water — that is log_water.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          item_name: { type: 'string', description: 'Short title-style name, under 60 chars' },
+          calories: { type: 'number' },
+          protein_g: { type: 'number' },
+          carbs_g: { type: 'number' },
+          portion_desc: { type: 'string', description: 'Human-readable relatable portion, e.g. "palm-sized grilled chicken breast" or "1 tall glass"' },
+          is_hydrating: { type: 'boolean', description: 'true for water-like drinks (juice, milk, sports drinks, soda); false for food, coffee, alcohol, milkshakes' },
+          volume_oz: { type: 'number', description: 'Fluid ounces — only when is_hydrating is true' },
+          confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
+          notes: { type: 'string', description: 'One short sentence on what drove the estimate' },
+        },
+        required: ['item_name', 'calories', 'protein_g', 'carbs_g', 'portion_desc', 'is_hydrating', 'confidence'],
       },
     },
     {
@@ -370,6 +393,27 @@ export function resolveToolCall(name: string, input: Record<string, unknown>, ct
         const source = String(input.source || '').trim()
         if (!source || mg == null || mg <= 0 || mg > 1000) return null
         return { kind: 'log_caffeine', source, amount_mg: Math.round(mg) }
+      }
+      case 'log_food': {
+        const item_name = String(input.item_name || '').trim().slice(0, 80)
+        const calories = num(input.calories)
+        if (!item_name || calories == null || calories < 0 || calories > 20000) return null
+        const is_hydrating = !!input.is_hydrating
+        const volRaw = num(input.volume_oz)
+        const conf = (['low', 'medium', 'high'] as const).includes(input.confidence as 'low' | 'medium' | 'high')
+          ? (input.confidence as 'low' | 'medium' | 'high') : 'low'
+        return {
+          kind: 'log_food',
+          item_name,
+          calories: Math.round(calories),
+          protein_g: Math.max(0, num(input.protein_g) ?? 0),
+          carbs_g: Math.max(0, num(input.carbs_g) ?? 0),
+          portion_desc: String(input.portion_desc || '').trim().slice(0, 120) || item_name,
+          is_hydrating,
+          volume_oz: is_hydrating && volRaw != null && volRaw > 0 ? Math.round(volRaw * 10) / 10 : null,
+          confidence: conf,
+          notes: String(input.notes || '').trim().slice(0, 300),
+        }
       }
       case 'add_journal_note': {
         const body = String(input.body || '').trim()

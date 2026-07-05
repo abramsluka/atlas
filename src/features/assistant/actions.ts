@@ -25,6 +25,18 @@ export type AssistantAction =
   | { kind: 'log_weight'; weight: number }
   | { kind: 'log_water'; amount_oz: number }
   | { kind: 'log_caffeine'; source: string; amount_mg: number }
+  | {
+      kind: 'log_food'
+      item_name: string
+      calories: number
+      protein_g: number
+      carbs_g: number
+      portion_desc: string
+      is_hydrating: boolean
+      volume_oz: number | null
+      confidence: 'low' | 'medium' | 'high'
+      notes: string
+    }
   | { kind: 'add_journal_note'; body: string; mood: number | null }
   | {
       kind: 'checkin_note'
@@ -122,6 +134,12 @@ export function describeAction(a: AssistantAction, units: string): { title: stri
       return { title: 'Log water', detail: `${a.amount_oz} oz`, confirmLabel: 'Log it', doneLabel: 'Logged' }
     case 'log_caffeine':
       return { title: `Log caffeine — ${a.source}`, detail: `${a.amount_mg} mg`, confirmLabel: 'Log it', doneLabel: 'Logged' }
+    case 'log_food': {
+      const macros = `${a.calories} cal · ${Math.round(a.protein_g)}g P · ${Math.round(a.carbs_g)}g C`
+      const water = a.is_hydrating && a.volume_oz ? ` · +${a.volume_oz}oz water` : ''
+      const rough = a.confidence === 'low' ? ' · rough estimate' : ''
+      return { title: `Log ${a.item_name}`, detail: `${macros} · ${a.portion_desc}${water}${rough}`, confirmLabel: 'Log it', doneLabel: 'Logged' }
+    }
     case 'add_journal_note':
       return {
         title: 'Save journal note',

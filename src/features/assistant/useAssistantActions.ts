@@ -14,6 +14,7 @@ import {
   useLogSet, useCreateExercise, useUpdateExercise, useDeleteExercise, useSaveGymConfig, useLogBodyWeight,
 } from '@/features/gym/mutations'
 import { useLogSupplementDose, useLogWater, useLogCaffeine } from '@/features/health/mutations'
+import { useLogManualFood } from '@/features/food/mutations'
 import { useCreateEntry } from '@/features/journal/mutations'
 import { useSaveMorningCheckin, useSaveEveningCheckin } from '@/features/checkins/mutations'
 import type { GymExercise } from '@/features/gym/types'
@@ -45,6 +46,7 @@ export function useAssistantActions() {
   const logDose = useLogSupplementDose(rolledToday)
   const logWater = useLogWater(rolledToday)
   const logCaffeine = useLogCaffeine(localToday)
+  const logFood = useLogManualFood()
   const createEntry = useCreateEntry()
   const saveMorning = useSaveMorningCheckin(localToday)
   const saveEvening = useSaveEveningCheckin(localToday)
@@ -71,6 +73,22 @@ export function useAssistantActions() {
         return
       case 'log_caffeine':
         await logCaffeine.mutateAsync({ source: a.source, amount_mg: a.amount_mg })
+        return
+      case 'log_food':
+        // /api/health/food/log sets the date (rolledDate), fires the hydrating
+        // → water side-effect, and upserts the frequents library.
+        await logFood.mutateAsync({
+          source: a.is_hydrating ? 'drink' : 'text',
+          item_name: a.item_name,
+          calories: a.calories,
+          protein_g: a.protein_g,
+          carbs_g: a.carbs_g,
+          portion_desc: a.portion_desc,
+          is_hydrating: a.is_hydrating,
+          volume_oz: a.volume_oz,
+          confidence: a.confidence,
+          notes: a.notes,
+        })
         return
       case 'add_journal_note':
         await createEntry.mutateAsync({ date: localToday, body: a.body, mood: a.mood ?? undefined })
@@ -132,7 +150,7 @@ export function useAssistantActions() {
         return
       }
     }
-  }, [logSet, logDose, logWeight, logWater, logCaffeine, createEntry, saveMorning, saveEvening, updateEx, createEx, deleteEx, saveConfig, config, nextOrder, localToday, pathname, router])
+  }, [logSet, logDose, logWeight, logWater, logCaffeine, logFood, createEntry, saveMorning, saveEvening, updateEx, createEx, deleteEx, saveConfig, config, nextOrder, localToday, pathname, router])
 
   return { executeAction, units }
 }
