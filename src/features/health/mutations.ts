@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { TimeSlot } from './types'
+import type { SupplementLog, TimeSlot } from './types'
 
 export function useCreateSupplement() {
   const qc = useQueryClient()
@@ -62,9 +62,16 @@ export function useDeleteSupplement() {
   })
 }
 
+// Optimistic updates on log/unlog so rapid taps across the stack register instantly.
+// Rollback is surgical (undo only this mutation's row) so concurrent in-flight taps
+// on other supplements survive an error on one of them. The refetch after settle is
+// deferred until the last in-flight log mutation finishes, otherwise it would
+// momentarily revert the optimistic rows of mutations still in the air.
 export function useLogSupplementDose(today: string) {
   const qc = useQueryClient()
+  const queryKey = ['health', 'supplement-logs', today]
   return useMutation({
+    mutationKey: ['supplement-logs', today],
     mutationFn: async (input: { supplement_id: string; time_slot: TimeSlot }) => {
       const res = await fetch('/api/health/supplement-logs', {
         method: 'POST',
@@ -72,20 +79,65 @@ export function useLogSupplementDose(today: string) {
         body: JSON.stringify({ ...input, date: today }),
       })
       if (!res.ok) throw new Error((await res.json()).error ?? 'Failed to log dose')
-      return res.json()
+      return res.json() as Promise<SupplementLog>
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['health', 'supplement-logs', today] }),
+    onMutate: async (input) => {
+      await qc.cancelQueries({ queryKey })
+      const tempId = `optimistic-${input.supplement_id}-${input.time_slot}`
+      const tempLog: SupplementLog = {
+        id: tempId,
+        user_id: '',
+        supplement_id: input.supplement_id,
+        date: today,
+        time_slot: input.time_slot,
+        taken_at: new Date().toISOString(),
+      }
+      qc.setQueryData<SupplementLog[]>(queryKey, (old = []) => [...old, tempLog])
+      return { tempId }
+    },
+    onSuccess: (row, _input, ctx) => {
+      qc.setQueryData<SupplementLog[]>(queryKey, (old = []) =>
+        old.map(l => (l.id === ctx.tempId ? row : l))
+      )
+    },
+    onError: (_err, _input, ctx) => {
+      qc.setQueryData<SupplementLog[]>(queryKey, (old = []) =>
+        old.filter(l => l.id !== ctx?.tempId)
+      )
+    },
+    onSettled: () => {
+      if (qc.isMutating({ mutationKey: ['supplement-logs', today] }) === 1) {
+        qc.invalidateQueries({ queryKey })
+      }
+    },
   })
 }
 
 export function useUnlogSupplementDose(today: string) {
   const qc = useQueryClient()
+  const queryKey = ['health', 'supplement-logs', today]
   return useMutation({
+    mutationKey: ['supplement-logs', today],
     mutationFn: async (logId: string) => {
       const res = await fetch(`/api/health/supplement-logs/${logId}`, { method: 'DELETE' })
       if (!res.ok) throw new Error((await res.json()).error ?? 'Failed to remove log')
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['health', 'supplement-logs', today] }),
+    onMutate: async (logId) => {
+      await qc.cancelQueries({ queryKey })
+      const removed = qc.getQueryData<SupplementLog[]>(queryKey)?.find(l => l.id === logId)
+      qc.setQueryData<SupplementLog[]>(queryKey, (old = []) => old.filter(l => l.id !== logId))
+      return { removed }
+    },
+    onError: (_err, _logId, ctx) => {
+      if (ctx?.removed) {
+        qc.setQueryData<SupplementLog[]>(queryKey, (old = []) => [...old, ctx.removed!])
+      }
+    },
+    onSettled: () => {
+      if (qc.isMutating({ mutationKey: ['supplement-logs', today] }) === 1) {
+        qc.invalidateQueries({ queryKey })
+      }
+    },
   })
 }
 
