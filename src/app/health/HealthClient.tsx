@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, type ReactNode, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
+import { Reorder, useDragControls } from 'framer-motion'
 import Link from 'next/link'
 import {
   useSupplements,
@@ -19,6 +20,7 @@ import {
   useDeleteSupplement,
   useLogSupplementDose,
   useUnlogSupplementDose,
+  useReorderSupplements,
   useLogWater,
   useDeleteWaterLog,
   useUpdateHealthProfile,
@@ -574,6 +576,68 @@ function SupplementRow({
   )
 }
 
+// One draggable row in the supplement reorder sheet — vertical drag via the ⠿ handle.
+function SupplementReorderRow({ supplement }: { supplement: Supplement }) {
+  const controls = useDragControls()
+  const meta = [supplement.dose, supplement.notes].filter(Boolean).join(' · ')
+  return (
+    <Reorder.Item
+      value={supplement}
+      as="div"
+      dragListener={false}
+      dragControls={controls}
+      whileDrag={{ scale: 1.03, backgroundColor: 'rgba(29,158,117,0.10)' }}
+      className="flex items-center gap-3 px-3 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] select-none"
+    >
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-semibold text-white/85 truncate">{supplement.name}</div>
+        {meta && <div className="text-[11px] text-white/35 truncate mt-0.5">{meta}</div>}
+      </div>
+      <span
+        onPointerDown={(e) => controls.start(e)}
+        className="cursor-grab text-white/30 text-lg leading-none px-2 -mr-1"
+        style={{ touchAction: 'none' }}
+        aria-label="Drag to reorder"
+      >⠿</span>
+    </Reorder.Item>
+  )
+}
+
+// Bottom-sheet reorder menu for one stack window — a vertical drag list.
+function SupplementReorderSheet({ title, items, onClose, onSave }: {
+  title: string
+  items: Supplement[]
+  onClose: () => void
+  onSave: (orderedIds: string[]) => void
+}) {
+  const [order, setOrder] = useState(items)
+  const done = () => { onSave(order.map(s => s.id)); onClose() }
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-black/65 p-4"
+      style={{ backdropFilter: 'blur(6px)', paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}
+      onClick={done}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl bg-[#111113] border border-white/[0.14] p-4 max-h-[80vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h3 className="text-base font-bold text-white">Reorder {title}</h3>
+            <p className="text-[11px] text-white/35 mt-0.5">Drag the ⠿ handle</p>
+          </div>
+          <button onClick={done} className="text-sm font-semibold text-[#1D9E75] active:opacity-60 px-2 py-1">Done</button>
+        </div>
+        <Reorder.Group as="div" axis="y" values={order} onReorder={setOrder} className="space-y-2">
+          {order.map(s => <SupplementReorderRow key={s.id} supplement={s} />)}
+        </Reorder.Group>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 function StackWindowSection({
   win,
   supplements,
@@ -587,6 +651,7 @@ function StackWindowSection({
   onToggleLow,
   onUpdateName,
   onUpdateMeta,
+  onReorder,
 }: {
   win: StackWindow
   supplements: Supplement[]
@@ -600,7 +665,9 @@ function StackWindowSection({
   onToggleLow: (s: Supplement) => void
   onUpdateName: (id: string, name: string) => void
   onUpdateMeta: (id: string, dose: string, notes: string) => void
+  onReorder: (winKey: TimeSlot, orderedIds: string[]) => void
 }) {
+  const [reordering, setReordering] = useState(false)
   if (supplements.length === 0) return null
   const currentHour = new Date().getHours() + new Date().getMinutes() / 60
   const isPastCutoff = win.cutoffHour != null && currentHour > win.cutoffHour
@@ -611,7 +678,23 @@ function StackWindowSection({
         <span className="text-base">{win.icon}</span>
         <span className="text-sm font-bold text-white">{win.title}</span>
         <span className="text-[11px] text-zinc-500 font-medium">{win.time}</span>
+        {supplements.length > 1 && (
+          <button
+            onClick={() => setReordering(true)}
+            className="ml-auto text-[11px] text-zinc-500 font-mono active:opacity-50"
+          >
+            reorder
+          </button>
+        )}
       </div>
+      {reordering && (
+        <SupplementReorderSheet
+          title={win.title}
+          items={supplements}
+          onClose={() => setReordering(false)}
+          onSave={(ids) => onReorder(win.key, ids)}
+        />
+      )}
       <div>
         {supplements.map(s => (
           <SupplementRow
@@ -849,6 +932,7 @@ function StackTracker({
   const deleteSupplement = useDeleteSupplement()
   const createSupplement = useCreateSupplement()
   const updateSupplement = useUpdateSupplement()
+  const reorderSupplements = useReorderSupplements()
 
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   // Re-render every minute so missed indicators update as time passes
@@ -910,6 +994,15 @@ function StackTracker({
     updateSupplement.mutate({ id, dose: dose || null, notes: notes || null })
   }
 
+  // Reorder within one window, but persist the FULL global order so order_index
+  // stays contiguous and the other windows keep their relative order.
+  function handleReorder(winKey: TimeSlot, orderedIds: string[]) {
+    const fullIds = STACK_WINDOWS.flatMap(w =>
+      w.key === winKey ? orderedIds : (grouped.get(w.key) ?? []).map(s => s.id)
+    )
+    reorderSupplements.mutate(fullIds)
+  }
+
   const deletePending = deleteSupplement.isPending
 
   return (
@@ -963,6 +1056,7 @@ function StackTracker({
           onToggleLow={handleToggleLow}
           onUpdateName={handleUpdateName}
           onUpdateMeta={handleUpdateMeta}
+          onReorder={handleReorder}
         />
       ))}
 

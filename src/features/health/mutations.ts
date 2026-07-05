@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { SupplementLog, TimeSlot } from './types'
+import type { Supplement, SupplementLog, TimeSlot } from './types'
 
 export function useCreateSupplement() {
   const qc = useQueryClient()
@@ -59,6 +59,41 @@ export function useDeleteSupplement() {
       if (!res.ok) throw new Error((await res.json()).error ?? 'Failed to remove supplement')
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['health', 'supplements'] }),
+  })
+}
+
+// Bulk reorder. Client sends the full global order of ids across all windows;
+// order_index becomes array position. Optimistic so the sheet reflects the new
+// order the instant "Done" is tapped.
+export function useReorderSupplements() {
+  const qc = useQueryClient()
+  const queryKey = ['health', 'supplements']
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      const res = await fetch('/api/health/supplements/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      })
+      if (!res.ok) throw new Error((await res.json()).error ?? 'Failed to reorder supplements')
+      return res.json()
+    },
+    onMutate: async (ids: string[]) => {
+      await qc.cancelQueries({ queryKey })
+      const prev = qc.getQueryData<Supplement[]>(queryKey)
+      if (prev) {
+        const pos = new Map(ids.map((id, i) => [id, i]))
+        const next = prev
+          .map(s => (pos.has(s.id) ? { ...s, order_index: pos.get(s.id)! } : s))
+          .sort((a, b) => a.order_index - b.order_index)
+        qc.setQueryData<Supplement[]>(queryKey, next)
+      }
+      return { prev }
+    },
+    onError: (_err, _ids, ctx) => {
+      if (ctx?.prev) qc.setQueryData(queryKey, ctx.prev)
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey }),
   })
 }
 
