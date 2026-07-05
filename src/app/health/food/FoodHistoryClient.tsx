@@ -232,19 +232,17 @@ export default function FoodHistoryClient({
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   <span className="text-sm font-bold text-white">{meal.calories?.toLocaleString()} cal</span>
-                  {selectedDate !== today && (
-                    <button
-                      onClick={e => { e.stopPropagation(); addToToday(meal) }}
-                      disabled={repeatMeal.isPending}
-                      className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold whitespace-nowrap transition-colors disabled:opacity-50 ${
-                        addedId === meal.id
-                          ? 'border-emerald-300/40 bg-emerald-300/10 text-emerald-300'
-                          : 'border-white/[0.12] bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08]'
-                      }`}
-                    >
-                      {addedId === meal.id ? 'Added ✓' : repeatingId === meal.id ? 'Adding…' : '+ Today'}
-                    </button>
-                  )}
+                  <button
+                    onClick={e => { e.stopPropagation(); addToToday(meal) }}
+                    disabled={repeatMeal.isPending}
+                    className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold whitespace-nowrap transition-colors disabled:opacity-50 ${
+                      addedId === meal.id
+                        ? 'border-emerald-300/40 bg-emerald-300/10 text-emerald-300'
+                        : 'border-white/[0.12] bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08]'
+                    }`}
+                  >
+                    {addedId === meal.id ? 'Added ✓' : repeatingId === meal.id ? 'Adding…' : selectedDate === today ? 'Repeat' : '+ Today'}
+                  </button>
                   <button onClick={e => { e.stopPropagation(); setConfirmDeleteId(meal.id) }} className="text-zinc-600 hover:text-red-400 transition-colors text-base px-1">×</button>
                 </div>
               </div>
