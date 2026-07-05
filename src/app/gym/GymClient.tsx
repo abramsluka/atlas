@@ -16,9 +16,9 @@ import {
 } from '@/features/gym/mutations'
 import type { GymConfig, GymExercise, GymLog, BodyWeight, Prescription, ProgressPhoto } from '@/features/gym/types'
 import ProtocolCard from './ProtocolCard'
-import GymChatbot from './GymChatbot'
 import ActiveProgramCard from './ActiveProgramCard'
 import ProgramGenerator, { type GeneratorPrefill } from './ProgramGenerator'
+import { GENERATOR_PREFILL_KEY, GENERATOR_PREFILL_EVENT } from '@/features/assistant/useAssistantActions'
 import ProgramHistory from './ProgramHistory'
 import SetTimerRing, { fmtClock, type TimerPhase } from './SetTimerRing'
 
@@ -661,6 +661,21 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     setProgramGenOpen(true)
   }, [])
   const [programHistoryOpen, setProgramHistoryOpen] = useState(false)
+
+  // The Atlas Orb hands generator prefills over via a custom event (same page)
+  // or sessionStorage (confirmed elsewhere, then navigated here).
+  useEffect(() => {
+    try {
+      const stashed = sessionStorage.getItem(GENERATOR_PREFILL_KEY)
+      if (stashed) {
+        sessionStorage.removeItem(GENERATOR_PREFILL_KEY)
+        openProgramGenerator(JSON.parse(stashed) as GeneratorPrefill)
+      }
+    } catch {}
+    const onEvent = (e: Event) => openProgramGenerator((e as CustomEvent<GeneratorPrefill>).detail)
+    window.addEventListener(GENERATOR_PREFILL_EVENT, onEvent)
+    return () => window.removeEventListener(GENERATOR_PREFILL_EVENT, onEvent)
+  }, [openProgramGenerator])
 
   // ── derived ──────────────────────────────────────────────────────────────
 
@@ -2628,7 +2643,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
       </>,
       document.body
     )}
-    <GymChatbot currentExId={currentExId} onGenerateProgram={openProgramGenerator} />
     <ProgramGenerator open={programGenOpen} onClose={() => setProgramGenOpen(false)} prefill={programGenPrefill} />
     <ProgramHistory open={programHistoryOpen} onClose={() => setProgramHistoryOpen(false)} />
     </>

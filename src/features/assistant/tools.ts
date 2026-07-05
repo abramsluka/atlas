@@ -1,0 +1,454 @@
+// Server-only: shared between /api/assistant/chat and /api/mentor/chat.
+// Loads the context both routes need, declares the Anthropic tool set, and
+// resolves raw tool calls into validated AssistantAction proposals.
+
+import Anthropic from '@anthropic-ai/sdk'
+import { subDays } from 'date-fns'
+import type { createServiceClient } from '@/lib/supabase/server'
+import { getUserTimezone } from '@/lib/getUserTimezone'
+import { toLocalDate } from '@/lib/date'
+import type { GymConfig, GymExercise } from '@/features/gym/types'
+import type { TimeSlot } from '@/features/health/types'
+import type { ProgramGoal, ProgramStructure } from '@/features/gym/programTypes'
+import type { AssistantAction } from './actions'
+
+type DB = ReturnType<typeof createServiceClient>
+
+const TIME_SLOTS: TimeSlot[] = ['morning', 'lunch', 'evening', 'anytime']
+
+export interface AssistantContext {
+  tz: string
+  today: string
+  units: string
+  config: GymConfig | null
+  exercises: GymExercise[]
+  exerciseById: Map<string, GymExercise>
+  dayName: (id: string) => string
+  supplements: Array<{ id: string; name: string; times: TimeSlot[] }>
+  supplementById: Map<string, { id: string; name: string; times: TimeSlot[] }>
+  loggedSlotsToday: Map<string, Set<string>>   // supplement_id → time_slots logged today
+  catalogBlock: string     // formatted context for the system prompt
+}
+
+export async function loadAssistantContext(db: DB, userId: string): Promise<AssistantContext> {
+  const tz = await getUserTimezone(userId)
+  const today = toLocalDate(tz)
+  const thirtyDaysAgoIso = subDays(new Date(), 30).toISOString()
+
+  const [configRes, exercisesRes, logsRes, suppsRes, doseRes, weightRes] = await Promise.all([
+    db.from('gym_config').select('*').eq('user_id', userId).maybeSingle(),
+    db.from('gym_exercises').select('*').eq('user_id', userId).order('order_index').order('created_at'),
+    db.from('gym_logs').select('exercise_id, weight, reps, logged_at').eq('user_id', userId).gte('logged_at', thirtyDaysAgoIso).order('logged_at', { ascending: false }),
+    db.from('supplements').select('id, name, times').eq('user_id', userId).eq('active', true).order('order_index'),
+    db.from('supplement_logs').select('supplement_id, time_slot').eq('user_id', userId).eq('date', today),
+    db.from('body_weights').select('date_key, weight').eq('user_id', userId).order('date_key', { ascending: false }).limit(1).maybeSingle(),
+  ])
+
+  const config = configRes.data as GymConfig | null
+  const exercises = (exercisesRes.data as GymExercise[] | null) ?? []
+  const logs = (logsRes.data as Array<{ exercise_id: string; weight: number; reps: number; logged_at: string }>) ?? []
+  const supplements = (suppsRes.data as Array<{ id: string; name: string; times: TimeSlot[] | null }> | null ?? [])
+    .map(s => ({ ...s, times: s.times ?? [] }))
+
+  const exerciseById = new Map(exercises.map(e => [e.id, e]))
+  const supplementById = new Map(supplements.map(s => [s.id, s]))
+  const dayName = (id: string) => config?.days.find(d => d.id === id)?.name ?? id
+  const units = config?.units ?? 'lbs'
+
+  const loggedSlotsToday = new Map<string, Set<string>>()
+  for (const row of (doseRes.data ?? []) as Array<{ supplement_id: string; time_slot: string }>) {
+    const set = loggedSlotsToday.get(row.supplement_id) ?? new Set<string>()
+    set.add(row.time_slot)
+    loggedSlotsToday.set(row.supplement_id, set)
+  }
+
+  // ── Per-exercise last + best set (last 30 days; logs are desc) ──
+  interface ExStat { last?: { weight: number; reps: number; at: string }; best?: { weight: number; reps: number } }
+  const stats = new Map<string, ExStat>()
+  for (const log of logs) {
+    const s = stats.get(log.exercise_id) ?? {}
+    if (!s.last) s.last = { weight: log.weight, reps: log.reps, at: log.logged_at }
+    if (!s.best || log.weight > s.best.weight || (log.weight === s.best.weight && log.reps > s.best.reps)) {
+      s.best = { weight: log.weight, reps: log.reps }
+    }
+    stats.set(log.exercise_id, s)
+  }
+  const relDays = (iso: string) => {
+    const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
+    return d <= 0 ? 'today' : d === 1 ? 'yesterday' : `${d}d ago`
+  }
+
+  const exerciseCatalog = exercises.map(e => {
+    const s = stats.get(e.id)
+    const days = e.day_ids.map(dayName).join('/') || '—'
+    const last = s?.last ? `last ${s.last.weight}×${s.last.reps} (${relDays(s.last.at)})` : 'no recent logs'
+    const best = s?.best ? `, best ${s.best.weight}×${s.best.reps}` : ''
+    const bw = e.bodyweight ? ', bodyweight' : ''
+    return `[${e.id}] ${e.name} — days: ${days}, range ${e.rep_min}-${e.rep_max} reps, step +${e.step}${bw} — ${last}${best}`
+  }).join('\n')
+
+  const supplementCatalog = supplements.map(s => {
+    const logged = [...(loggedSlotsToday.get(s.id) ?? [])]
+    const slots = s.times.length ? s.times.join('/') : 'anytime'
+    return `[${s.id}] ${s.name} — slots: ${slots}${logged.length ? ` — ALREADY LOGGED TODAY: ${logged.join(', ')}` : ''}`
+  }).join('\n')
+
+  const dayList = (config?.days ?? []).map(d => `[${d.id}] ${d.name}`).join('\n') || '(none)'
+  const gymList = (config?.gyms ?? []).map(g => `[${g.id}] ${g.name}`).join('\n') || '(none)'
+  const lastWeight = weightRes.data as { date_key: string; weight: number } | null
+  const localTime = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date())
+
+  const catalogBlock = `— NOW: ${localTime} (${today}, timezone ${tz})
+— LATEST BODY WEIGHT: ${lastWeight ? `${lastWeight.weight} ${units} on ${lastWeight.date_key}` : 'none logged'}
+
+— SUPPLEMENTS (use these [id]s for log_supplement_dose):
+${supplementCatalog || '(none configured)'}
+
+— TRAINING DAYS (splits):
+${dayList}
+
+— GYMS:
+${gymList}
+
+— EXERCISE CATALOG (use these [id]s):
+${exerciseCatalog || '(no exercises yet)'}`
+
+  return { tz, today, units, config, exercises, exerciseById, dayName, supplements, supplementById, loggedSlotsToday, catalogBlock }
+}
+
+// ── Behavior rules shared by both routes (encodes the confirm-card contract) ──
+
+export const ACTION_RULES = `YOU CAN TAKE ACTIONS via tools. When Luka states something loggable — a set, a supplement taken, weight, water, caffeine, a journal-worthy note, a check-in — CALL THE MATCHING TOOL to PROPOSE it. Each proposal becomes a confirm card he taps, so do NOT say "done" or "logged" yourself; say what you're proposing ("Logging 135×8 — confirm below"). Multiple statements in one message → multiple tool calls in the same turn.
+
+HARD RULES:
+- Propose only what he actually said or clearly implied. NEVER invent numbers. If a required value is missing ("log my weight" with no number) or the transcript is garbled, call the clarify tool instead of guessing.
+- Reference supplements and exercises by their [id] from the context. If a name doesn't match anything, clarify with the closest matches as options.
+- Supplement time_slot: pick the slot from the supplement's configured slots nearest the current time; if it only has one, use it; if none, use "anytime". If that supplement+slot is marked ALREADY LOGGED TODAY, don't re-propose it — mention it's already logged.
+- "same as last time" → use the exercise's last set from the catalog.
+- Keep text terse — one short line, then the cards speak for themselves.`
+
+// ── Tool definitions ──────────────────────────────────────────────────────────
+
+export function buildAssistantTools(units: string): Anthropic.Tool[] {
+  return [
+    // Logging tools
+    {
+      name: 'log_set',
+      description: 'Propose logging a completed set. Call when Luka states an exercise with weight and reps (e.g. "did bench 8 at 135"). Use the exercise [id] from the catalog.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          exercise_id: { type: 'string', description: 'Exercise [id] from the catalog' },
+          weight: { type: 'number', description: `Weight in ${units}` },
+          reps: { type: 'number' },
+        },
+        required: ['exercise_id', 'weight', 'reps'],
+      },
+    },
+    {
+      name: 'log_supplement_dose',
+      description: 'Propose logging that a supplement was taken today. Call when Luka says he took a supplement (e.g. "took my magnesium"). Use the supplement [id] from the context.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          supplement_id: { type: 'string', description: 'Supplement [id] from the context' },
+          time_slot: { type: 'string', enum: TIME_SLOTS },
+        },
+        required: ['supplement_id', 'time_slot'],
+      },
+    },
+    {
+      name: 'log_weight',
+      description: `Propose logging today's body weight. Call ONLY when Luka states a number ("weight is 176"). No number → clarify instead.`,
+      input_schema: {
+        type: 'object',
+        properties: { weight: { type: 'number', description: `Body weight in ${units}` } },
+        required: ['weight'],
+      },
+    },
+    {
+      name: 'log_water',
+      description: 'Propose logging water intake in ounces. Call when Luka says he drank water ("had 20 oz of water", "drank a liter" → convert to oz).',
+      input_schema: {
+        type: 'object',
+        properties: { amount_oz: { type: 'number' } },
+        required: ['amount_oz'],
+      },
+    },
+    {
+      name: 'log_caffeine',
+      description: 'Propose logging caffeine. Call when Luka mentions coffee/energy drink/pre-workout. Estimate mg from the source if he doesn\'t give one (coffee ≈ 95mg, espresso shot ≈ 63mg, energy drink ≈ 160mg).',
+      input_schema: {
+        type: 'object',
+        properties: {
+          source: { type: 'string', description: 'e.g. "Coffee", "Celsius", "Pre-workout"' },
+          amount_mg: { type: 'number' },
+        },
+        required: ['source', 'amount_mg'],
+      },
+    },
+    {
+      name: 'add_journal_note',
+      description: 'Propose saving a freeform thought/reflection as a journal entry. Call when Luka says "note that…", "journal this…", or shares a reflection he clearly wants kept.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          body: { type: 'string', description: 'The note text, cleaned up from speech but in his voice' },
+          mood: { type: 'integer', minimum: 1, maximum: 5, description: 'Only if he stated how he feels' },
+        },
+        required: ['body'],
+      },
+    },
+    {
+      name: 'checkin_note',
+      description: 'Propose saving a daily check-in. Morning = whether training is planned today (+ intent). Evening = whether he actually trained (+ reflection). Call when he says things like "planning to hit legs today" or "done for the day, trained hard".',
+      input_schema: {
+        type: 'object',
+        properties: {
+          slot: { type: 'string', enum: ['morning', 'evening'] },
+          trained: { type: 'boolean', description: 'morning: training planned; evening: actually trained' },
+          text: { type: 'string', description: 'Optional intent (morning) or reflection (evening)' },
+        },
+        required: ['slot', 'trained'],
+      },
+    },
+    // Clarification
+    {
+      name: 'clarify',
+      description: 'Ask ONE short clarifying question when a required value is missing, a name is ambiguous, or the transcript is garbled. Provide up to 4 short tappable options when sensible.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          question: { type: 'string' },
+          options: { type: 'array', items: { type: 'string' }, description: 'Up to 4 short answer options' },
+        },
+        required: ['question'],
+      },
+    },
+    // Gym coach tools (ported from /api/gym/chat)
+    {
+      name: 'adjust_exercise',
+      description: 'Propose changing the rep target range and/or progression step of an existing exercise.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          exercise_id: { type: 'string' },
+          rep_min: { type: 'number' },
+          rep_max: { type: 'number' },
+          step: { type: 'number', description: 'Weight increment when progressing' },
+        },
+        required: ['exercise_id'],
+      },
+    },
+    {
+      name: 'add_exercise',
+      description: 'Propose adding a brand-new exercise to one of the existing days.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          day_id: { type: 'string', description: 'Day [id] to add it to' },
+          gym_id: { type: 'string', description: "Gym [id], or 'both'. Defaults to 'both'." },
+          rep_min: { type: 'number' },
+          rep_max: { type: 'number' },
+          step: { type: 'number' },
+          bodyweight: { type: 'boolean' },
+        },
+        required: ['name', 'day_id'],
+      },
+    },
+    {
+      name: 'remove_exercise',
+      description: 'Propose removing an exercise from the catalog entirely.',
+      input_schema: {
+        type: 'object',
+        properties: { exercise_id: { type: 'string' } },
+        required: ['exercise_id'],
+      },
+    },
+    {
+      name: 'swap_exercise',
+      description: 'Propose swapping out one exercise for a new one (e.g. an exercise that hurts). The replacement inherits the same day(s) and gym unless overridden.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          out_exercise_id: { type: 'string', description: 'Exercise [id] being replaced' },
+          in_name: { type: 'string', description: 'Name of the replacement exercise' },
+          gym_id: { type: 'string' },
+          rep_min: { type: 'number' },
+          rep_max: { type: 'number' },
+          step: { type: 'number' },
+          bodyweight: { type: 'boolean' },
+        },
+        required: ['out_exercise_id', 'in_name'],
+      },
+    },
+    {
+      name: 'propose_workout',
+      description: "Propose a whole workout (a set of exercises) to place into the user's days. Set existing_day_id to add to an existing day, or leave it null to create a new day named day_name.",
+      input_schema: {
+        type: 'object',
+        properties: {
+          day_name: { type: 'string', description: 'Label for the workout / new day, e.g. "Full Body A"' },
+          existing_day_id: { type: 'string', description: 'Day [id] to append to, or omit to create a new day' },
+          gym_id: { type: 'string' },
+          exercises: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                rep_min: { type: 'number' },
+                rep_max: { type: 'number' },
+                step: { type: 'number' },
+                bodyweight: { type: 'boolean' },
+              },
+              required: ['name', 'rep_min', 'rep_max'],
+            },
+          },
+        },
+        required: ['day_name', 'exercises'],
+      },
+    },
+    {
+      name: 'generate_program',
+      description: 'Open the program generator for a multi-week periodized plan. Use when he asks for a program/block, not a single workout.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          goal: { type: 'string', enum: ['strength', 'hypertrophy', 'recomp'] },
+          duration_weeks: { type: 'integer', enum: [4, 6, 8] },
+          days_per_week: { type: 'integer', enum: [3, 4, 5] },
+          structure: { type: 'string', enum: ['overlay', 'standalone'], description: "'overlay' layers onto his existing days; 'standalone' is its own plan. Default overlay." },
+        },
+        required: ['goal', 'duration_weeks', 'days_per_week'],
+      },
+    },
+  ]
+}
+
+// ── Resolve a raw tool call into a validated proposal ────────────────────────
+
+const num = (v: unknown): number | null => (typeof v === 'number' && !Number.isNaN(v) ? v : null)
+
+export type ResolvedToolCall =
+  | { type: 'action'; action: AssistantAction }
+  | { type: 'clarify'; question: string; options: string[] }
+  | null
+
+export function resolveToolCall(name: string, input: Record<string, unknown>, ctx: AssistantContext): ResolvedToolCall {
+  const { exerciseById, supplementById, config, dayName } = ctx
+  const action = ((): AssistantAction | null => {
+    switch (name) {
+      case 'log_set': {
+        const ex = exerciseById.get(String(input.exercise_id))
+        const weight = num(input.weight), reps = num(input.reps)
+        if (!ex || weight == null || reps == null) return null
+        return { kind: 'log_set', exercise_id: ex.id, exercise_name: ex.name, weight, reps }
+      }
+      case 'log_supplement_dose': {
+        const supp = supplementById.get(String(input.supplement_id))
+        if (!supp) return null
+        const slot = (TIME_SLOTS as string[]).includes(String(input.time_slot)) ? String(input.time_slot) as TimeSlot : 'anytime'
+        const already = ctx.loggedSlotsToday.get(supp.id)?.has(slot) ?? false
+        return { kind: 'log_supplement_dose', supplement_id: supp.id, supplement_name: supp.name, time_slot: slot, already_logged: already }
+      }
+      case 'log_weight': {
+        const weight = num(input.weight)
+        if (weight == null || weight <= 0 || weight > 1000) return null
+        return { kind: 'log_weight', weight }
+      }
+      case 'log_water': {
+        const oz = num(input.amount_oz)
+        if (oz == null || oz <= 0 || oz > 300) return null
+        return { kind: 'log_water', amount_oz: Math.round(oz * 10) / 10 }
+      }
+      case 'log_caffeine': {
+        const mg = num(input.amount_mg)
+        const source = String(input.source || '').trim()
+        if (!source || mg == null || mg <= 0 || mg > 1000) return null
+        return { kind: 'log_caffeine', source, amount_mg: Math.round(mg) }
+      }
+      case 'add_journal_note': {
+        const body = String(input.body || '').trim()
+        if (!body) return null
+        const mood = num(input.mood)
+        return { kind: 'add_journal_note', body: body.slice(0, 10000), mood: mood != null && mood >= 1 && mood <= 5 ? Math.round(mood) : null }
+      }
+      case 'checkin_note': {
+        const slot = input.slot === 'evening' ? 'evening' : input.slot === 'morning' ? 'morning' : null
+        if (!slot || typeof input.trained !== 'boolean') return null
+        const text = String(input.text || '').trim()
+        return { kind: 'checkin_note', slot, trained: input.trained, text: text ? text.slice(0, 500) : null }
+      }
+      case 'adjust_exercise': {
+        const ex = exerciseById.get(String(input.exercise_id))
+        if (!ex) return null
+        return { kind: 'adjust_exercise', exercise_id: ex.id, exercise_name: ex.name, rep_min: num(input.rep_min), rep_max: num(input.rep_max), step: num(input.step) }
+      }
+      case 'add_exercise': {
+        const dayId = String(input.day_id)
+        if (!config?.days.some(d => d.id === dayId)) return null
+        return {
+          kind: 'add_exercise', name: String(input.name || '').trim(),
+          gym_id: String(input.gym_id || 'both'), day_ids: [dayId], day_label: dayName(dayId),
+          rep_min: num(input.rep_min) ?? 8, rep_max: num(input.rep_max) ?? 12, step: num(input.step) ?? 5,
+          bodyweight: !!input.bodyweight,
+        }
+      }
+      case 'remove_exercise': {
+        const ex = exerciseById.get(String(input.exercise_id))
+        if (!ex) return null
+        return { kind: 'remove_exercise', exercise_id: ex.id, exercise_name: ex.name }
+      }
+      case 'swap_exercise': {
+        const out = exerciseById.get(String(input.out_exercise_id))
+        if (!out || !String(input.in_name || '').trim()) return null
+        return {
+          kind: 'swap_exercise', out_exercise_id: out.id, out_name: out.name, in_name: String(input.in_name).trim(),
+          gym_id: String(input.gym_id || out.gym_id || 'both'), day_ids: out.day_ids, day_label: out.day_ids.map(dayName).join('/') || '—',
+          rep_min: num(input.rep_min) ?? out.rep_min, rep_max: num(input.rep_max) ?? out.rep_max, step: num(input.step) ?? out.step,
+          bodyweight: input.bodyweight != null ? !!input.bodyweight : out.bodyweight,
+        }
+      }
+      case 'propose_workout': {
+        const raw = Array.isArray(input.exercises) ? input.exercises as Array<Record<string, unknown>> : []
+        const exs = raw.map(e => ({
+          name: String(e.name || '').trim(),
+          rep_min: num(e.rep_min) ?? 8, rep_max: num(e.rep_max) ?? 12, step: num(e.step) ?? 5,
+          bodyweight: !!e.bodyweight,
+        })).filter(e => e.name)
+        if (!exs.length) return null
+        const existing = input.existing_day_id ? String(input.existing_day_id) : null
+        const validExisting = existing && config?.days.some(d => d.id === existing) ? existing : null
+        return {
+          kind: 'propose_workout',
+          day_name: String(input.day_name || (validExisting ? dayName(validExisting) : 'New Workout')),
+          existing_day_id: validExisting, gym_id: String(input.gym_id || 'both'), exercises: exs,
+        }
+      }
+      case 'generate_program': {
+        const goal: ProgramGoal = (['strength', 'hypertrophy', 'recomp'] as const).includes(input.goal as ProgramGoal)
+          ? (input.goal as ProgramGoal) : 'hypertrophy'
+        const duration_weeks = [4, 6, 8].includes(Number(input.duration_weeks)) ? Number(input.duration_weeks) : 8
+        const days_per_week = [3, 4, 5].includes(Number(input.days_per_week)) ? Number(input.days_per_week) : 4
+        const structure: ProgramStructure = input.structure === 'standalone' ? 'standalone' : 'overlay'
+        return { kind: 'generate_program', goal, duration_weeks, days_per_week, structure }
+      }
+      default:
+        return null
+    }
+  })()
+
+  if (action) return { type: 'action', action }
+
+  if (name === 'clarify') {
+    const question = String(input.question || '').trim()
+    if (!question) return null
+    const options = (Array.isArray(input.options) ? input.options : [])
+      .map(o => String(o).trim()).filter(Boolean).slice(0, 4)
+    return { type: 'clarify', question, options }
+  }
+
+  return null
+}

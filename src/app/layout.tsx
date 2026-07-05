@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
 import Providers from './providers'
 import TabBar from './TabBar'
+import OrbAssistant from '@/features/assistant/OrbAssistant'
 import StarField from '@/components/StarField'
 import PageTransition from '@/components/PageTransition'
 import PullToRefresh from '@/components/PullToRefresh'
@@ -67,6 +68,7 @@ export default function RootLayout({
             <PullToRefresh>
               <PageTransition>{children}</PageTransition>
             </PullToRefresh>
+            <OrbAssistant />
           </Providers>
         </div>
         <TabBar />
