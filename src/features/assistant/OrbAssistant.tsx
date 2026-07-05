@@ -217,10 +217,10 @@ export default function OrbAssistant() {
               stroke="#4ade80" strokeWidth="1.5" strokeLinecap="round"
               style={{ filter: 'drop-shadow(0 0 5px rgba(74,222,128,0.85)) drop-shadow(0 0 12px rgba(74,222,128,0.35))' }}
             >
-              <circle cx="12" cy="12" r="4.4" fill="#4ade80" stroke="none" opacity="0.9" />
-              <circle cx="12" cy="12" r="7.4" opacity="0.55" />
-              <circle cx="12" cy="12" r="10" opacity="0.25" />
-              <ellipse cx="10.3" cy="10.1" rx="1.6" ry="0.95" fill="rgba(255,255,255,0.8)" stroke="none" transform="rotate(-32 10.3 10.1)" />
+              <circle cx="12" cy="12" r="5.6" fill="#4ade80" stroke="none" opacity="0.92" />
+              <circle cx="12" cy="12" r="8" opacity="0.5" />
+              <circle cx="12" cy="12" r="10.4" opacity="0.22" />
+              <ellipse cx="10.2" cy="10.1" rx="1.5" ry="0.85" fill="rgba(255,255,255,0.4)" stroke="none" transform="rotate(-32 10.2 10.1)" />
             </svg>
           </motion.button>
         )}
