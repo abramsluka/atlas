@@ -705,7 +705,6 @@ export default function MentorClient() {
   const [streaming, setStreaming] = useState(false)
   const [jotInput, setJotInput] = useState('')
   const [jotBounce, setJotBounce] = useState(false)
-  const [voiceMode, setVoiceMode] = useState(false)
   const [workoutsThisWeek, setWorkoutsThisWeek] = useState(0)
   const [flightPill, setFlightPill] = useState<number | null>(null)
 
@@ -820,22 +819,15 @@ export default function MentorClient() {
     }
   }
 
-  const handleVoiceMic = async () => {
-    if (voice.recording) {
-      const blob = await voice.stop()
-      if (!blob) return
-      const text = await voice.transcribe(blob)
-      if (text) {
-        setInput(text)
-        setVoiceMode(false)
-        setTimeout(() => sendMessage(text), 400)
-      } else {
-        setVoiceMode(false)
-      }
-    } else {
-      setVoiceMode(true)
-      voice.start()
-    }
+  const startMic = () => { voice.start() }
+  // Square (left) → transcribe into the input box; arrow (right) → send now.
+  const stopMic = async (intent: 'send' | 'fill') => {
+    const blob = await voice.stop()
+    if (!blob) return
+    const text = await voice.transcribe(blob)
+    if (!text) return
+    if (intent === 'send') await sendMessage(text)
+    else setInput(prev => (prev.trim() ? `${prev.trim()} ${text}` : text))
   }
 
   const handleJotSave = () => {
@@ -1194,14 +1186,18 @@ export default function MentorClient() {
                 transition: 'border-color 200ms, box-shadow 200ms',
               }}
             >
-              {voice.recording || voice.transcribing ? (
+              {voice.recording ? (
                 <div className="flex items-center gap-3 px-4 py-3">
-                  {voice.recording ? <Waveform /> : (
-                    <span className="inline-block w-4 h-4 rounded-full border border-zinc-400 border-t-transparent animate-spin" />
-                  )}
-                  <span className="text-sm text-zinc-400">
-                    {voice.recording ? voice.formatElapsed(voice.elapsed) : 'Transcribing…'}
-                  </span>
+                  <Waveform />
+                  <span className="text-sm text-zinc-400">{voice.formatElapsed(voice.elapsed)}</span>
+                </div>
+              ) : voice.transcribing ? (
+                <div className="flex items-center gap-2.5 px-4 py-3">
+                  {/* ChatGPT-style: revolving arc spinner + shimmering label, in the box */}
+                  <svg className="animate-spin shrink-0" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" strokeWidth="2.5" strokeLinecap="round">
+                    <path d="M12 3a9 9 0 1 1-9 9" />
+                  </svg>
+                  <span className="text-sm text-zinc-500 animate-pulse">Transcribing</span>
                 </div>
               ) : (
                 <textarea
@@ -1218,36 +1214,62 @@ export default function MentorClient() {
               )}
 
               <div className="flex items-center justify-between px-3 pb-2">
-                {/* Mic button */}
-                <button
-                  onClick={handleVoiceMic}
-                  disabled={voice.transcribing}
-                  className="w-8 h-8 rounded-full flex items-center justify-center transition-colors disabled:opacity-30"
-                  style={{
-                    background: voice.recording ? 'rgba(248,113,113,0.2)' : 'rgba(255,255,255,0.06)',
-                    border: voice.recording ? '1px solid rgba(248,113,113,0.5)' : '1px solid rgba(255,255,255,0.1)',
-                  }}
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke={voice.recording ? '#f87171' : '#71717a'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                    <line x1="12" y1="19" x2="12" y2="23" />
-                    <line x1="8" y1="23" x2="16" y2="23" />
-                  </svg>
-                </button>
+                {voice.recording ? (
+                  <>
+                    {/* Stop (left): end + transcribe into the box, no send */}
+                    <button
+                      onClick={() => stopMic('fill')}
+                      className="w-8 h-8 rounded-full flex items-center justify-center"
+                      style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.16)' }}
+                      aria-label="Stop — keep transcript in the box"
+                    >
+                      <svg viewBox="0 0 24 24" fill="#e4e4e7" className="w-3.5 h-3.5"><rect x="6" y="6" width="12" height="12" rx="2.5" /></svg>
+                    </button>
+                    {/* Send (right): end + transcribe + send now */}
+                    <button
+                      onClick={() => stopMic('send')}
+                      className="w-8 h-8 rounded-full flex items-center justify-center"
+                      style={{ background: 'rgba(74,222,128,0.2)', border: '1px solid rgba(74,222,128,0.45)' }}
+                      aria-label="Stop and send"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                        <path d="M12 19V5M5 12l7-7 7 7" />
+                      </svg>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {/* Mic button */}
+                    <button
+                      onClick={startMic}
+                      disabled={voice.transcribing || streaming}
+                      className="w-8 h-8 rounded-full flex items-center justify-center transition-colors disabled:opacity-30"
+                      style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                      aria-label="Record voice"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="#71717a" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                        <line x1="12" y1="19" x2="12" y2="23" />
+                        <line x1="8" y1="23" x2="16" y2="23" />
+                      </svg>
+                    </button>
 
-                {/* Send button */}
-                <button
-                  onClick={() => sendMessage(input)}
-                  disabled={!input.trim() || streaming}
-                  className="w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-30 transition-opacity"
-                  style={{ background: 'rgba(74,222,128,0.2)', border: '1px solid rgba(74,222,128,0.4)' }}
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-                    <line x1="22" y1="2" x2="11" y2="13" />
-                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                  </svg>
-                </button>
+                    {/* Send button */}
+                    <button
+                      onClick={() => sendMessage(input)}
+                      disabled={!input.trim() || streaming || voice.transcribing}
+                      className="w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-30 transition-opacity"
+                      style={{ background: 'rgba(74,222,128,0.2)', border: '1px solid rgba(74,222,128,0.4)' }}
+                      aria-label="Send"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                        <line x1="22" y1="2" x2="11" y2="13" />
+                        <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                      </svg>
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
