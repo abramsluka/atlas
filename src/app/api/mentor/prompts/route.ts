@@ -34,26 +34,30 @@ export async function GET() {
   const today = toLocalDate(TZ)
   const sevenDaysAgo = formatInTimeZone(subDays(new Date(), 7), TZ, 'yyyy-MM-dd')
 
-  const [lastWorkoutRes, contextRes, jotsCountRes] = await Promise.all([
-    db.from('workouts').select('completed_at, exercises(name)').eq('user_id', user.id).not('completed_at', 'is', null).order('completed_at', { ascending: false }).limit(1).maybeSingle(),
+  const [gymLogsRes, contextRes, jotsCountRes] = await Promise.all([
+    // Recent sets, newest first — the latest day's logs describe the last workout
+    db.from('gym_logs').select('logged_at, gym_exercises(name)').eq('user_id', user.id).order('logged_at', { ascending: false }).limit(20),
     db.from('mentor_context').select('primary_goal').eq('user_id', user.id).maybeSingle(),
     db.from('jots').select('id', { count: 'exact' }).eq('user_id', user.id).gte('created_at', sevenDaysAgo),
   ])
 
-  const lastWorkout = lastWorkoutRes.data
+  const gymLogs = (gymLogsRes.data ?? []) as unknown as Array<{ logged_at: string; gym_exercises: { name: string } | null }>
   const primaryGoal = contextRes.data?.primary_goal ?? null
   const recentJotCount = jotsCountRes.count ?? 0
 
-  // Days since last workout
+  // Days since last workout + that session's exercises
   let daysSinceWorkout: number | null = null
-  if (lastWorkout?.completed_at) {
-    const lastDate = new Date(lastWorkout.completed_at)
-    const todayDate = new Date(today)
-    daysSinceWorkout = Math.floor((todayDate.getTime() - lastDate.getTime()) / 86400000)
+  let lastWorkoutLine = 'No recent workouts'
+  if (gymLogs.length > 0) {
+    const lastDate = new Date(gymLogs[0].logged_at)
+    daysSinceWorkout = Math.floor((new Date(today).getTime() - lastDate.getTime()) / 86400000)
+    const sameDay = gymLogs.filter(l => new Date(l.logged_at).toDateString() === lastDate.toDateString())
+    const names = [...new Set(sameDay.map(l => l.gym_exercises?.name ?? 'Unknown'))]
+    lastWorkoutLine = `Last workout: ${lastDate.toDateString()} (${daysSinceWorkout} days ago), exercises: ${names.join(', ')}`
   }
 
   const snapshot = [
-    lastWorkout ? `Last workout: ${new Date(lastWorkout.completed_at!).toDateString()} (${daysSinceWorkout} days ago), exercises: ${(lastWorkout.exercises as Array<{name: string}>).map(e => e.name).join(', ')}` : 'No recent workouts',
+    lastWorkoutLine,
     `Days since last workout: ${daysSinceWorkout ?? 'unknown'}`,
     `Primary goal: ${primaryGoal ?? 'not set'}`,
     `Jots captured in last 7 days: ${recentJotCount}`,

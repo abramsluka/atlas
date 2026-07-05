@@ -6,6 +6,7 @@ import { formatInTimeZone } from 'date-fns-tz'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
 import { getOuraContextRange, summarizeOuraForCoach } from '@/features/health/ouraContext'
+import { fetchGymLogs, groupByDay, sessionLabel, sessionVolumeLbs } from '@/lib/gymActivity'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -33,7 +34,7 @@ export async function POST() {
 
   // Fetch all data in parallel
   const [workoutsRes, ouraData, waterRes, weightRes, foodRes, jotsRes, contextRes, prevReportRes] = await Promise.all([
-    db.from('workouts').select('*, exercises(*, sets(*))').eq('user_id', user.id).not('completed_at', 'is', null).gte('completed_at', new Date(sevenDaysAgo).toISOString()).order('completed_at', { ascending: false }),
+    fetchGymLogs(db, user.id, new Date(sevenDaysAgo).toISOString()),
     getOuraContextRange(db, user.id, sevenDaysAgo, today),
     db.from('water_logs').select('date, amount_oz').eq('user_id', user.id).gte('date', sevenDaysAgo).order('date', { ascending: false }),
     db.from('body_weights').select('date_key, weight').eq('user_id', user.id).gte('date_key', sevenDaysAgo).order('date_key', { ascending: false }),
@@ -44,12 +45,12 @@ export async function POST() {
   ])
 
   // Format data
-  const workoutSummary = workoutsRes.data?.length
-    ? `${workoutsRes.data.length} workouts completed\n${workoutsRes.data.map(w => {
-        const exNames = (w.exercises as Array<{name: string}> ?? []).map(e => e.name).join(', ')
-        return `  ${new Date(w.completed_at!).toDateString()}: ${w.name || 'Workout'} — ${exNames}`
-      }).join('\n')}`
-    : 'No workouts this week'
+  const trainingDays = groupByDay(workoutsRes, iso => formatInTimeZone(new Date(iso), TZ, 'EEE MMM d'))
+  const workoutSummary = trainingDays.size
+    ? `${trainingDays.size} training days\n${[...trainingDays.entries()].map(([day, logs]) =>
+        `  ${day}: ${sessionLabel(logs, 6)} — ${logs.length} sets, ${Math.round(sessionVolumeLbs(logs)).toLocaleString()} lbs volume`
+      ).join('\n')}`
+    : 'No training this week'
 
   const ouraSummary = summarizeOuraForCoach(ouraData) ?? 'No Oura data'
 

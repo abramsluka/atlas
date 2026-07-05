@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { subDays } from 'date-fns'
 import type { OuraData, WhoopData } from '@/features/health/types'
+import { fetchGymLogs, sessionLabel, groupByDay } from '@/lib/gymActivity'
 
 type DB = ReturnType<typeof createServiceClient>
 
@@ -20,22 +21,11 @@ export interface BentoStats {
 // server component (so the home page can fetch this once, server-side, next to
 // Supabase, instead of the client making a separate cross-region round trip).
 export async function computeBentoStats(db: DB, userId: string, today: string): Promise<BentoStats> {
-  const sevenDaysAgo = subDays(new Date(), 7).toISOString()
+  const thirtyDaysAgo = subDays(new Date(), 30).toISOString()
 
-  const [lastWorkoutRes, workoutDaysRes, foodRes, wearableRes, journalRes, checkinRes] = await Promise.all([
-    db.from('workouts')
-      .select('id, name, completed_at')
-      .eq('user_id', userId)
-      .not('completed_at', 'is', null)
-      .order('completed_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-
-    db.from('workouts')
-      .select('completed_at')
-      .eq('user_id', userId)
-      .not('completed_at', 'is', null)
-      .gte('completed_at', sevenDaysAgo),
+  const [gymLogs, foodRes, wearableRes, journalRes, checkinRes] = await Promise.all([
+    // 30-day lookback: enough to name the last session and fill the 7-day grid
+    fetchGymLogs(db, userId, thirtyDaysAgo),
 
     db.from('food_logs')
       .select('calories, protein_g')
@@ -62,18 +52,18 @@ export async function computeBentoStats(db: DB, userId: string, today: string): 
       .limit(7),
   ])
 
-  // Last workout
-  const lw = lastWorkoutRes.data
-  const lastWorkout = lw
-    ? { name: (lw.name as string | null) ?? 'Workout', completedAt: lw.completed_at as string }
+  // Last workout = most recent gym_logs day, labeled by its exercises
+  const daySessions = groupByDay(gymLogs, iso => new Date(iso).toDateString())
+  const lastDayLogs = daySessions.values().next().value
+  const lastWorkout = lastDayLogs?.length
+    ? { name: sessionLabel(lastDayLogs), completedAt: lastDayLogs[0].logged_at }
     : null
 
   // Workout days breakdown (last 7 days: index 0 = 6 days ago, index 6 = today)
-  const workoutRows = (workoutDaysRes.data ?? []) as Array<{ completed_at: string }>
   const workoutDays7d: boolean[] = Array(7).fill(false)
   const nowMs = Date.now()
-  for (const row of workoutRows) {
-    const daysAgo = Math.floor((nowMs - new Date(row.completed_at).getTime()) / (1000 * 60 * 60 * 24))
+  for (const log of gymLogs) {
+    const daysAgo = Math.floor((nowMs - new Date(log.logged_at).getTime()) / (1000 * 60 * 60 * 24))
     if (daysAgo >= 0 && daysAgo < 7) workoutDays7d[6 - daysAgo] = true
   }
   const workoutCount7d = workoutDays7d.filter(Boolean).length

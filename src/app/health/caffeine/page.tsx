@@ -4,6 +4,7 @@ import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
 import type { OuraData, WhoopData } from '@/features/health/types'
 import type { FoodLog } from '@/features/food/types'
+import { sessionLabel, sessionVolumeLbs, type GymActivityLog } from '@/lib/gymActivity'
 import CaffeineClient from './CaffeineClient'
 
 export const dynamic = 'force-dynamic'
@@ -46,13 +47,13 @@ export default async function CaffeinePage() {
     db.from('wearable_tokens').select('provider').eq('user_id', user.id).eq('provider', 'oura').maybeSingle(),
     db.from('wearable_tokens').select('provider').eq('user_id', user.id).eq('provider', 'whoop').maybeSingle(),
 
-    // Fetch today's completed workouts with their sets for volume calculation
-    db.from('workouts')
-      .select('id, name, completed_at, exercises(id, sets(reps, weight_lbs, completed))')
+    // Fetch today's gym_logs for volume calculation
+    db.from('gym_logs')
+      .select('logged_at, weight, reps, gym_exercises(name)')
       .eq('user_id', user.id)
-      .not('completed_at', 'is', null)
-      .gte('completed_at', todayStart)
-      .lte('completed_at', todayEnd),
+      .gte('logged_at', todayStart)
+      .lte('logged_at', todayEnd)
+      .order('logged_at', { ascending: false }),
 
     // Fetch today's food logs for postprandial dip
     db.from('food_logs')
@@ -88,29 +89,18 @@ export default async function CaffeinePage() {
     whoopData = (whoopCache.data?.data as WhoopData) ?? null
   }
 
-  // Build WorkoutPoints — compute volume from sets
-  const workoutPoints: WorkoutPoint[] = (workoutsResult.data ?? []).map((w: Record<string, unknown>) => {
-    const completedAt = w.completed_at as string
-    const d = new Date(completedAt)
-    const completedHour = d.getHours() + d.getMinutes() / 60
-
-    const exercises = (w.exercises as Array<{ sets: Array<{ reps: number | null; weight_lbs: number | null; completed: boolean }> }>) ?? []
-    let volumeLbs = 0
-    for (const ex of exercises) {
-      for (const s of ex.sets ?? []) {
-        if (s.completed && s.reps != null && s.weight_lbs != null) {
-          volumeLbs += s.reps * s.weight_lbs
-        }
-      }
-    }
-
-    return {
-      id: w.id as string,
-      name: (w.name as string | null) ?? null,
-      completedHour,
-      volumeLbs,
-    }
-  })
+  // Build WorkoutPoints — today's gym_logs collapse into a single session
+  const gymLogs = (workoutsResult.data ?? []) as unknown as GymActivityLog[]
+  const workoutPoints: WorkoutPoint[] = []
+  if (gymLogs.length > 0) {
+    const lastLog = new Date(gymLogs[0].logged_at)
+    workoutPoints.push({
+      id: `gym-${today}`,
+      name: sessionLabel(gymLogs),
+      completedHour: lastLog.getHours() + lastLog.getMinutes() / 60,
+      volumeLbs: sessionVolumeLbs(gymLogs),
+    })
+  }
 
   // Build MealPoints
   const mealPoints: MealPoint[] = (foodResult.data ?? [])

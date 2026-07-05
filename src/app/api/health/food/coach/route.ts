@@ -69,16 +69,15 @@ export async function POST(request: NextRequest) {
     .eq('user_id', user.id)
     .maybeSingle()
 
-  // Load today's workout (completed today)
+  // Load today's training (gym_logs sets logged today)
   const dayStart = `${date}T00:00:00.000Z`
   const dayEnd = `${date}T23:59:59.999Z`
-  const { data: workouts } = await db
-    .from('workouts')
-    .select('id, name, completed_at')
+  const { data: gymLogRows } = await db
+    .from('gym_logs')
+    .select('logged_at, gym_exercises(name)')
     .eq('user_id', user.id)
-    .not('completed_at', 'is', null)
-    .gte('completed_at', dayStart)
-    .lte('completed_at', dayEnd)
+    .gte('logged_at', dayStart)
+    .lte('logged_at', dayEnd)
 
   // Build context string
   const lines: string[] = []
@@ -111,8 +110,10 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  if (workouts && workouts.length > 0) {
-    lines.push(`Workout today: ${workouts.map(w => w.name ?? 'Unnamed session').join(', ')}`)
+  if (gymLogRows && gymLogRows.length > 0) {
+    const logs = gymLogRows as unknown as Array<{ gym_exercises: { name: string } | null }>
+    const names = [...new Set(logs.map(l => l.gym_exercises?.name ?? 'Unknown'))]
+    lines.push(`Workout today: ${names.join(', ')} (${gymLogRows.length} sets)`)
   }
 
   const context = lines.join('\n')

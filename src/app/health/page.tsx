@@ -5,6 +5,7 @@ import type { OuraData, WhoopData } from '@/features/health/types'
 import type { WorkoutPoint, MealPoint } from '@/features/health/energyModel'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
+import { sessionLabel, sessionVolumeLbs, type GymActivityLog } from '@/lib/gymActivity'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,14 +38,14 @@ export default async function HealthPage() {
     db.from('health_profile').select('*').eq('user_id', user.id).maybeSingle(),
     db.from('wearable_tokens').select('provider').eq('user_id', user.id).eq('provider', 'oura').maybeSingle(),
     db.from('wearable_tokens').select('provider').eq('user_id', user.id).eq('provider', 'whoop').maybeSingle(),
-    // Workouts + food feed the same energy model the caffeine page uses, so the
+    // Training + food feed the same energy model the caffeine page uses, so the
     // compact card reads identically to Today's Curve.
-    db.from('workouts')
-      .select('id, name, completed_at, exercises(id, sets(reps, weight_lbs, completed))')
+    db.from('gym_logs')
+      .select('logged_at, weight, reps, gym_exercises(name)')
       .eq('user_id', user.id)
-      .not('completed_at', 'is', null)
-      .gte('completed_at', todayStart)
-      .lte('completed_at', todayEnd),
+      .gte('logged_at', todayStart)
+      .lte('logged_at', todayEnd)
+      .order('logged_at', { ascending: false }),
     db.from('food_logs')
       .select('id, item_name, calories, taken_at')
       .eq('user_id', user.id)
@@ -79,22 +80,18 @@ export default async function HealthPage() {
     whoopData = (whoopCache.data?.data as WhoopData) ?? null
   }
 
-  const workoutPoints: WorkoutPoint[] = (workoutsResult.data ?? []).map((w: Record<string, unknown>) => {
-    const d = new Date(w.completed_at as string)
-    const exercises = (w.exercises as Array<{ sets: Array<{ reps: number | null; weight_lbs: number | null; completed: boolean }> }>) ?? []
-    let volumeLbs = 0
-    for (const ex of exercises) {
-      for (const s of ex.sets ?? []) {
-        if (s.completed && s.reps != null && s.weight_lbs != null) volumeLbs += s.reps * s.weight_lbs
-      }
-    }
-    return {
-      id: w.id as string,
-      name: (w.name as string | null) ?? null,
-      completedHour: d.getHours() + d.getMinutes() / 60,
-      volumeLbs,
-    }
-  })
+  // Today's gym_logs collapse into a single session point for the energy model
+  const gymLogs = (workoutsResult.data ?? []) as unknown as GymActivityLog[]
+  const workoutPoints: WorkoutPoint[] = []
+  if (gymLogs.length > 0) {
+    const lastLog = new Date(gymLogs[0].logged_at)
+    workoutPoints.push({
+      id: `gym-${today}`,
+      name: sessionLabel(gymLogs),
+      completedHour: lastLog.getHours() + lastLog.getMinutes() / 60,
+      volumeLbs: sessionVolumeLbs(gymLogs),
+    })
+  }
 
   const mealPoints: MealPoint[] = (foodResult.data ?? [])
     .filter((f: { calories: number | null }) => f.calories != null && f.calories > 0)
