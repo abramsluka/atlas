@@ -23,17 +23,15 @@ function OrbitRing({ radius }: { radius: number }) {
 /**
  * The r3f scene: lights, star-trail field, the Atlas globe, the per-planet orbit
  * rings + revolving satellites, and OrbitControls (drag the empty space to orbit
- * the camera around the system, like the design lab). Planet/center clicks still
- * fire because a click without drag is treated as a click, not a rotate.
+ * the camera around the system, like the design lab). Planet clicks still fire
+ * (a click without drag is a click, not a rotate); the central globe is inert.
  *
  * No post-processing (EffectComposer black-flashed on this GPU) — glow is done
  * with per-element additive shells. See spec §9.1.
  */
 export default function Scene({
-  onExit,
   onNavigate,
 }: {
-  onExit: () => void
   onNavigate: (href: string) => void
 }) {
   return (
@@ -47,7 +45,7 @@ export default function Scene({
 
       {/* Suspense: AtlasPlanet's useTexture suspends while the Earth maps load */}
       <Suspense fallback={null}>
-        <AtlasPlanet onSelect={onExit} />
+        <AtlasPlanet />
       </Suspense>
 
       {/* Shared tilted orbital plane: one bright orbit line per planet radius,

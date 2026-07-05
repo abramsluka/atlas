@@ -926,7 +926,7 @@ export default function HomeClient({
             <line x1="3" y1="18" x2="3.01" y2="18" />
           </svg>
         </motion.button>
-        <AtlasHUD onExit={toggleMapView} />
+        <AtlasHUD />
         {showSundayModal && (
           <SundayModal initialReports={initialWeeklyReports} onDismiss={() => {
             setShowSundayModal(false)

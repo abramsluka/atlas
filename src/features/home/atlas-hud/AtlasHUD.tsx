@@ -8,9 +8,9 @@ import HudOverlay from './HudOverlay'
 /**
  * Top-level Atlas HUD view: a full-screen <Canvas> hosting the 3D scene (the
  * holographic Atlas globe + orbiting module planets) with the HUD panel overlay
- * layered on top. Clicking the globe exits back to the bento dashboard.
+ * layered on top. Exit back to the bento dashboard via the top-right toggle button.
  */
-export default function AtlasHUD({ onExit }: { onExit: () => void }) {
+export default function AtlasHUD() {
   const router = useRouter()
 
   return (
@@ -21,7 +21,7 @@ export default function AtlasHUD({ onExit }: { onExit: () => void }) {
         dpr={[1, 2]}
         gl={{ antialias: true }}
       >
-        <Scene onExit={onExit} onNavigate={(href) => router.push(href)} />
+        <Scene onNavigate={(href) => router.push(href)} />
       </Canvas>
       <HudOverlay />
     </div>

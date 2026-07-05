@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useRef } from 'react'
-import { useFrame, type ThreeEvent } from '@react-three/fiber'
+import { useFrame } from '@react-three/fiber'
 import { useTexture } from '@react-three/drei'
 import * as THREE from 'three'
 import GlobeFx from './GlobeFx'
@@ -10,8 +10,8 @@ import GlobeFx from './GlobeFx'
 // Real Earth continents (halftone dots from earth-water mask), multi-tone blue with
 // elevation shading, directional day/night light, POI hex-nodes + sky dots, radial
 // data-spikes, and comet-traced orbit arcs. No post-processing (EffectComposer
-// black-flashes on this GPU) — glow comes from additive lines/rim. Clicking the
-// globe exits the HUD back to the bento dashboard.
+// black-flashes on this GPU) — glow comes from additive lines/rim. The globe is
+// non-interactive; the HUD is exited via the top-right button, not by clicking it.
 
 const ATLAS_R = 2.1
 const SPIN = 0.05
@@ -160,10 +160,10 @@ function randDir() {
 }
 
 /**
- * The central holographic Atlas globe (= Today / home). Clicking it exits the HUD
- * back to the bento dashboard (same `/` route, toggled by state).
+ * The central holographic Atlas globe (= Today / home). Non-interactive — it does
+ * not respond to clicks; the HUD is exited via the top-right toggle button.
  */
-export default function AtlasPlanet({ onSelect }: { onSelect: () => void }) {
+export default function AtlasPlanet() {
   const [landTex, topoTex] = useTexture(['/textures/earth-water.png', '/textures/earth-topology.png'])
   const spinRef = useRef<THREE.Group>(null)
 
@@ -289,20 +289,12 @@ export default function AtlasPlanet({ onSelect }: { onSelect: () => void }) {
     })
   })
 
-  function handleClick(e: ThreeEvent<MouseEvent>) {
-    e.stopPropagation()
-    onSelect()
-  }
-
   return (
     <group>
       {/* globe + surface-attached detail spin together (Earth rotating) */}
       <group ref={spinRef}>
-        <mesh
-          onClick={handleClick}
-          onPointerOver={() => { document.body.style.cursor = 'pointer' }}
-          onPointerOut={() => { document.body.style.cursor = 'default' }}
-        >
+        {/* non-interactive: no onClick so the globe behaves like empty space */}
+        <mesh>
           <sphereGeometry args={[ATLAS_R, 160, 160]} />
           <primitive object={built.globeMat} attach="material" />
         </mesh>
