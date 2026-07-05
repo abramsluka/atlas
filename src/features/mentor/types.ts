@@ -37,4 +37,6 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   id: string
+  actions?: import('@/features/assistant/actions').ProposedAction[]
+  clarify?: { question: string; options: string[] } | null
 }

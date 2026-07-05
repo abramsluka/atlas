@@ -93,7 +93,9 @@ export type AssistantAction =
     }
 
 // NDJSON stream events (one JSON object per line) from the assistant routes.
+// `meta` is sent first by the mentor route to hand the client its conversation id.
 export type AssistantStreamEvent =
+  | { t: 'meta'; conversation_id: string }
   | { t: 'text'; v: string }
   | { t: 'action'; action: AssistantAction }
   | { t: 'clarify'; question: string; options: string[] }

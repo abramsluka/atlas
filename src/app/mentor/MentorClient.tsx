@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback, useId } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import ChatText from '@/components/ChatText'
 import InsightsTab from './InsightsTab'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQueryClient, useQuery } from '@tanstack/react-query'
 import {
   useJots,
   useMentorContext,
@@ -15,6 +15,9 @@ import {
 import { useCreateJot, useGenerateWeeklyReport, useRunSynthesis } from '@/features/mentor/mutations'
 import { usePersistentChat } from '@/lib/usePersistentChat'
 import type { ChatMessage } from '@/features/mentor/types'
+import type { AssistantStreamEvent, ProposedAction } from '@/features/assistant/actions'
+import { useAssistantActions } from '@/features/assistant/useAssistantActions'
+import ActionCard from '@/features/assistant/ActionCard'
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -635,6 +638,69 @@ export default function MentorClient() {
 
   const [tab, setTab] = useState<'chat' | 'insights' | 'reports'>('chat')
   const [messages, setMessages] = usePersistentChat<ChatMessage>('atlas-mentor-chat-thread-v1')
+
+  // ── Saved conversations (DB-backed history) ──
+  const [conversationId, setConversationId] = useState<string | null>(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  useEffect(() => {
+    try { const v = localStorage.getItem('atlas-mentor-conversation-id'); if (v) setConversationId(v) } catch {}
+  }, [])
+  useEffect(() => {
+    try {
+      if (conversationId) localStorage.setItem('atlas-mentor-conversation-id', conversationId)
+      else localStorage.removeItem('atlas-mentor-conversation-id')
+    } catch {}
+  }, [conversationId])
+
+  const { data: conversationsData } = useQuery({
+    queryKey: ['mentor-conversations'],
+    enabled: historyOpen,
+    queryFn: async (): Promise<Array<{ id: string; title: string | null; updated_at: string }>> => {
+      const res = await fetch('/api/mentor/conversations')
+      if (!res.ok) throw new Error('failed')
+      const json = await res.json()
+      return json.conversations ?? []
+    },
+  })
+
+  const loadConversation = useCallback(async (id: string) => {
+    try {
+      const res = await fetch(`/api/mentor/conversations/${id}`)
+      if (!res.ok) return
+      const json = await res.json() as { messages: Array<{ id: string; role: 'user' | 'assistant'; content: string }> }
+      setMessages(json.messages.map(r => ({ id: r.id, role: r.role, content: r.content })))
+      setConversationId(id)
+      setHistoryOpen(false)
+    } catch {}
+  }, [setMessages])
+
+  const startNewChat = useCallback(() => {
+    setMessages([])
+    setConversationId(null)
+    setHistoryOpen(false)
+  }, [setMessages])
+
+  // ── Assistant action execution (same executor the Orb uses) ──
+  const { executeAction, units: actionUnits } = useAssistantActions()
+  const [busyActionId, setBusyActionId] = useState<string | null>(null)
+  const patchMsg = useCallback((id: string, fn: (m: ChatMessage) => ChatMessage) =>
+    setMessages(prev => prev.map(m => (m.id === id ? fn(m) : m))), [setMessages])
+
+  const runAction = useCallback(async (msgId: string, pa: ProposedAction) => {
+    setBusyActionId(pa.id)
+    try {
+      await executeAction(pa.action)
+      patchMsg(msgId, m => ({ ...m, actions: m.actions?.map(x => (x.id === pa.id ? { ...x, status: 'done' as const } : x)) }))
+    } catch {
+      patchMsg(msgId, m => ({ ...m, actions: m.actions?.map(x => (x.id === pa.id ? { ...x, status: 'error' as const } : x)) }))
+    } finally {
+      setBusyActionId(null)
+    }
+  }, [executeAction, patchMsg])
+
+  const dismissAction = useCallback((msgId: string, paId: string) =>
+    patchMsg(msgId, m => ({ ...m, actions: m.actions?.map(x => (x.id === paId ? { ...x, status: 'dismissed' as const } : x)) })), [patchMsg])
+
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [jotInput, setJotInput] = useState('')
@@ -685,14 +751,14 @@ export default function MentorClient() {
     setStreaming(true)
 
     const assistantId = `a-${Date.now()}`
-    setMessages(prev => [...prev, { id: assistantId, role: 'assistant', content: '' }])
+    setMessages(prev => [...prev, { id: assistantId, role: 'assistant', content: '', actions: [], clarify: null }])
 
     try {
       const history = messages.slice(-10).map(m => ({ role: m.role, content: m.content }))
       const res = await fetch('/api/mentor/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text.trim(), history }),
+        body: JSON.stringify({ message: text.trim(), history, conversation_id: conversationId }),
       })
 
       if (!res.ok || !res.body) {
@@ -700,18 +766,38 @@ export default function MentorClient() {
         return
       }
 
+      // NDJSON: {t:'meta'|'text'|'action'|'clarify'|'error'} — one JSON per line
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
+      let buffer = ''
       while (true) {
         const { value, done } = await reader.read()
         if (done) break
-        const chunk = decoder.decode(value)
-        setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: m.content + chunk } : m))
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+        for (const line of lines) {
+          if (!line.trim()) continue
+          let ev: AssistantStreamEvent
+          try { ev = JSON.parse(line) } catch { continue }
+          if (ev.t === 'meta') {
+            setConversationId(ev.conversation_id)
+          } else if (ev.t === 'text') {
+            patchMsg(assistantId, m => ({ ...m, content: m.content + ev.v }))
+          } else if (ev.t === 'action') {
+            const pa: ProposedAction = { id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, action: ev.action, status: 'pending' }
+            patchMsg(assistantId, m => ({ ...m, actions: [...(m.actions ?? []), pa] }))
+          } else if (ev.t === 'clarify') {
+            patchMsg(assistantId, m => ({ ...m, clarify: { question: ev.question, options: ev.options } }))
+          } else if (ev.t === 'error') {
+            patchMsg(assistantId, m => ({ ...m, content: m.content || ev.v }))
+          }
+        }
       }
     } finally {
       setStreaming(false)
     }
-  }, [streaming, messages])
+  }, [streaming, messages, conversationId, patchMsg])
 
   const handlePromptClick = useCallback((prompt: string) => {
     setInput(prompt)
@@ -873,7 +959,7 @@ export default function MentorClient() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-4 mb-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+        <div className="flex gap-4 mb-4 items-baseline" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
           {(['chat', 'insights', 'reports'] as const).map(t => (
             <button
               key={t}
@@ -883,7 +969,78 @@ export default function MentorClient() {
               {t}
             </button>
           ))}
+          <button
+            onClick={() => setHistoryOpen(true)}
+            className="pb-2 ml-auto text-xs font-bold tracking-widest uppercase text-zinc-600 hover:text-zinc-400 transition-colors"
+            aria-label="Chat history"
+          >
+            history
+          </button>
         </div>
+
+        {/* Chat history drawer */}
+        <AnimatePresence>
+          {historyOpen && (
+            <>
+              <motion.div
+                key="mentor-history-backdrop"
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                onClick={() => setHistoryOpen(false)}
+                className="fixed inset-0 z-[60]"
+                style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
+              />
+              <motion.div
+                key="mentor-history-panel"
+                initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+                transition={{ type: 'spring', stiffness: 360, damping: 36 }}
+                className="fixed left-0 right-0 bottom-0 z-[70] flex flex-col"
+                style={{
+                  maxHeight: '70vh',
+                  background: 'linear-gradient(180deg, rgba(10,12,16,0.98), rgba(6,7,10,0.99))',
+                  borderTop: '1px solid rgba(74,222,128,0.18)',
+                  borderRadius: '20px 20px 0 0',
+                  boxShadow: '0 -12px 40px rgba(0,0,0,0.5)',
+                }}
+              >
+                <div className="flex items-center justify-between px-4 pt-4 pb-3 shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                  <span className="text-[11px] font-extrabold tracking-[0.2em] uppercase text-zinc-200">Chat history</span>
+                  <button onClick={() => setHistoryOpen(false)} className="p-1 text-zinc-500 hover:text-zinc-300" aria-label="Close">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                  </button>
+                </div>
+                <div className="overflow-y-auto px-4 py-3 space-y-2" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}>
+                  <button
+                    onClick={startNewChat}
+                    className="w-full text-left text-[13px] font-bold px-3.5 py-3 rounded-2xl"
+                    style={{ background: 'rgba(74,222,128,0.10)', border: '1px solid rgba(74,222,128,0.3)', color: '#bbf7d0' }}
+                  >
+                    + New chat
+                  </button>
+                  {(conversationsData ?? []).map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => loadConversation(c.id)}
+                      className="w-full text-left px-3.5 py-3 rounded-2xl"
+                      style={{
+                        background: c.id === conversationId ? 'rgba(74,222,128,0.07)' : 'rgba(255,255,255,0.04)',
+                        border: c.id === conversationId ? '1px solid rgba(74,222,128,0.25)' : '1px solid rgba(255,255,255,0.07)',
+                      }}
+                    >
+                      <span className="block text-[13px] text-zinc-200 truncate">{c.title || 'Untitled chat'}</span>
+                      <span className="block text-[10.5px] text-zinc-600 mt-0.5">
+                        {new Date(c.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </span>
+                    </button>
+                  ))}
+                  {conversationsData && conversationsData.length === 0 && (
+                    <p className="text-[12px] text-zinc-600 px-1 py-2">No saved chats yet — send a message and it starts saving.</p>
+                  )}
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
 
         {tab === 'reports' && <ReportsTab />}
 
@@ -971,6 +1128,40 @@ export default function MentorClient() {
                                   <ChatText text={msg.content} />
                                   {isStreaming && <StreamingCursor done={false} />}
                                   {!isStreaming && isLast && <StreamingCursor done={true} />}
+                                </div>
+                              )}
+                              {(msg.actions ?? []).map(pa => (
+                                <ActionCard
+                                  key={pa.id}
+                                  pa={pa}
+                                  units={actionUnits}
+                                  busy={busyActionId === pa.id}
+                                  onConfirm={() => runAction(msg.id, pa)}
+                                  onDismiss={() => dismissAction(msg.id, pa.id)}
+                                />
+                              ))}
+                              {(() => {
+                                const pending = (msg.actions ?? []).filter(a => a.status === 'pending')
+                                return pending.length >= 2 ? (
+                                  <button
+                                    onClick={async () => { for (const pa of pending) await runAction(msg.id, pa) }}
+                                    disabled={busyActionId != null}
+                                    className="mt-2 w-full text-[12.5px] font-bold px-3.5 py-2.5 rounded-2xl disabled:opacity-50"
+                                    style={{ background: 'rgba(74,222,128,0.14)', border: '1px solid rgba(74,222,128,0.35)', color: '#bbf7d0' }}
+                                  >
+                                    Confirm all ({pending.length})
+                                  </button>
+                                ) : null
+                              })()}
+                              {isLast && !streaming && msg.clarify && msg.clarify.options.length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {msg.clarify.options.map(opt => (
+                                    <button key={opt} onClick={() => sendMessage(opt)}
+                                      className="text-[12px] text-zinc-200 px-3 py-1.5 rounded-full"
+                                      style={{ background: 'rgba(74,222,128,0.10)', border: '1px solid rgba(74,222,128,0.3)' }}>
+                                      {opt}
+                                    </button>
+                                  ))}
                                 </div>
                               )}
                               {mode && (
