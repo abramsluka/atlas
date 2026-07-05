@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getOpenAI } from '@/lib/openai'
 import { rolledDate } from '@/features/food/date'
+import { PORTION_STYLE_RULES } from '@/features/food/portionStyle'
 import type { FoodEstimate, PhotoRefineQuestion } from '@/features/food/types'
 
 export async function GET(request: NextRequest) {
@@ -76,8 +77,28 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: 'system',
-          content:
-            'You are a food calorie estimator. Look at the photo(s) and return your best estimate for the food shown. Multiple photos may show the same meal from different angles — combine them for a better estimate.\n\nBe honest about confidence — "high" for clearly visible single items with unambiguous portions, "medium" for typical restaurant meals, "low" for ambiguous or partially visible food.\n\nReturn JSON only, no prose. Required fields:\n- item_name (string, max 80 chars)\n- calories (integer)\n- protein_g (number)\n- carbs_g (number)\n- fat_g (number)\n- confidence ("low"|"medium"|"high")\n- notes (string, one sentence on what drove the estimate)\n- refine_question (object or null):\n  - question (string): one follow-up question to sharpen accuracy\n  - reasoning (string): why this matters, e.g. "Portion size could shift this by ±80 kcal"\n  - options (array of 3-5 short, realistic tappable choices for this specific food)\n  - calorie_delta (number): rough kcal range the answer could change\n\nSet refine_question to null only when confidence is already "high" and the portion is completely unambiguous. Otherwise always provide one.',
+          content: `You are a food calorie estimator. Look at the photo(s) and return your best estimate for the food shown. Multiple photos may show the same meal from different angles — combine them for a better estimate.
+
+Be honest about confidence — "high" for clearly visible single items with unambiguous portions, "medium" for typical restaurant meals, "low" for ambiguous or partially visible food.
+
+Return JSON only, no prose. Required fields:
+- item_name (string, max 80 chars)
+- calories (integer)
+- protein_g (number)
+- carbs_g (number)
+- fat_g (number)
+- confidence ("low"|"medium"|"high")
+- notes (string, one sentence on what drove the estimate)
+- refine_question (object or null):
+  - question (string): one follow-up question to sharpen accuracy
+  - reasoning (string): why this matters, e.g. "Portion size could shift this by ±80 kcal"
+  - options (array of 3-5 short, realistic tappable choices for this specific food)
+  - calorie_delta (number): rough kcal range the answer could change
+
+${PORTION_STYLE_RULES}
+- Do NOT include an "Other" option — the app adds one automatically.
+
+Set refine_question to null only when confidence is already "high" and the portion is completely unambiguous. Otherwise always provide one.`,
         },
         {
           role: 'user',

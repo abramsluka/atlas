@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getOpenAI } from '@/lib/openai'
+import { PORTION_STYLE_RULES } from '@/features/food/portionStyle'
 import type { PhotoRefineQuestion, PhotoRefineAnswer } from '@/features/food/types'
 
 const MAX_REFINE = 3
@@ -36,8 +37,10 @@ FINAL:
 {"status":"final","calories":int,"protein_g":number,"carbs_g":number,"fat_g":number,"confidence":"low"|"medium"|"high","notes":string}
 
 Rules:
-- options: 3-5 short, realistic tappable choices. Use intuitive size descriptions, not raw grams. For portions, use everyday comparisons like "palm-sized", "deck of cards", "fist-sized", "small / medium / large / XL", "half a plate", "side dish size". For proteins, use visual or restaurant-style references like "small breast", "medium fillet", "large steak". Never show raw gram weights as options.
+- options: 3-5 short, realistic tappable choices.
+${PORTION_STYLE_RULES}
 - Never include "Other" as an option — the app adds it automatically.
+- If the user typed an exact weight or volume in a free-text answer (grams, oz), respect it — that's the one case units are fine.
 - An answer of "[skipped]" means user doesn't know — use a sensible default.
 - FINAL should reflect all corrections from the answers. Adjust macros meaningfully.
 - Only ask if it would shift the estimate by >50 kcal and there's a genuinely ambiguous detail left.`

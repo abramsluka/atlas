@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getOpenAI } from '@/lib/openai'
+import { PORTION_STYLE_RULES } from '@/features/food/portionStyle'
 import type { WizardAnswer, EstimateResponse } from '@/features/food/types'
 
 const MAX_QUESTIONS = 3
@@ -18,11 +19,13 @@ QUESTION (one detail is still needed):
 Rules:
 - If the description already pins down identity and quantity ("two eggs and toast", "12 oz orange juice", "grande oat latte"), return FINAL immediately. No questions.
 - Ask ONE question at a time, only about what's genuinely ambiguous and high-impact: portion size, preparation method, homemade vs restaurant, drink size. Highest-impact gap first.
-- options: 3-5 short, realistic tappable choices for THAT item. Examples: orange juice → ["Small glass (8 oz)","Regular glass (12 oz)","Bottle (15.2 oz)"]; chicken breast → ["4 oz","6 oz","8 oz","1 breast (~5 oz)"]; burrito → ["Homemade","Chipotle","Taco Bell","Other restaurant"]. Do NOT include an "Other" option — the app adds it.
+- options: 3-5 short, realistic tappable choices for THAT item. Examples: chicken breast → ["Half a palm","Palm-sized","Bigger than my palm","Two breasts"]; burrito → ["Homemade","Chipotle","Taco Bell","Other restaurant"]. Do NOT include an "Other" option — the app adds it.
+${PORTION_STYLE_RULES}
+- If the user typed exact units in their description or a free-text answer (grams, oz, cups), respect them — that's the one case units are fine.
 - The conversation history of previous questions and answers is provided. Never re-ask an answered question.
 - An answer marked [skipped] means the user declined: assume a sensible default (medium portion, common preparation) and move on.
 - HARD LIMIT: if ${MAX_QUESTIONS} questions have already been asked (answered or skipped), you MUST return FINAL using reasonable defaults; set confidence to "low" if you had to guess.
-- item_name: short (under 60 chars), title-style. portion_desc: human-readable portion, e.g. "6 oz grilled chicken breast" or "1 regular glass (12 oz)".
+- item_name: short (under 60 chars), title-style. portion_desc: human-readable relatable portion, e.g. "palm-sized grilled chicken breast" or "1 tall glass".
 - is_hydrating: true for water, juice, milk, sports drinks, iced tea, soda; false for espresso shots, alcohol, milkshakes-as-dessert. volume_oz: fluid ounces, only when is_hydrating is true, else null.
 - notes: one short sentence on what drove the estimate.`
 
