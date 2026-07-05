@@ -88,6 +88,11 @@ export interface WearableToken {
 export interface OuraData {
   sleep?: {
     score: number | null
+    // Days the score / session detail belong to (YYYY-MM-DD). A cache row
+    // written before the morning ring sync carries the previous day's values;
+    // the sync uses these to know the row is a stale snapshot, not today's.
+    score_day?: string | null
+    detail_day?: string | null
     total_sleep_duration: number | null
     average_hrv: number | null
     deep_sleep_duration: number | null

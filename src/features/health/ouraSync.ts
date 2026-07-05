@@ -55,7 +55,12 @@ export async function syncOuraToday(
     const hasFullData =
       (d?.sleep?.average_hrv != null || d?.sleep?.total_sleep_duration != null) &&
       (d?.sleep?.score != null || d?.readiness?.score != null)
-    if (age < 15 * 60 * 1000 && hasFullData) {
+    // A row whose score or session belongs to a previous day was cached before
+    // the morning ring sync (Oura hadn't published today's docs yet). Serving it
+    // for the full TTL is how the app shows yesterday's score while the phone
+    // already shows today's — keep refetching until both of today's docs land.
+    const isTodays = d?.sleep?.score_day === today && d?.sleep?.detail_day === today
+    if (age < 15 * 60 * 1000 && hasFullData && isTodays) {
       return d
     }
   }
@@ -138,6 +143,8 @@ export async function syncOuraToday(
   const ouraData: OuraData = {
     sleep: {
       score: num(sleepScore?.score),
+      score_day: typeof sleepScore?.day === 'string' ? sleepScore.day : null,
+      detail_day: typeof sleepDetail?.day === 'string' ? sleepDetail.day : null,
       total_sleep_duration: num(sleepDetail?.total_sleep_duration),
       average_hrv: num(sleepDetail?.average_hrv),
       deep_sleep_duration: num(sleepDetail?.deep_sleep_duration),

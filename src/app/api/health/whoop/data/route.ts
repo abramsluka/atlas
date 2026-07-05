@@ -110,6 +110,21 @@ export async function GET(req: NextRequest) {
   const sScore = sleepRecord?.score as Record<string, unknown> | null | undefined
   const stageSummary = sScore?.stage_summary as Record<string, unknown> | null | undefined
 
+  // The Whoop app displays time asleep (light + SWS + REM), not time in bed —
+  // in-bed includes awake time and overstates sleep by 30-60+ min a night.
+  const ms = (v: unknown): number | null => (typeof v === 'number' ? v : null)
+  const lightMs = ms(stageSummary?.total_light_sleep_time_milli)
+  const swsMs = ms(stageSummary?.total_slow_wave_sleep_time_milli)
+  const remMs = ms(stageSummary?.total_rem_sleep_time_milli)
+  const inBedMs = ms(stageSummary?.total_in_bed_time_milli)
+  const awakeMs = ms(stageSummary?.total_awake_time_milli)
+  const asleepMs =
+    lightMs != null || swsMs != null || remMs != null
+      ? (lightMs ?? 0) + (swsMs ?? 0) + (remMs ?? 0)
+      : inBedMs != null
+        ? inBedMs - (awakeMs ?? 0)
+        : null
+
   const whoopData: WhoopData = {
     recovery: recoveryRecord
       ? {
@@ -126,9 +141,7 @@ export async function GET(req: NextRequest) {
       : undefined,
     sleep: sleepRecord
       ? {
-          duration_seconds: stageSummary?.total_in_bed_time_milli != null
-            ? Math.round(stageSummary.total_in_bed_time_milli as number / 1000)
-            : null,
+          duration_seconds: asleepMs != null ? Math.round(asleepMs / 1000) : null,
         }
       : undefined,
   }
