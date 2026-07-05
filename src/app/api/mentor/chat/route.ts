@@ -266,6 +266,8 @@ export async function POST(req: NextRequest) {
     jotData,
     healthProfileData,
     supplementLogData,
+    appleHealthData,
+    cardioData,
   ] = await Promise.all([
     db.from('gym_logs').select('logged_at, weight, reps, exercise_id, gym_exercises(name)').eq('user_id', user.id).gte('logged_at', fourWeeksAgo).order('logged_at', { ascending: false }).limit(200),
     getOuraContextRange(db, user.id, fourteenDaysAgo, today),
@@ -277,6 +279,8 @@ export async function POST(req: NextRequest) {
     db.from('jots').select('content, created_at').eq('user_id', user.id).gte('created_at', formatInTimeZone(subDays(new Date(), 14), TZ, "yyyy-MM-dd'T'HH:mm:ssxxx")).order('created_at', { ascending: false }).limit(20),
     db.from('health_profile').select('*').eq('user_id', user.id).maybeSingle(),
     db.from('supplement_logs').select('taken_at, supplements(name)').eq('user_id', user.id).gte('taken_at', formatInTimeZone(subDays(new Date(), 7), TZ, "yyyy-MM-dd'T'HH:mm:ssxxx")).order('taken_at', { ascending: false }).limit(30),
+    db.from('apple_health_logs').select('date, steps, active_calories, vo2_max').eq('user_id', user.id).gte('date', fourteenDaysAgo).order('date', { ascending: false }).limit(14),
+    db.from('apple_workouts').select('date, workout_type, duration_min, distance_mi, active_calories').eq('user_id', user.id).gte('date', fourteenDaysAgo).order('start_time', { ascending: false }).limit(20),
   ])
 
   // Step 4 — system prompt
@@ -391,6 +395,20 @@ When journal data is present: look for mood trends across entries (not just toda
   if (supplementLogData.data?.length) {
     const formatted = formatSupplementLogs(supplementLogData.data as unknown as SupplementLogRow[], TZ)
     if (formatted) dataSections.push(`SUPPLEMENT LOGS (last 7 days):\n${formatted}`)
+  }
+
+  // Apple Health movement (steps / active energy / VO2) — synced from iPhone.
+  const appleRows = (appleHealthData.data ?? []) as Array<{ date: string; steps: number | null; active_calories: number | null; vo2_max: number | null }>
+  if (appleRows.length) {
+    const lines = appleRows.map(r => `${r.date}: ${r.steps != null ? `${r.steps.toLocaleString()} steps` : '—'}${r.active_calories != null ? `, ${r.active_calories} active cal` : ''}${r.vo2_max != null ? `, VO2 ${r.vo2_max}` : ''}`)
+    dataSections.push(`APPLE HEALTH — daily movement (last 14 days):\n${lines.join('\n')}`)
+  }
+
+  // Cardio / conditioning workouts (Apple Health) — NOT in the lifting logs.
+  const cardioRows = (cardioData.data ?? []) as Array<{ date: string | null; workout_type: string | null; duration_min: number | null; distance_mi: number | null; active_calories: number | null }>
+  if (cardioRows.length) {
+    const lines = cardioRows.map(w => `${w.date ?? '?'}: ${w.workout_type ?? 'workout'}${w.duration_min != null ? ` ${Math.round(w.duration_min)}min` : ''}${w.distance_mi != null ? ` ${w.distance_mi.toFixed(1)}mi` : ''}${w.active_calories != null ? ` ${w.active_calories}cal` : ''}`)
+    dataSections.push(`CARDIO / CONDITIONING (Apple Health — separate from lifting):\n${lines.join('\n')}`)
   }
 
   const userContent = dataSections.length > 0

@@ -84,6 +84,8 @@ type GymRow = { logged_at: string; weight: number | null; reps: number | null }
 type MoodRow = { date: string; mood: number }
 type WaterRow = { date: string; amount_oz: number | null }
 type CaffeineRow = { date: string; amount_mg: number | null; logged_at: string | null }
+type AppleRow = { date: string; steps: number | null; active_calories: number | null }
+type CardioRow = { date: string | null }
 
 // ─── main ─────────────────────────────────────────────────────────────────────
 
@@ -95,12 +97,14 @@ export async function computeCorrelations(
   const since = formatInTimeZone(subDays(new Date(), 90), tz, 'yyyy-MM-dd')
   const sinceIso = subDays(new Date(), 90).toISOString()
 
-  const [ouraRes, gymRes, moodRes, waterRes, caffeineRes] = await Promise.all([
+  const [ouraRes, gymRes, moodRes, waterRes, caffeineRes, appleRes, cardioRes] = await Promise.all([
     db.from('wearable_data').select('date, data').eq('user_id', userId).eq('provider', 'oura').gte('date', since).order('date'),
     db.from('gym_logs').select('logged_at, weight, reps').eq('user_id', userId).gte('logged_at', sinceIso),
     db.from('journal_entries').select('date, mood').eq('user_id', userId).not('mood', 'is', null).gte('date', since),
     db.from('water_logs').select('date, amount_oz').eq('user_id', userId).gte('date', since),
     db.from('caffeine_logs').select('date, amount_mg, logged_at').eq('user_id', userId).gte('date', since),
+    db.from('apple_health_logs').select('date, steps, active_calories').eq('user_id', userId).gte('date', since),
+    db.from('apple_workouts').select('date').eq('user_id', userId).gte('date', since),
   ])
 
   const oura = (ouraRes.data ?? []) as OuraRow[]
@@ -108,6 +112,8 @@ export async function computeCorrelations(
   const moods = (moodRes.data ?? []) as MoodRow[]
   const water = (waterRes.data ?? []) as WaterRow[]
   const caffeine = (caffeineRes.data ?? []) as CaffeineRow[]
+  const apple = (appleRes.data ?? []) as AppleRow[]
+  const cardio = (cardioRes.data ?? []) as CardioRow[]
 
   // ── per-date maps ──
   const localDate = (iso: string) => formatInTimeZone(new Date(iso), tz, 'yyyy-MM-dd')
@@ -150,6 +156,16 @@ export async function computeCorrelations(
       if (hour >= 14) lateCaffeineDates.add(c.date)
     }
   }
+
+  // Apple Health (Shortcuts bridge) — steps, active energy, cardio days.
+  const stepsByDate = new Map<string, number>()
+  const activeByDate = new Map<string, number>()
+  for (const a of apple) {
+    if (a.steps != null) stepsByDate.set(a.date, a.steps)
+    if (a.active_calories != null) activeByDate.set(a.date, a.active_calories)
+  }
+  const cardioDates = new Set<string>()
+  for (const c of cardio) if (c.date) cardioDates.add(c.date)
 
   const insights: Insight[] = []
   const sleepDates = Array.from(sleepByDate.keys()).sort()
@@ -399,6 +415,69 @@ export async function computeCorrelations(
     title: 'Sleep last night → mood today', loLabel: 'Poor sleep', hiLabel: 'Good sleep', unit: '/5',
     body: (r, n, lo, hi) => `After good sleep your mood averages ${round1(hi)}/5 vs ${round1(lo)}/5 after poor nights.`,
   })
+
+  // ═══ APPLE HEALTH — MOVEMENT (steps / active energy / cardio) ════════════════
+
+  // Daily steps → next-day HRV
+  pushPearson({
+    id: 'steps_hrv', category: 'lifestyle',
+    pairs: Array.from(stepsByDate.entries()).flatMap(([d, s]) => {
+      const hrv = sleepByDate.get(nextDay(d))?.hrv
+      return hrv != null ? [{ x: s, y: hrv }] : []
+    }),
+    title: 'Daily steps → next-day HRV', loLabel: 'Fewer steps', hiLabel: 'More steps', unit: 'ms',
+    body: (r, n, lo, hi) => `On your higher-step days, next-day HRV averages ${round1(hi)}ms vs ${round1(lo)}ms on quieter days.`,
+  })
+
+  // Daily steps → that night's sleep score
+  pushPearson({
+    id: 'steps_sleep', category: 'lifestyle',
+    pairs: Array.from(stepsByDate.entries()).flatMap(([d, s]) => {
+      const sc = sleepByDate.get(d)?.score
+      return sc != null ? [{ x: s, y: sc }] : []
+    }),
+    title: 'Steps → sleep quality', loLabel: 'Fewer steps', hiLabel: 'More steps',
+    body: (r, n, lo, hi) => `More movement tracks with a sleep score of ${Math.round(hi)} vs ${Math.round(lo)} on low-step days.`,
+  })
+
+  // Active energy → next-day readiness
+  pushPearson({
+    id: 'active_readiness', category: 'lifestyle',
+    pairs: Array.from(activeByDate.entries()).flatMap(([d, a]) => {
+      const r = sleepByDate.get(nextDay(d))?.readiness
+      return a > 0 && r != null ? [{ x: a, y: r }] : []
+    }),
+    title: 'Active calories → next-day readiness', loLabel: 'Lighter day', hiLabel: 'Bigger burn',
+    body: (r, n, lo, hi) => `After higher-burn days, next-day readiness averages ${Math.round(hi)} vs ${Math.round(lo)}.`,
+  })
+
+  // Daily steps → mood that day
+  pushPearson({
+    id: 'steps_mood', category: 'mood',
+    pairs: Array.from(stepsByDate.entries()).flatMap(([d, s]) => {
+      const m = moodByDate.get(d)
+      return m != null ? [{ x: s, y: m }] : []
+    }),
+    title: 'Steps → mood', loLabel: 'Fewer steps', hiLabel: 'More steps', unit: '/5',
+    body: (r, n, lo, hi) => `On days you move more, mood averages ${round1(hi)}/5 vs ${round1(lo)}/5.`,
+  })
+
+  // Cardio day vs rest → next-day HRV
+  {
+    const cardioHrv: number[] = [], noCardioHrv: number[] = []
+    for (const d of sleepDates) {
+      const nextHrv = sleepByDate.get(nextDay(d))?.hrv
+      if (nextHrv == null) continue
+      if (cardioDates.has(d)) cardioHrv.push(nextHrv)
+      else noCardioHrv.push(nextHrv)
+    }
+    pushBinned({
+      id: 'cardio_hrv', category: 'training', a: noCardioHrv, b: cardioHrv,
+      title: 'Cardio & next-day HRV', aLabel: 'No cardio', bLabel: 'Cardio day', unit: 'ms',
+      positiveWhenBHigher: true,
+      body: (noAvg, cardioAvg, n) => `After cardio days your HRV averages ${round1(cardioAvg)}ms vs ${round1(noAvg)}ms after non-cardio days.`,
+    })
+  }
 
   // Strongest first within each category
   const order: InsightMagnitude[] = ['strong', 'moderate', 'weak']
