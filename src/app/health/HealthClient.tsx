@@ -13,7 +13,6 @@ import {
   useWaterHistory,
   useOuraData,
   useWhoopData,
-  useAppleSteps,
 } from '@/features/health/queries'
 import {
   useCreateSupplement,
@@ -128,8 +127,6 @@ function WearablesSection({
 }) {
   const { data: oura, isPending: ouraPending, refetch: refetchOura } = useOuraData(today, hasOura, initialOura)
   const { data: whoop, isPending: whoopPending, error: whoopError, refetch: refetchWhoop } = useWhoopData(today, hasWhoop, initialWhoop)
-  const { data: appleStatus } = useAppleSteps(today)
-  const todaySteps = appleStatus?.todaySteps ?? null
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
@@ -200,7 +197,7 @@ function WearablesSection({
                 <div>
                   <p className="text-[10px] uppercase tracking-wide text-zinc-500">Steps</p>
                   <p className="text-sm font-semibold text-white">
-                    {todaySteps != null ? todaySteps.toLocaleString() : '--'}
+                    {oura.activity?.steps != null ? oura.activity.steps.toLocaleString() : '--'}
                   </p>
                 </div>
               </div>
