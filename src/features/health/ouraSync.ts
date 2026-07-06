@@ -101,45 +101,33 @@ export async function syncOuraToday(
     activityRes.ok ? activityRes.json() : null,
   ])
 
-  const pickLatest = (arr?: Array<Record<string, unknown>>) => {
-    if (!arr?.length) return undefined
-    return [...arr].sort((a, b) =>
-      String(b.day ?? b.bedtime_end ?? '').localeCompare(String(a.day ?? a.bedtime_end ?? ''))
-    )[0]
-  }
+  // EVERY document must match TODAY exactly. Oura publishes each doc type on
+  // its own lag (scores land before sleep-period detail; daily_activity often
+  // lags into the next day). Any "latest available" fallback ends up serving
+  // YESTERDAY's numbers mislabeled as today — the off-by-one steps/sleep bug.
+  // Not published yet → nulls → UI shows '--' until Oura's cloud catches up.
+  const byToday = (arr?: Array<Record<string, unknown>>) =>
+    (arr ?? []).find(r => r.day === today)
 
-  const sleepScore = pickLatest(sleepScoreJson?.data)
-  const readiness = pickLatest(readinessJson?.data)
-  // Activity MUST match today's document exactly. Oura publishes daily_activity
-  // on a lag — when today's doc doesn't exist yet, pickLatest would grab
-  // YESTERDAY's record and we'd store/show it mislabeled as today (off-by-one
-  // steps bug). No doc for today → nulls → UI shows '--' until Oura publishes.
-  const activityRecords: Array<Record<string, unknown>> = activityJson?.data ?? []
-  const activity = activityRecords.find(r => r.day === today)
+  const sleepScore = byToday(sleepScoreJson?.data)
+  const readiness = byToday(readinessJson?.data)
+  const activity = byToday(activityJson?.data)
 
-  const scoreDay = sleepScore?.day as string | undefined
-  const sleepDetailRecords: Array<Record<string, unknown>> = sleepDetailJson?.data ?? []
-
-  // The main nightly sleep is always type 'long_sleep'. The short 'sleep' sessions
-  // are naps or aborted recordings — some only a few minutes long and ending in the
-  // evening — and must never be chosen: picking one wrecks the derived wake hour
-  // (which then zeroes the whole energy curve) and the HRV/duration. Oura also
-  // publishes the daily_sleep score before the matching sleep *period* detail
-  // syncs, so the newest long_sleep can lag the score by a day.
+  // The main nightly sleep is always type 'long_sleep'; short 'sleep' sessions
+  // are naps or aborted recordings and must never be chosen (they wreck the
+  // derived wake hour and HRV/duration). Only consider TODAY's records — if
+  // last night's period doc hasn't synced yet, show nothing rather than the
+  // previous night's sleep mislabeled as last night.
   const durSec = (r: Record<string, unknown>): number =>
     typeof r.total_sleep_duration === 'number' ? r.total_sleep_duration : 0
-  const longSleeps = sleepDetailRecords
-    .filter(r => r.type === 'long_sleep')
-    .sort((a, b) => String(b.bedtime_end ?? '').localeCompare(String(a.bedtime_end ?? '')))
+  const todaysSleeps = ((sleepDetailJson?.data ?? []) as Array<Record<string, unknown>>)
+    .filter(r => r.day === today)
 
   const sleepDetail =
-    // 1. the long_sleep for the score's day
-    longSleeps.find(r => r.day === scoreDay)
-    // 2. otherwise the most recent long_sleep we have (detail often lags the score)
-    ?? longSleeps[0]
-    // 3. only if no long_sleep exists at all, the longest session by actual sleep
-    //    duration — never the latest, which would favour an evening nap
-    ?? [...sleepDetailRecords].sort((a, b) => durSec(b) - durSec(a))[0]
+    todaysSleeps.find(r => r.type === 'long_sleep')
+    // no long_sleep for today → the longest of today's sessions (never a
+    // different day's record, and by duration so an evening nap can't win)
+    ?? [...todaysSleeps].sort((a, b) => durSec(b) - durSec(a))[0]
 
   const num = (v: unknown): number | null => (typeof v === 'number' ? v : null)
   const readinessContrib =
