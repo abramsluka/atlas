@@ -110,7 +110,12 @@ export async function syncOuraToday(
 
   const sleepScore = pickLatest(sleepScoreJson?.data)
   const readiness = pickLatest(readinessJson?.data)
-  const activity = pickLatest(activityJson?.data)
+  // Activity MUST match today's document exactly. Oura publishes daily_activity
+  // on a lag — when today's doc doesn't exist yet, pickLatest would grab
+  // YESTERDAY's record and we'd store/show it mislabeled as today (off-by-one
+  // steps bug). No doc for today → nulls → UI shows '--' until Oura publishes.
+  const activityRecords: Array<Record<string, unknown>> = activityJson?.data ?? []
+  const activity = activityRecords.find(r => r.day === today)
 
   const scoreDay = sleepScore?.day as string | undefined
   const sleepDetailRecords: Array<Record<string, unknown>> = sleepDetailJson?.data ?? []
