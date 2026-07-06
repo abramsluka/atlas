@@ -2036,6 +2036,8 @@ function CalorieTargetSheet({
   const [bulkPace, setBulkPace] = useState<'slow' | 'moderate'>('slow')
   const [result, setResult] = useState<{ daily_calories: number; protein_g: number; carbs_g: number; reasoning: string } | null>(null)
   const [saved, setSaved] = useState(false)
+  const [editingMacros, setEditingMacros] = useState(false)
+  const [editedMacros, setEditedMacros] = useState<{ cal: string; protein: string; carbs: string } | null>(null)
 
   const updateProfile = useUpdateHealthProfile()
   const calcTarget = useCalculateCalorieTarget()
@@ -2061,6 +2063,35 @@ function CalorieTargetSheet({
     await updateProfile.mutateAsync(updates as Parameters<typeof updateProfile.mutateAsync>[0])
     const res = await calcTarget.mutateAsync()
     setResult(res)
+    setEditingMacros(false)
+    setEditedMacros(null)
+  }
+
+  function startEditMacros() {
+    if (!result) return
+    setEditedMacros(prev => prev ?? {
+      cal: String(result.daily_calories),
+      protein: String(result.protein_g),
+      carbs: String(result.carbs_g),
+    })
+    setEditingMacros(true)
+  }
+
+  const macrosValid = !editedMacros || (['cal', 'protein', 'carbs'] as const).every(k => {
+    const n = Number(editedMacros[k])
+    return editedMacros[k].trim() !== '' && Number.isFinite(n) && n >= 0
+  })
+
+  async function handleSaveTarget() {
+    if (editedMacros && macrosValid) {
+      await updateProfile.mutateAsync({
+        daily_calorie_target: Math.round(Number(editedMacros.cal)),
+        daily_protein_target_g: Math.round(Number(editedMacros.protein)),
+        daily_carbs_target_g: Math.round(Number(editedMacros.carbs)),
+      } as Parameters<typeof updateProfile.mutateAsync>[0])
+    }
+    setSaved(true)
+    onSave()
   }
 
   const cutPaceHint: Record<CutPace, string> = {
@@ -2181,11 +2212,56 @@ function CalorieTargetSheet({
         )}
 
         {result && (
-          <div className="cosmic-card p-4 space-y-2">
-            <p className="text-sm font-bold text-white">
-              {result.daily_calories.toLocaleString()} cal · {result.protein_g}g P · {result.carbs_g}g C
-            </p>
+          <div className="cosmic-card p-4 space-y-3">
+            {!editingMacros ? (
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-sm font-bold text-white">
+                  {(editedMacros ? Math.round(Number(editedMacros.cal)) : result.daily_calories).toLocaleString()} cal · {editedMacros ? Math.round(Number(editedMacros.protein)) : result.protein_g}g P · {editedMacros ? Math.round(Number(editedMacros.carbs)) : result.carbs_g}g C
+                </p>
+                <button
+                  onClick={startEditMacros}
+                  className="shrink-0 text-[11px] font-semibold text-zinc-500 underline underline-offset-2 hover:text-zinc-300"
+                >
+                  Edit macros
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Edit macros</p>
+                  <button
+                    onClick={() => setEditingMacros(false)}
+                    disabled={!macrosValid}
+                    className="text-[11px] font-semibold text-zinc-400 hover:text-white disabled:opacity-40"
+                  >
+                    Done
+                  </button>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    { key: 'cal', label: 'Calories' },
+                    { key: 'protein', label: 'Protein (g)' },
+                    { key: 'carbs', label: 'Carbs (g)' },
+                  ] as const).map(({ key, label }) => (
+                    <div key={key}>
+                      <label className="mb-1 block text-[9px] font-semibold uppercase tracking-wide text-zinc-600">{label}</label>
+                      <input
+                        type="number" inputMode="numeric" min="0"
+                        className="w-full rounded-[8px] border border-white/[0.12] bg-black/25 px-2 py-2 text-sm text-white tabular-nums outline-none focus:border-white/40"
+                        value={editedMacros?.[key] ?? ''}
+                        onChange={e => setEditedMacros(prev => ({ ...(prev ?? { cal: '', protein: '', carbs: '' }), [key]: e.target.value }))}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <p className="text-xs text-zinc-400 leading-relaxed">{result.reasoning}</p>
+            {editedMacros && !editingMacros && (
+              <p className="text-[10px] text-zinc-600">
+                Manually adjusted from {result.daily_calories.toLocaleString()} cal · {result.protein_g}g P · {result.carbs_g}g C
+              </p>
+            )}
           </div>
         )}
 
@@ -2204,12 +2280,12 @@ function CalorieTargetSheet({
             </button>
           ) : (
             <button
-              onClick={() => { setSaved(true); onSave() }}
-              disabled={saved}
+              onClick={handleSaveTarget}
+              disabled={saved || !macrosValid || updateProfile.isPending}
               className="flex-1 rounded-xl py-3 text-sm font-bold text-[#0a0a0b] disabled:opacity-40"
               style={{ background: 'linear-gradient(180deg, #fff 0%, #e8e5dd 100%)' }}
             >
-              Save target
+              {updateProfile.isPending ? 'Saving…' : 'Save target'}
             </button>
           )}
         </div>
