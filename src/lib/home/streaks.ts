@@ -52,7 +52,7 @@ export async function computeStreaks(db: DB, userId: string, tz: string): Promis
   const dateCutoff = daysAgoLocal(LOOKBACK_DAYS, tz)                       // YYYY-MM-DD for date-column tables
   const tsCutoff = new Date(Date.now() - (LOOKBACK_DAYS + 1) * 86400000).toISOString()
 
-  const [gymR, journalR, foodR, suppR, waterR, profileR] = await Promise.allSettled([
+  const [gymR, journalR, foodR, suppR, waterR, profileR, checkinR] = await Promise.allSettled([
     // gym_logs only has logged_at (timestamptz) → convert to local day below
     db.from('gym_logs').select('logged_at').eq('user_id', userId).gte('logged_at', tsCutoff),
     db.from('journal_entries').select('date').eq('user_id', userId).gte('date', dateCutoff),
@@ -60,13 +60,23 @@ export async function computeStreaks(db: DB, userId: string, tz: string): Promis
     db.from('supplement_logs').select('date').eq('user_id', userId).gte('date', dateCutoff),
     db.from('water_logs').select('date, amount_oz').eq('user_id', userId).gte('date', dateCutoff),
     db.from('health_profile').select('daily_water_target_oz').eq('user_id', userId).maybeSingle(),
+    // daily_checkins — the "Did you train today?" answer (date is already local)
+    db.from('daily_checkins').select('date, evening_actual_training').eq('user_id', userId).gte('date', dateCutoff),
   ])
 
-  // Training — any set logged that day counts.
+  // Training — a day counts if a set was logged OR the "Did you train today?"
+  // check-in was answered that day. Both Yes and No count: answering "No" is a
+  // rest day, showing up to the check-in is the point. Only a fully skipped
+  // check-in with no logged set fails to count. Same day via both → still one.
   const gymDates = new Set<string>()
   if (gymR.status === 'fulfilled') {
     for (const row of (gymR.value.data ?? []) as Array<{ logged_at: string }>) {
       gymDates.add(formatInTimeZone(new Date(row.logged_at), tz, 'yyyy-MM-dd'))
+    }
+  }
+  if (checkinR.status === 'fulfilled') {
+    for (const row of (checkinR.value.data ?? []) as Array<{ date: string | null; evening_actual_training: boolean | null }>) {
+      if (row.date && row.evening_actual_training !== null) gymDates.add(row.date)
     }
   }
 
