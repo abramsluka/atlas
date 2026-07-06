@@ -14,6 +14,7 @@ import {
   useOuraData,
   useWhoopData,
 } from '@/features/health/queries'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   useCreateSupplement,
   useUpdateSupplement,
@@ -127,6 +128,7 @@ function WearablesSection({
 }) {
   const { data: oura, isPending: ouraPending, refetch: refetchOura } = useOuraData(today, hasOura, initialOura)
   const { data: whoop, isPending: whoopPending, error: whoopError, refetch: refetchWhoop } = useWhoopData(today, hasWhoop, initialWhoop)
+  const qc = useQueryClient()
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
@@ -147,12 +149,18 @@ function WearablesSection({
   const handleRefresh = useCallback(async () => {
     setRefreshing(true)
     await Promise.allSettled([
-      hasOura ? refetchOura() : Promise.resolve(),
+      // Force a fresh Oura pull (bypass the 15-min cache) so the button actually
+      // re-fetches Oura's latest cloud value rather than serving cached data.
+      hasOura
+        ? fetch('/api/health/oura/data?force=1')
+            .then(r => (r.ok ? r.json() : null))
+            .then(d => qc.setQueryData(['health', 'oura', today], d))
+        : Promise.resolve(),
       hasWhoop ? refetchWhoop() : Promise.resolve(),
     ])
     setLastUpdated(new Date())
     setRefreshing(false)
-  }, [hasOura, hasWhoop, refetchOura, refetchWhoop])
+  }, [hasOura, hasWhoop, refetchWhoop, qc, today])
 
   return (
     <section>

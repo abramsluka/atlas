@@ -37,8 +37,10 @@ export async function syncOuraToday(
   db: DbClient,
   userId: string,
   today: string,
+  force = false,
 ): Promise<OuraData | null> {
-  // Check cache freshness
+  // Check cache freshness (skipped on a forced refresh — e.g. the manual
+  // refresh button, so it always re-pulls Oura's latest cloud value).
   const { data: cached } = await db
     .from('wearable_data')
     .select('data, fetched_at')
@@ -47,7 +49,7 @@ export async function syncOuraToday(
     .eq('date', today)
     .maybeSingle()
 
-  if (cached) {
+  if (!force && cached) {
     const age = Date.now() - new Date(cached.fetched_at).getTime()
     const d = cached.data as OuraData
     // Only use cache if it has sleep detail data (HRV or duration); if those are

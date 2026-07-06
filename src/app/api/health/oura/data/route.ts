@@ -12,7 +12,8 @@ export async function GET(req: NextRequest) {
   const db = createServiceClient()
   const tz = await getUserTimezone(user.id)
   const today = toLocalDate(tz)
+  const force = new URL(req.url).searchParams.get('force') === '1'
 
-  const data = await syncOuraToday(db, user.id, today)
+  const data = await syncOuraToday(db, user.id, today, force)
   return NextResponse.json(data)
 }
