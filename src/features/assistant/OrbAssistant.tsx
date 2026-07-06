@@ -154,6 +154,21 @@ export default function OrbAssistant() {
     rec.stop()
   }
 
+  // Tapping the FAB opens the sheet already recording (voice-first).
+  const openSheet = () => {
+    setOpen(true)
+    startMic()
+  }
+  // Closing while recording cancels it — mic off, nothing transcribed or sent.
+  const closeSheet = () => {
+    if (rec.recording) {
+      micIntent.current = null
+      rec.stop()
+      rec.reset()
+    }
+    setOpen(false)
+  }
+
   // ── Confirm / dismiss ──
   const runAction = async (msgId: string, pa: ProposedAction) => {
     setBusyActionId(pa.id)
@@ -199,7 +214,7 @@ export default function OrbAssistant() {
             exit={{ scale: 0, opacity: 0 }}
             whileTap={{ scale: 0.9 }}
             transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-            onClick={() => setOpen(true)}
+            onClick={openSheet}
             className="fixed right-4 z-50 flex items-center justify-center"
             style={{
               bottom: 'calc(env(safe-area-inset-bottom) + 72px)',
@@ -233,7 +248,7 @@ export default function OrbAssistant() {
               key="atlas-orb-backdrop"
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
-              onClick={() => setOpen(false)}
+              onClick={closeSheet}
               className="fixed inset-0 z-[60]"
               style={{ background: 'rgba(0,0,0,0.45)' }}
             />
@@ -270,7 +285,7 @@ export default function OrbAssistant() {
                       Clear
                     </button>
                   )}
-                  <button onClick={() => setOpen(false)} className="p-1 -mr-1 text-zinc-500 hover:text-zinc-300" aria-label="Close">
+                  <button onClick={closeSheet} className="p-1 -mr-1 text-zinc-500 hover:text-zinc-300" aria-label="Close">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
                   </button>
                 </div>
