@@ -84,28 +84,27 @@ export async function GET() {
   }))
   const scores = dailySleep.map(r => ({ day: r.day, score: r.score }))
 
-  // What the CURRENT matcher in ouraSync would pick
-  const pickLatest = (arr: Rec[]) =>
-    arr.length ? [...arr].sort((a, b) => String(b.day ?? b.bedtime_end ?? '').localeCompare(String(a.day ?? a.bedtime_end ?? '')))[0] : undefined
-  const scoreDay = (pickLatest(dailySleep)?.day as string | undefined)
-  const currentPick = scoreDay
-    ? (sleepDetail.filter(r => r.day === scoreDay && r.type === 'long_sleep')
-        .sort((a, b) => String(b.bedtime_end ?? '').localeCompare(String(a.bedtime_end ?? '')))[0]
-      ?? sleepDetail.filter(r => r.day === scoreDay && r.type !== 'nap')
-        .sort((a, b) => String(b.bedtime_end ?? '').localeCompare(String(a.bedtime_end ?? '')))[0]
-      ?? sleepDetail.filter(r => r.day === scoreDay)
-        .sort((a, b) => String(b.bedtime_end ?? '').localeCompare(String(a.bedtime_end ?? '')))[0]
-      ?? pickLatest(sleepDetail))
-    : pickLatest(sleepDetail)
+  // What the CURRENT matcher in ouraSync would pick: everything is gated to
+  // day === today. Not published yet → null → the card shows '--'.
+  const durSec = (r: Rec): number => (typeof r.total_sleep_duration === 'number' ? r.total_sleep_duration : 0)
+  const todaysSleeps = sleepDetail.filter(r => r.day === today)
+  const currentPick =
+    todaysSleeps.find(r => r.type === 'long_sleep')
+    ?? [...todaysSleeps].sort((a, b) => durSec(b) - durSec(a))[0]
+    ?? null
+  const todayScore = dailySleep.find(r => r.day === today) ?? null
 
   const summary = {
     today,
-    scoreDay,
+    todays_sleep_score: todayScore ? todayScore.score : null,
     score_days: scores,
     sessions,
     current_matcher_picks: currentPick
       ? { day: currentPick.day, type: currentPick.type, bedtime_end: currentPick.bedtime_end }
       : null,
+    diagnosis: currentPick
+      ? 'Today has a sleep-detail record — the card shows it.'
+      : `No sleep-detail record for ${today} in Oura's cloud yet (scores publish before session detail). Slept shows '--' until it lands — open the Oura app to push the ring's data up, then refresh.`,
   }
 
   console.log('[oura/debug]', JSON.stringify(summary, null, 2))
