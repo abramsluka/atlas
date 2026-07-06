@@ -1,10 +1,12 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback, useId } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import ChatText from '@/components/ChatText'
 import InsightsTab from './InsightsTab'
-import { useQueryClient, useQuery } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   useJots,
   useMentorContext,
@@ -13,7 +15,6 @@ import {
   useLatestSynthesis,
 } from '@/features/mentor/queries'
 import { useCreateJot, useGenerateWeeklyReport, useRunSynthesis } from '@/features/mentor/mutations'
-import { usePersistentChat } from '@/lib/usePersistentChat'
 import type { ChatMessage } from '@/features/mentor/types'
 import type { AssistantStreamEvent, ProposedAction } from '@/features/assistant/actions'
 import { useAssistantActions } from '@/features/assistant/useAssistantActions'
@@ -636,49 +637,39 @@ export default function MentorClient() {
   const rm = useReducedMotion()
   const queryClient = useQueryClient()
 
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const urlConvId = searchParams.get('c')
+
   const [tab, setTab] = useState<'chat' | 'insights' | 'reports'>('chat')
-  const [messages, setMessages] = usePersistentChat<ChatMessage>('atlas-mentor-chat-thread-v1')
 
-  // ── Saved conversations (DB-backed history) ──
+  // ── Thread state (DB-backed; URL ?c=<id> is the source of truth) ──
+  // Bare /mentor = a fresh chat. /mentor?c=<id> resumes that conversation.
+  // History lives on its own page (/mentor/recents). No localStorage thread.
+  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
-  const [historyOpen, setHistoryOpen] = useState(false)
+  const loadedRef = useRef<string | null>(null)  // which conversation's messages are currently shown
+
   useEffect(() => {
-    try { const v = localStorage.getItem('atlas-mentor-conversation-id'); if (v) setConversationId(v) } catch {}
-  }, [])
-  useEffect(() => {
-    try {
-      if (conversationId) localStorage.setItem('atlas-mentor-conversation-id', conversationId)
-      else localStorage.removeItem('atlas-mentor-conversation-id')
-    } catch {}
-  }, [conversationId])
-
-  const { data: conversationsData } = useQuery({
-    queryKey: ['mentor-conversations'],
-    enabled: historyOpen,
-    queryFn: async (): Promise<Array<{ id: string; title: string | null; updated_at: string }>> => {
-      const res = await fetch('/api/mentor/conversations')
-      if (!res.ok) throw new Error('failed')
-      const json = await res.json()
-      return json.conversations ?? []
-    },
-  })
-
-  const loadConversation = useCallback(async (id: string) => {
-    try {
-      const res = await fetch(`/api/mentor/conversations/${id}`)
-      if (!res.ok) return
-      const json = await res.json() as { messages: Array<{ id: string; role: 'user' | 'assistant'; content: string }> }
-      setMessages(json.messages.map(r => ({ id: r.id, role: r.role, content: r.content })))
-      setConversationId(id)
-      setHistoryOpen(false)
-    } catch {}
-  }, [setMessages])
-
-  const startNewChat = useCallback(() => {
-    setMessages([])
-    setConversationId(null)
-    setHistoryOpen(false)
-  }, [setMessages])
+    if (urlConvId) {
+      if (loadedRef.current === urlConvId) return  // already showing it (e.g. just created mid-send)
+      loadedRef.current = urlConvId
+      setConversationId(urlConvId)
+      ;(async () => {
+        try {
+          const res = await fetch(`/api/mentor/conversations/${urlConvId}`)
+          if (!res.ok) { router.replace('/mentor'); return }  // stale/deleted → fresh chat
+          const json = await res.json() as { messages: Array<{ id: string; role: 'user' | 'assistant'; content: string }> }
+          setMessages((json.messages ?? []).map(r => ({ id: r.id, role: r.role, content: r.content })))
+        } catch {}
+      })()
+    } else {
+      // bare /mentor → fresh chat
+      loadedRef.current = null
+      setConversationId(null)
+      setMessages([])
+    }
+  }, [urlConvId, router])
 
   // ── Assistant action execution (same executor the Orb uses) ──
   const { executeAction, units: actionUnits } = useAssistantActions()
@@ -781,6 +772,12 @@ export default function MentorClient() {
           try { ev = JSON.parse(line) } catch { continue }
           if (ev.t === 'meta') {
             setConversationId(ev.conversation_id)
+            // New chat just got an id → reflect it in the URL so a refresh
+            // resumes it, without re-triggering the load effect.
+            if (!urlConvId) {
+              loadedRef.current = ev.conversation_id
+              router.replace(`/mentor?c=${ev.conversation_id}`)
+            }
           } else if (ev.t === 'text') {
             patchMsg(assistantId, m => ({ ...m, content: m.content + ev.v }))
           } else if (ev.t === 'action') {
@@ -796,7 +793,7 @@ export default function MentorClient() {
     } finally {
       setStreaming(false)
     }
-  }, [streaming, messages, conversationId, patchMsg])
+  }, [streaming, messages, conversationId, patchMsg, urlConvId, router])
 
   const handlePromptClick = useCallback((prompt: string) => {
     setInput(prompt)
@@ -961,78 +958,19 @@ export default function MentorClient() {
               {t}
             </button>
           ))}
-          <button
-            onClick={() => setHistoryOpen(true)}
-            className="pb-2 ml-auto text-xs font-bold tracking-widest uppercase text-zinc-600 hover:text-zinc-400 transition-colors"
-            aria-label="Chat history"
-          >
-            history
-          </button>
-        </div>
-
-        {/* Chat history drawer */}
-        <AnimatePresence>
-          {historyOpen && (
-            <>
-              <motion.div
-                key="mentor-history-backdrop"
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                onClick={() => setHistoryOpen(false)}
-                className="fixed inset-0 z-[60]"
-                style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
-              />
-              <motion.div
-                key="mentor-history-panel"
-                initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
-                transition={{ type: 'spring', stiffness: 360, damping: 36 }}
-                className="fixed left-0 right-0 bottom-0 z-[70] flex flex-col"
-                style={{
-                  maxHeight: '70vh',
-                  background: 'linear-gradient(180deg, rgba(10,12,16,0.98), rgba(6,7,10,0.99))',
-                  borderTop: '1px solid rgba(74,222,128,0.18)',
-                  borderRadius: '20px 20px 0 0',
-                  boxShadow: '0 -12px 40px rgba(0,0,0,0.5)',
-                }}
-              >
-                <div className="flex items-center justify-between px-4 pt-4 pb-3 shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                  <span className="text-[11px] font-extrabold tracking-[0.2em] uppercase text-zinc-200">Chat history</span>
-                  <button onClick={() => setHistoryOpen(false)} className="p-1 text-zinc-500 hover:text-zinc-300" aria-label="Close">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
-                  </button>
-                </div>
-                <div className="overflow-y-auto px-4 py-3 space-y-2" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}>
-                  <button
-                    onClick={startNewChat}
-                    className="w-full text-left text-[13px] font-bold px-3.5 py-3 rounded-2xl"
-                    style={{ background: 'rgba(74,222,128,0.10)', border: '1px solid rgba(74,222,128,0.3)', color: '#bbf7d0' }}
-                  >
-                    + New chat
-                  </button>
-                  {(conversationsData ?? []).map(c => (
-                    <button
-                      key={c.id}
-                      onClick={() => loadConversation(c.id)}
-                      className="w-full text-left px-3.5 py-3 rounded-2xl"
-                      style={{
-                        background: c.id === conversationId ? 'rgba(74,222,128,0.07)' : 'rgba(255,255,255,0.04)',
-                        border: c.id === conversationId ? '1px solid rgba(74,222,128,0.25)' : '1px solid rgba(255,255,255,0.07)',
-                      }}
-                    >
-                      <span className="block text-[13px] text-zinc-200 truncate">{c.title || 'Untitled chat'}</span>
-                      <span className="block text-[10.5px] text-zinc-600 mt-0.5">
-                        {new Date(c.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      </span>
-                    </button>
-                  ))}
-                  {conversationsData && conversationsData.length === 0 && (
-                    <p className="text-[12px] text-zinc-600 px-1 py-2">No saved chats yet — send a message and it starts saving.</p>
-                  )}
-                </div>
-              </motion.div>
-            </>
+          {tab === 'chat' && (
+            <div className="ml-auto flex items-center gap-3">
+              {conversationId && (
+                <Link href="/mentor" className="pb-2 text-xs font-bold tracking-widest uppercase text-zinc-600 hover:text-zinc-400 transition-colors" aria-label="New chat">
+                  new
+                </Link>
+              )}
+              <Link href="/mentor/recents" className="pb-2 text-xs font-bold tracking-widest uppercase text-zinc-600 hover:text-zinc-400 transition-colors" aria-label="Chat history">
+                history
+              </Link>
+            </div>
           )}
-        </AnimatePresence>
+        </div>
 
         {tab === 'reports' && <ReportsTab />}
 
