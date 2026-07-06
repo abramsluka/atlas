@@ -15,8 +15,11 @@ export default function AtlasHUD() {
 
   return (
     // grab/grabbing cursor signals the drag-to-orbit affordance; HUD panels set
-    // their own cursor so the hand only shows over draggable space
+    // their own cursor so the hand only shows over draggable space.
+    // data-ptr-block: pull-to-refresh must never engage inside the HUD — its
+    // wrapper transform collapses this fixed canvas to a black screen.
     <div
+      data-ptr-block=""
       style={{ position: 'fixed', inset: 0, background: '#000', cursor: 'grab' }}
       onPointerDown={(e) => { e.currentTarget.style.cursor = 'grabbing' }}
       onPointerUp={(e) => { e.currentTarget.style.cursor = 'grab' }}

@@ -58,8 +58,20 @@ export default function PullToRefresh({ children }: { children: React.ReactNode 
     const onStart = (e: TouchEvent) => {
       if (refreshingRef.current || window.scrollY > 0 || e.touches.length !== 1) return
       const target = e.target as HTMLElement
-      if (target.closest?.('.overflow-y-auto, input, textarea, [contenteditable="true"]')) return
-      if (drag.current.settleTimer) { clearTimeout(drag.current.settleTimer); drag.current.settleTimer = 0 }
+      // canvas / [data-ptr-block]: the WebGL HUD owns its touch gestures
+      // (drag-to-orbit) — pulling here would transform the wrapper and collapse
+      // its position:fixed canvas into a black screen (containing block)
+      if (target.closest?.('.overflow-y-auto, input, textarea, [contenteditable="true"], canvas, [data-ptr-block]')) return
+      if (drag.current.settleTimer) {
+        // finish the cancelled settle NOW — abandoning it mid-snap-back would
+        // leave translateY(0px) + will-change applied, keeping this wrapper a
+        // containing block for fixed descendants forever
+        clearTimeout(drag.current.settleTimer)
+        drag.current.settleTimer = 0
+        content.style.transition = 'none'
+        content.style.transform = 'none'
+        content.style.willChange = 'auto'
+      }
       drag.current.startY = e.touches[0].clientY
       drag.current.pulling = true
       drag.current.pull = 0
