@@ -69,7 +69,7 @@ create policy "Users access own syntheses" on jot_syntheses
 --                    DROP TABLE IF EXISTS habit_logs; DROP TABLE IF EXISTS goals;
 */
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { subDays, subWeeks } from 'date-fns'
@@ -479,7 +479,7 @@ When journal data is present: look for mood trends across entries (not just toda
       // Persist the exchange (text + a plain-text record of proposals)
       if (conversationId) {
         const convoId = conversationId
-        Promise.resolve().then(async () => {
+        after(async () => {
           try {
             const assistantContent = fullText + (proposedLines.length ? `\n${proposedLines.join('\n')}` : '')
             await db.from('mentor_messages').insert([
@@ -499,7 +499,7 @@ When journal data is present: look for mood trends across entries (not just toda
       // Step 7 — background processing (no await before returning)
       if (fullText.length > 150) {
         // Operation A — memory summary
-        Promise.resolve().then(async () => {
+        after(async () => {
           try {
             const summaryRes = await anthropic.messages.create({
               model: 'claude-haiku-4-5-20251001',
@@ -523,7 +523,7 @@ When journal data is present: look for mood trends across entries (not just toda
         })
 
         // Operation B — update living profile
-        Promise.resolve().then(async () => {
+        after(async () => {
           try {
             const currentProfile = mentorCtx?.about_me || 'No profile yet — this is the first session.'
             const profileRes = await anthropic.messages.create({
