@@ -228,7 +228,7 @@ export default function OrbAssistant() {
           >
             {/* The Orb — PWA globe mark, subtle glow (static, no pulse) */}
             <svg
-              width="26" height="26" viewBox="0 0 24 24" fill="none"
+              width="31" height="31" viewBox="0 0 24 24" fill="none"
               stroke="#4ade80" strokeWidth="1.5" strokeLinecap="round"
               style={{ filter: 'drop-shadow(0 0 3px rgba(74,222,128,0.5))' }}
             >
