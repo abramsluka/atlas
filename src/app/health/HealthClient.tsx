@@ -191,7 +191,7 @@ function WearablesSection({
                   {oura.readiness?.score ?? '--'}
                 </p>
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <p className="text-[10px] uppercase tracking-wide text-zinc-500">Sleep</p>
                   <p className="text-sm font-semibold text-white">{oura.sleep?.score ?? '--'}</p>
@@ -200,12 +200,6 @@ function WearablesSection({
                   <p className="text-[10px] uppercase tracking-wide text-zinc-500">Slept</p>
                   <p className="text-sm font-semibold text-white">
                     {oura.sleep?.total_sleep_duration != null ? formatDuration(oura.sleep.total_sleep_duration) : '--'}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wide text-zinc-500">Steps</p>
-                  <p className="text-sm font-semibold text-white">
-                    {oura.activity?.steps != null ? oura.activity.steps.toLocaleString() : '--'}
                   </p>
                 </div>
               </div>
@@ -243,19 +237,11 @@ function WearablesSection({
                   </p>
                 </div>
               )}
-              <div className={`grid gap-3 ${[whoop.cycle?.strain, whoop.cycle?.kilojoule, whoop.sleep?.duration_seconds].filter(v => v != null).length >= 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+              <div className="grid grid-cols-2 gap-3">
                 {whoop.cycle?.strain != null && (
                   <div>
                     <p className="text-[10px] uppercase tracking-wide text-zinc-500">Strain</p>
                     <p className="text-sm font-semibold text-white">{whoop.cycle.strain.toFixed(1)}</p>
-                  </div>
-                )}
-                {whoop.cycle?.kilojoule != null && (
-                  <div>
-                    <p className="text-[10px] uppercase tracking-wide text-zinc-500">Cals</p>
-                    <p className="text-sm font-semibold text-white">
-                      {Math.round(whoop.cycle.kilojoule * 0.239).toLocaleString()}
-                    </p>
                   </div>
                 )}
                 {whoop.sleep?.duration_seconds != null && (
