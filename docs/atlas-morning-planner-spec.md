@@ -120,8 +120,8 @@ Put it before the title text (`entry.title || entry.body.slice(0,80) || 'Voice n
 
 ### 4.3 Mood
 
-- Night: mood selector unchanged.
-- Morning: **hide** the mood selector. Mood is a reflection concept; a morning plan has no mood. Morning entries save `mood = null`.
+- Night: mood selector unchanged ("How are you feeling?").
+- Morning: mood selector shown too, reframed as **"How are you feeling about today?"** — a morning feeling about the day ahead vs the night's reflection. (Reversed 2026-07-08: originally hidden, but mood-less rows left gaps in the list's mood-dot column.) Same 1–5 emoji scale, same `mood` column.
 
 ---
 

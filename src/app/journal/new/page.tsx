@@ -70,7 +70,7 @@ export default function NewJournalEntryPage() {
         const entry = await createEntry.mutateAsync({
           date: today,
           body: body.trim(),
-          mood: isMorning ? null : mood,
+          mood,
           kind,
           plan: isMorning ? linesToPlan(body) : [],
         })
@@ -194,27 +194,27 @@ export default function NewJournalEntryPage() {
         />
       </div>
 
-      {!isMorning && (
-        <div
-          className="fixed bottom-0 left-0 right-0 border-t border-zinc-900 bg-black px-6 py-3"
-          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}
-        >
-          <p className="mb-2 text-xs text-zinc-500">How are you feeling?</p>
-          <div className="flex gap-2">
-            {([1, 2, 3, 4, 5] as const).map((n) => (
-              <button
-                key={n}
-                onClick={() => setMood(mood === n ? null : n)}
-                className={`flex-1 rounded-full py-2 text-2xl transition-colors ${
-                  mood === n ? 'bg-white' : 'bg-zinc-900 active:opacity-80'
-                }`}
-              >
-                {MOOD_EMOJIS[n]}
-              </button>
-            ))}
-          </div>
+      <div
+        className="fixed bottom-0 left-0 right-0 border-t border-zinc-900 bg-black px-6 py-3"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}
+      >
+        <p className="mb-2 text-xs text-zinc-500">
+          {isMorning ? 'How are you feeling about today?' : 'How are you feeling?'}
+        </p>
+        <div className="flex gap-2">
+          {([1, 2, 3, 4, 5] as const).map((n) => (
+            <button
+              key={n}
+              onClick={() => setMood(mood === n ? null : n)}
+              className={`flex-1 rounded-full py-2 text-2xl transition-colors ${
+                mood === n ? 'bg-white' : 'bg-zinc-900 active:opacity-80'
+              }`}
+            >
+              {MOOD_EMOJIS[n]}
+            </button>
+          ))}
         </div>
-      )}
+      </div>
     </div>
   )
 }

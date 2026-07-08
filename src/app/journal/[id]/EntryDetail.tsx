@@ -202,7 +202,7 @@ export default function EntryDetail({ initialEntry }: Props) {
       id: entry.id,
       title: editTitle.trim() || undefined,
       body: editBody.trim(),
-      mood: isMorning ? null : editMood,
+      mood: editMood,
       ...(isMorning ? { plan: plan.filter(p => p.text.trim()) } : {}),
     })
     router.back()
@@ -450,7 +450,7 @@ export default function EntryDetail({ initialEntry }: Props) {
           value={editTitle}
           onChange={(e) => {
             setEditTitle(e.target.value)
-            scheduleAutoSave(e.target.value, editBody, isMorning ? null : editMood)
+            scheduleAutoSave(e.target.value, editBody, editMood)
           }}
           className="w-full bg-transparent text-xl font-semibold text-white outline-none placeholder:text-zinc-600"
         />
@@ -585,6 +585,28 @@ export default function EntryDetail({ initialEntry }: Props) {
                 </button>
               </div>
             )}
+
+            {/* Morning feeling — how he feels about the day ahead */}
+            <div className="mt-6">
+              <p className="mb-2 text-xs text-zinc-500">How are you feeling about today?</p>
+              <div className="flex gap-2">
+                {([1, 2, 3, 4, 5] as const).map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => {
+                      const next = editMood === n ? null : n
+                      setEditMood(next)
+                      scheduleAutoSave(editTitle, editBody, next)
+                    }}
+                    className={`flex-1 rounded-full py-2 text-2xl transition-colors ${
+                      editMood === n ? 'bg-white' : 'bg-zinc-900 active:opacity-80'
+                    }`}
+                  >
+                    {MOOD_EMOJIS[n]}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             {/* Refine — voice or text, once a plan exists */}
             {hasPlanItems && (
