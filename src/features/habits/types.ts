@@ -23,3 +23,19 @@ export interface ToggleInput {
   date: string
   completed: boolean
 }
+
+export interface HabitHistoryWeek {
+  weekOffset: number
+  startDate: string
+  endDate: string
+  dates: string[]
+  habits: Array<{
+    id: string
+    name: string
+    emoji: string
+    perWeek: number
+    done: boolean[]
+    count: number
+    hit: boolean
+  }>
+}

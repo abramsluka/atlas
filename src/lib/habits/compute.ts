@@ -36,6 +36,25 @@ export interface HabitView {
   streakWeeks: number  // consecutive weeks that met target (grace on current)
 }
 
+// One row per week for the History pager. `dates` are the week's Mon→Sun local
+// days (so the client can flag today/future); each habit carries a parallel
+// `done` array.
+export interface HabitHistoryWeek {
+  weekOffset: number   // 0 = this week, 1 = last week, …
+  startDate: string    // Monday
+  endDate: string      // Sunday
+  dates: string[]
+  habits: Array<{
+    id: string
+    name: string
+    emoji: string
+    perWeek: number
+    done: boolean[]    // Monday → Sunday
+    count: number
+    hit: boolean       // count >= perWeek
+  }>
+}
+
 interface HabitRow {
   id: string
   name: string
@@ -44,6 +63,7 @@ interface HabitRow {
   source: string | null
   cadence: { per_week?: number } | null
   order_index: number | null
+  created_at: string | null
 }
 
 function union(a: Set<string>, b: Set<string>): Set<string> {
@@ -93,14 +113,13 @@ function streakWeeks(done: Set<string>, tz: string, perWeek: number): number {
   return streak
 }
 
-// One read of every source a habit might derive from, then a done-day Set per
-// habit. Mirrors src/lib/home/streaks.ts, but produces weekly-target metrics
-// instead of the strip's consecutive-day streak.
-export async function computeHabits(db: DB, userId: string, tz: string): Promise<HabitView[]> {
-  const dateCutoff = daysAgoLocal(LOOKBACK_DAYS, tz)
+// Shared loader: one read of every source, then a done-day Set per habit.
+// Both the current-week view and the history pager build on this.
+async function loadDoneSets(db: DB, userId: string, tz: string, lookbackDays: number) {
+  const dateCutoff = daysAgoLocal(lookbackDays, tz)
 
   const [habitsR, complR, waterR, profileR, cardioR] = await Promise.allSettled([
-    db.from('habits').select('id, name, emoji, kind, source, cadence, order_index')
+    db.from('habits').select('id, name, emoji, kind, source, cadence, order_index, created_at')
       .eq('user_id', userId).eq('active', true).order('order_index', { ascending: true }),
     db.from('habit_completions').select('habit_id, date, completed')
       .eq('user_id', userId).gte('date', dateCutoff),
@@ -150,12 +169,23 @@ export async function computeHabits(db: DB, userId: string, tz: string): Promise
     }
   }
 
-  return habits.map((h) => {
+  const doneByHabit = new Map<string, Set<string>>()
+  for (const h of habits) {
     const overrides = overridesByHabit.get(h.id) ?? new Set<string>()
-    let done: Set<string>
-    if (h.kind === 'auto' && h.source === 'water') done = union(waterDates, overrides)
-    else if (h.kind === 'auto' && h.source === 'cardio') done = union(cardioDates, overrides)
-    else done = overrides
+    if (h.kind === 'auto' && h.source === 'water') doneByHabit.set(h.id, union(waterDates, overrides))
+    else if (h.kind === 'auto' && h.source === 'cardio') doneByHabit.set(h.id, union(cardioDates, overrides))
+    else doneByHabit.set(h.id, overrides)
+  }
+
+  return { habits, doneByHabit }
+}
+
+// Current week + streak per habit. Powers GET /api/habits and the /habits page.
+export async function computeHabits(db: DB, userId: string, tz: string): Promise<HabitView[]> {
+  const { habits, doneByHabit } = await loadDoneSets(db, userId, tz, LOOKBACK_DAYS)
+
+  return habits.map((h) => {
+    const done = doneByHabit.get(h.id) ?? new Set<string>()
     const perWeek = h.cadence?.per_week ?? 7
     return {
       id: h.id,
@@ -170,4 +200,44 @@ export async function computeHabits(db: DB, userId: string, tz: string): Promise
       streakWeeks: streakWeeks(done, tz, perWeek),
     }
   })
+}
+
+// Per-week breakdown for the History pager, newest first. Only returns weeks
+// back to the oldest habit's creation (so we don't page through empty history),
+// capped by `maxWeeks`.
+export async function computeHabitHistory(db: DB, userId: string, tz: string, maxWeeks = 26): Promise<HabitHistoryWeek[]> {
+  const lookback = Math.min(maxWeeks, 26) * 7
+  const { habits, doneByHabit } = await loadDoneSets(db, userId, tz, lookback)
+
+  // How far back to page: to the week of the oldest habit's creation.
+  let floor = 0
+  const created = habits.map((h) => h.created_at).filter(Boolean) as string[]
+  if (created.length) {
+    const oldest = created.reduce((a, b) => (a < b ? a : b))
+    const oldestDay = formatInTimeZone(new Date(oldest), tz, 'yyyy-MM-dd')
+    for (let w = 0; w < maxWeeks; w++) {
+      const wd = weekDates(tz, w)
+      floor = w
+      if (oldestDay >= wd[0]) break // the oldest day falls in (or after) this week
+    }
+  }
+
+  const weeks: HabitHistoryWeek[] = []
+  for (let w = 0; w <= floor; w++) {
+    const dates = weekDates(tz, w)
+    weeks.push({
+      weekOffset: w,
+      startDate: dates[0],
+      endDate: dates[6],
+      dates,
+      habits: habits.map((h) => {
+        const set = doneByHabit.get(h.id) ?? new Set<string>()
+        const done = dates.map((d) => set.has(d))
+        const count = done.reduce((c, v) => c + (v ? 1 : 0), 0)
+        const perWeek = h.cadence?.per_week ?? 7
+        return { id: h.id, name: h.name, emoji: h.emoji ?? '•', perWeek, done, count, hit: count >= perWeek }
+      }),
+    })
+  }
+  return weeks
 }
