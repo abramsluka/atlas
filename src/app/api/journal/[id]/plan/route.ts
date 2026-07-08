@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 import type { PlanItem } from '@/features/journal/types'
 import { transcribeAudio, ensureEntryTranscript, entryContentForAI } from '@/lib/journalAudio'
+import { generateTitle } from '@/lib/journalTitle'
 
 export const maxDuration = 60
 
@@ -159,5 +160,25 @@ ${instruction}
     .eq('id', id)
 
   if (saveError) return NextResponse.json({ error: saveError.message }, { status: 500 })
+
+  // Every morning plan should carry a short auto-title. Re-read (transcription
+  // inside this request may have titled it already), then title from the plan.
+  if (plan.length > 0) {
+    const { data: fresh } = await db
+      .from('journal_entries')
+      .select('title')
+      .eq('id', id)
+      .maybeSingle()
+    if (fresh && !fresh.title) {
+      const title = await generateTitle(`Plan for the day:\n${lines.join('\n')}`)
+      if (title) {
+        await db
+          .from('journal_entries')
+          .update({ title, updated_at: new Date().toISOString() })
+          .eq('id', id)
+      }
+    }
+  }
+
   return NextResponse.json({ plan })
 }

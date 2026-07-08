@@ -35,10 +35,9 @@ export async function POST(request: NextRequest) {
   }
 
   // Untitled text entries get a short generated title (voice-only entries get one
-  // after transcription). Morning plans skip title generation — the list falls
-  // back to the first plan item.
+  // after transcription; voice morning plans get one after plan generation).
   let title = parsed.data.title ?? null
-  if (!title && parsed.data.kind !== 'morning' && parsed.data.body.trim()) {
+  if (!title && parsed.data.body.trim()) {
     title = await generateTitle(parsed.data.body)
   }
 

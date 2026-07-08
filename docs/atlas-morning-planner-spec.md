@@ -312,7 +312,7 @@ Keep the card visually consistent with `TodaysCallCard` / `DailyCheckinCard` (sa
 - **Empty transcript / no actionable content:** Haiku returns `[]`. Show an empty checklist with an “add a line” affordance; don’t error.
 - **Transcription failure:** surface the error inline (reuse the `reply`/`reflect` error handling); keep the recording so the user can retry — the create/upload retry guard (`createdEntryId` ref in `new/page.tsx`) already handles duplicate-entry avoidance.
 - **Refine race with Home:** Home toggles `done` by sending the full plan; the journal detail auto-saves the full plan. Last write wins. Acceptable; both operate on the same array and toggling is idempotent per item id. If it ever matters, switch to a per-item toggle endpoint (future).
-- **Title generation:** `POST /api/journal` calls `generateTitle(body)` for typed entries. For morning, either skip auto-title (list falls back to first plan item / “Morning plan”) or title it “Morning plan”. Don’t spend a Sonnet call titling a plan.
+- **Title generation:** every morning plan gets a short auto-title (Luka’s call, 2026-07-08 — untitled cards showed raw plan-item text and overflowed). Typed entries title at create (`generateTitle(body)`); voice entries title from the transcript during transcription; the `/plan` route backfills from the plan lines if still untitled after generation. `generateTitle` is Haiku, 2–5 words — never the whole entry.
 - **`user_id NOT NULL`** everywhere — already handled by the create route; the new columns don’t change that.
 - **`src/proxy.ts`** bypass lists: `/api/journal/[id]/plan` is a normal authed route (needs the session cookie), so it does **not** need a bypass entry. Don’t add one.
 - **Do not touch the legacy `/workouts` tables** — unrelated.

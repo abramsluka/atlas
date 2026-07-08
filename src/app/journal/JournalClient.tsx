@@ -77,78 +77,80 @@ export default function JournalClient({ initialData }: Props) {
           </div>
           <div className="flex flex-col gap-2">
             {group.items.map((entry) => (
-              <div key={entry.id} className="flex items-center gap-2">
-                <Link
-                  href={`/journal/${entry.id}`}
-                  className="flex flex-1 items-center justify-between rounded-[18px] px-5 py-4 active:opacity-80 transition-all duration-150"
-                  style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] text-zinc-600 mb-0.5 font-medium tracking-wide">
-                      {format(new Date(entry.date + 'T12:00:00'), 'EEE, MMM d')}
-                    </p>
-                    <p className="truncate text-[15px] font-semibold text-white leading-snug">
-                      <span className="mr-1.5">{entry.kind === 'morning' ? '☀️' : '🌙'}</span>
-                      {entry.title ||
-                        entry.body.slice(0, 80) ||
-                        (entry.kind === 'morning'
-                          ? entry.plan?.[0]?.text || 'Morning plan'
-                          : entry.audio_path ? 'Voice note' : '')}
-                    </p>
+              <div key={entry.id}>
+                <div className="flex items-center gap-2">
+                  {/* min-w-0 + overflow-hidden: without them iOS ignores the nested
+                      truncate and a long line stretches the whole page sideways */}
+                  <Link
+                    href={`/journal/${entry.id}`}
+                    className="flex min-w-0 flex-1 items-center justify-between overflow-hidden rounded-[18px] px-5 py-4 active:opacity-80 transition-all duration-150"
+                    style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] text-zinc-600 mb-0.5 font-medium tracking-wide">
+                        {format(new Date(entry.date + 'T12:00:00'), 'EEE, MMM d')}
+                      </p>
+                      <p className="truncate text-[15px] font-semibold text-white leading-snug">
+                        <span className="mr-1.5">{entry.kind === 'morning' ? '☀️' : '🌙'}</span>
+                        {entry.title ||
+                          entry.body.slice(0, 80) ||
+                          (entry.kind === 'morning'
+                            ? entry.plan?.[0]?.text.slice(0, 80) || 'Morning plan'
+                            : entry.audio_path ? 'Voice note' : '')}
+                      </p>
+                    </div>
+                    {entry.mood != null && (
+                      <div
+                        className="ml-4 h-3 w-3 flex-shrink-0 rounded-full"
+                        style={{
+                          background: MOOD_DOT[entry.mood].bg,
+                          boxShadow: `0 0 8px ${MOOD_DOT[entry.mood].glow}`,
+                        }}
+                      />
+                    )}
+                  </Link>
+                  <button
+                    onClick={() => setConfirmId(confirmId === entry.id ? null : entry.id)}
+                    className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[18px] text-lg text-zinc-700 active:text-zinc-400 transition-colors"
+                    style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}
+                  >
+                    ×
+                  </button>
+                </div>
+
+                {/* Inline delete confirm, right below the entry (a fixed overlay
+                    gets position:relative forced by .nebula-journal > * and lands
+                    at the bottom of the page) */}
+                {confirmId === entry.id && (
+                  <div
+                    className="mt-2 flex items-center justify-between rounded-[18px] px-4 py-3"
+                    style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.25)' }}
+                  >
+                    <p className="text-sm text-zinc-300">Delete this entry?</p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setConfirmId(null)}
+                        className="rounded-full px-4 py-1.5 text-xs font-medium text-white active:opacity-80"
+                        style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)' }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => deleteEntry.mutate(entry.id, { onSuccess: () => setConfirmId(null) })}
+                        disabled={deleteEntry.isPending}
+                        className="rounded-full bg-red-600 px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50 active:opacity-80"
+                      >
+                        {deleteEntry.isPending ? 'Deleting…' : 'Delete'}
+                      </button>
+                    </div>
                   </div>
-                  {entry.mood != null && (
-                    <div
-                      className="ml-4 h-3 w-3 flex-shrink-0 rounded-full"
-                      style={{
-                        background: MOOD_DOT[entry.mood].bg,
-                        boxShadow: `0 0 8px ${MOOD_DOT[entry.mood].glow}`,
-                      }}
-                    />
-                  )}
-                </Link>
-                <button
-                  onClick={() => setConfirmId(entry.id)}
-                  className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[18px] text-lg text-zinc-700 active:text-zinc-400 transition-colors"
-                  style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}
-                >
-                  ×
-                </button>
+                )}
               </div>
             ))}
           </div>
         </section>
       ))}
 
-      {confirmId && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 pb-10"
-          onClick={() => setConfirmId(null)}
-        >
-          <div
-            className="mx-4 w-full max-w-sm rounded-2xl p-6"
-            style={{ background: '#111113', border: '1px solid rgba(255,255,255,0.1)' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <p className="mb-1 text-base font-semibold">Delete entry?</p>
-            <p className="mb-6 text-sm text-zinc-400">This can't be undone.</p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setConfirmId(null)}
-                className="flex h-12 flex-1 items-center justify-center rounded-xl bg-zinc-800 text-sm font-medium text-white active:opacity-80"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => deleteEntry.mutate(confirmId, { onSuccess: () => setConfirmId(null) })}
-                disabled={deleteEntry.isPending}
-                className="flex h-12 flex-1 items-center justify-center rounded-xl bg-red-600 text-sm font-semibold text-white disabled:opacity-50 active:opacity-80"
-              >
-                {deleteEntry.isPending ? 'Deleting…' : 'Delete'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </main>
   )
 }
