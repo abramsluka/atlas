@@ -44,6 +44,8 @@ export type AssistantAction =
       trained: boolean          // morning: training planned today; evening: actually trained
       text: string | null       // morning intent / evening reflection
     }
+  | { kind: 'log_habit'; habit_id: string; habit_name: string; already_done: boolean }
+  | { kind: 'log_all_habits' }
   // ── Gym coach (ported from coachActions.ts) ──
   | {
       kind: 'adjust_exercise'
@@ -153,6 +155,10 @@ export function describeAction(a: AssistantAction, units: string): { title: stri
         detail: `${a.slot === 'morning' ? (a.trained ? 'Training planned' : 'Rest day') : (a.trained ? 'Trained' : "Didn't train")}${a.text ? ` — ${a.text}` : ''}`,
         confirmLabel: 'Save it', doneLabel: 'Saved',
       }
+    case 'log_habit':
+      return { title: `Log ${a.habit_name}`, detail: a.already_done ? 'already done today' : 'mark done today', confirmLabel: 'Log it', doneLabel: 'Logged' }
+    case 'log_all_habits':
+      return { title: 'Log all habits', detail: 'mark every habit done today', confirmLabel: 'Log all', doneLabel: 'Logged' }
     case 'adjust_exercise': {
       const bits: string[] = []
       if (a.rep_min != null || a.rep_max != null) bits.push(`reps ${a.rep_min ?? '·'}–${a.rep_max ?? '·'}`)

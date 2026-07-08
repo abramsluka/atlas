@@ -17,6 +17,7 @@ import { useLogSupplementDose, useLogWater, useLogCaffeine } from '@/features/he
 import { useLogManualFood } from '@/features/food/mutations'
 import { useCreateEntry } from '@/features/journal/mutations'
 import { useSaveMorningCheckin, useSaveEveningCheckin } from '@/features/checkins/mutations'
+import { useToggleHabit, useLogAll } from '@/features/habits/mutations'
 import type { GymExercise } from '@/features/gym/types'
 import type { AssistantAction } from './actions'
 import type { GeneratorPrefill } from '@/app/gym/ProgramGenerator'
@@ -50,6 +51,8 @@ export function useAssistantActions() {
   const createEntry = useCreateEntry()
   const saveMorning = useSaveMorningCheckin(localToday)
   const saveEvening = useSaveEveningCheckin(localToday)
+  const toggleHabit = useToggleHabit()
+  const logAllHabits = useLogAll()
 
   const nextOrder = useCallback(
     () => (exercises.length ? Math.max(...exercises.map(e => e.order_index)) + 1 : 0),
@@ -96,6 +99,12 @@ export function useAssistantActions() {
       case 'checkin_note':
         if (a.slot === 'morning') await saveMorning.mutateAsync({ planned: a.trained, intent: a.text ?? undefined })
         else await saveEvening.mutateAsync({ trained: a.trained, reflection: a.text ?? undefined })
+        return
+      case 'log_habit':
+        await toggleHabit.mutateAsync({ id: a.habit_id, date: localToday, completed: true })
+        return
+      case 'log_all_habits':
+        await logAllHabits.mutateAsync({ date: localToday, completed: true })
         return
       case 'adjust_exercise': {
         const upd: Partial<GymExercise> & { id: string } = { id: a.exercise_id }
@@ -150,7 +159,7 @@ export function useAssistantActions() {
         return
       }
     }
-  }, [logSet, logDose, logWeight, logWater, logCaffeine, logFood, createEntry, saveMorning, saveEvening, updateEx, createEx, deleteEx, saveConfig, config, nextOrder, localToday, pathname, router])
+  }, [logSet, logDose, logWeight, logWater, logCaffeine, logFood, createEntry, saveMorning, saveEvening, toggleHabit, logAllHabits, updateEx, createEx, deleteEx, saveConfig, config, nextOrder, localToday, pathname, router])
 
   return { executeAction, units }
 }

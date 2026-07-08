@@ -31,6 +31,9 @@ export interface AssistantContext {
   loggedSlotsToday: Map<string, Set<string>>   // supplement_id → time_slots logged today
   bottleOz: number         // his configured bottle size, for "drank a bottle"
   glassOz: number          // his configured glass size
+  habits: Array<{ id: string; name: string; kind: string }>
+  habitById: Map<string, { id: string; name: string; kind: string }>
+  habitDoneToday: Set<string>
   catalogBlock: string     // formatted context for the system prompt
 }
 
@@ -40,7 +43,7 @@ export async function loadAssistantContext(db: DB, userId: string): Promise<Assi
   const thirtyDaysAgoIso = subDays(new Date(), 30).toISOString()
   const sevenDaysAgo = daysAgoLocal(7, tz)
 
-  const [configRes, exercisesRes, logsRes, suppsRes, doseRes, weightRes, waterRes, caffeineRes, foodRes, checkinRes, containerRes] = await Promise.all([
+  const [configRes, exercisesRes, logsRes, suppsRes, doseRes, weightRes, waterRes, caffeineRes, foodRes, checkinRes, containerRes, habitsRes, habitDoneRes] = await Promise.all([
     db.from('gym_config').select('*').eq('user_id', userId).maybeSingle(),
     db.from('gym_exercises').select('*').eq('user_id', userId).order('order_index').order('created_at'),
     db.from('gym_logs').select('exercise_id, weight, reps, logged_at').eq('user_id', userId).gte('logged_at', thirtyDaysAgoIso).order('logged_at', { ascending: false }),
@@ -52,6 +55,8 @@ export async function loadAssistantContext(db: DB, userId: string): Promise<Assi
     db.from('food_logs').select('date, item_name, calories, protein_g, carbs_g').eq('user_id', userId).gte('date', sevenDaysAgo).order('date', { ascending: false }).limit(40),
     db.from('daily_checkins').select('morning_planned_training, morning_intent, evening_actual_training, evening_reflection').eq('user_id', userId).eq('date', today).maybeSingle(),
     db.from('health_profile').select('bottle_ml, glass_ml').eq('user_id', userId).maybeSingle(),
+    db.from('habits').select('id, name, emoji, kind, order_index').eq('user_id', userId).eq('active', true).order('order_index'),
+    db.from('habit_completions').select('habit_id').eq('user_id', userId).eq('date', today).eq('completed', true),
   ])
 
   const config = configRes.data as GymConfig | null
@@ -102,6 +107,14 @@ export async function loadAssistantContext(db: DB, userId: string): Promise<Assi
     const slots = s.times.length ? s.times.join('/') : 'anytime'
     return `[${s.id}] ${s.name} — slots: ${slots}${logged.length ? ` — ALREADY LOGGED TODAY: ${logged.join(', ')}` : ''}`
   }).join('\n')
+
+  const habits = ((habitsRes.data as Array<{ id: string; name: string; emoji: string | null; kind: string }> | null) ?? [])
+    .map(h => ({ id: h.id, name: h.name, kind: h.kind }))
+  const habitById = new Map(habits.map(h => [h.id, h]))
+  const habitDoneToday = new Set<string>(((habitDoneRes.data as Array<{ habit_id: string }> | null) ?? []).map(r => r.habit_id))
+  const habitCatalog = habits
+    .map(h => `[${h.id}] ${h.name}${h.kind === 'auto' ? ' (auto — derives itself)' : ''}${habitDoneToday.has(h.id) ? ' — ALREADY DONE TODAY' : ''}`)
+    .join('\n')
 
   const dayList = (config?.days ?? []).map(d => `[${d.id}] ${d.name}`).join('\n') || '(none)'
   const gymList = (config?.gyms ?? []).map(g => `[${g.id}] ${g.name}`).join('\n') || '(none)'
@@ -159,6 +172,9 @@ ${todayBlock}
 — SUPPLEMENTS (use these [id]s for log_supplement_dose):
 ${supplementCatalog || '(none configured)'}
 
+— HABITS (use these [id]s for log_habit; log_all_habits marks every manual habit done today):
+${habitCatalog || '(none configured)'}
+
 — TRAINING DAYS (splits):
 ${dayList}
 
@@ -168,7 +184,7 @@ ${gymList}
 — EXERCISE CATALOG (use these [id]s):
 ${exerciseCatalog || '(no exercises yet)'}`
 
-  return { tz, today, units, config, exercises, exerciseById, dayName, supplements, supplementById, loggedSlotsToday, bottleOz, glassOz, catalogBlock }
+  return { tz, today, units, config, exercises, exerciseById, dayName, supplements, supplementById, loggedSlotsToday, bottleOz, glassOz, habits, habitById, habitDoneToday, catalogBlock }
 }
 
 // ── Behavior rules shared by both routes (encodes the confirm-card contract) ──
@@ -183,6 +199,8 @@ HARD RULES:
 - Keep text terse — one short line, then the cards speak for themselves.
 - NEVER reply with tool calls alone. Structure every reply as: FIRST your text (1-3 short sentences — including the answer to anything he asked; the cards only confirm logging, they don't answer questions), THEN the tool calls.
 - When you call clarify, include likely answers as options when you can (e.g. offer his latest logged weight when clarifying a weight).
+
+HABITS: "log my pushups" / "did my hang" / "mark read done" → log_habit with the habit [id] from the HABITS list. "log everything" / "log all my habits" → log_all_habits. A habit tick is only for that manual checklist — water, supplements, food, weight, caffeine, and sets keep their own tools.
 
 FOOD: when he says he ate or drank something caloric, call log_food with a calorie/macro estimate. Set is_hydrating + volume_oz for water-like drinks (juice, milk, sports drinks, soda); false for coffee/alcohol/milkshakes. Only ask a portion question (via clarify) when it's genuinely ambiguous AND high-impact — otherwise estimate and set confidence honestly (low if you had to guess). PLAIN WATER is NOT food: "drank 20 oz of water" → log_water, never log_food.
 ${PORTION_STYLE_RULES}`
@@ -293,6 +311,20 @@ export function buildAssistantTools(units: string): Anthropic.Tool[] {
         },
         required: ['slot', 'trained'],
       },
+    },
+    {
+      name: 'log_habit',
+      description: 'Propose marking one of Luka\'s habits done today (e.g. "log my pushups", "did my hang", "mark read done"). Use the habit [id] from the HABITS context. If it is marked ALREADY DONE TODAY, say so rather than re-proposing. Water/supplements/food/weight/sets keep their own tools — this is only for the manual habit checklist.',
+      input_schema: {
+        type: 'object',
+        properties: { habit_id: { type: 'string', description: 'Habit [id] from the HABITS context' } },
+        required: ['habit_id'],
+      },
+    },
+    {
+      name: 'log_all_habits',
+      description: 'Propose marking ALL of today\'s manual habits done at once. Call when Luka says "log everything", "log all my habits", or "mark all habits done".',
+      input_schema: { type: 'object', properties: {} },
     },
     // Clarification
     {
@@ -488,6 +520,13 @@ export function resolveToolCall(name: string, input: Record<string, unknown>, ct
         const text = String(input.text || '').trim()
         return { kind: 'checkin_note', slot, trained: input.trained, text: text ? text.slice(0, 500) : null }
       }
+      case 'log_habit': {
+        const h = ctx.habitById.get(String(input.habit_id))
+        if (!h) return null
+        return { kind: 'log_habit', habit_id: h.id, habit_name: h.name, already_done: ctx.habitDoneToday.has(h.id) }
+      }
+      case 'log_all_habits':
+        return { kind: 'log_all_habits' }
       case 'adjust_exercise': {
         const ex = exerciseById.get(String(input.exercise_id))
         if (!ex) return null
