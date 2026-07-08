@@ -27,10 +27,15 @@ export function useSupplements(initialData?: Supplement[]) {
   })
 }
 
+// Logs the MCP tools also write (from Claude, outside this browser) poll every
+// 30s while the tab is visible, so remote logs appear without a reload.
+const REMOTE_WRITE_POLL = { refetchInterval: 30_000 } as const
+
 export function useSupplementLogs(today: string, initialData?: SupplementLog[]) {
   return useQuery({
     queryKey: ['health', 'supplement-logs', today],
     initialData,
+    ...REMOTE_WRITE_POLL,
     queryFn: async (): Promise<SupplementLog[]> => {
       const supabase = createClient()
       const { data, error } = await supabase
@@ -47,6 +52,7 @@ export function useWaterLogs(today: string, initialData?: WaterLog[]) {
   return useQuery({
     queryKey: ['health', 'water', today],
     initialData,
+    ...REMOTE_WRITE_POLL,
     queryFn: async (): Promise<WaterLog[]> => {
       const supabase = createClient()
       const { data, error } = await supabase
@@ -64,6 +70,7 @@ export function useCaffeineLogs(today: string, initialData?: CaffeineLog[]) {
   return useQuery({
     queryKey: ['health', 'caffeine', today],
     initialData,
+    ...REMOTE_WRITE_POLL,
     queryFn: async (): Promise<CaffeineLog[]> => {
       const supabase = createClient()
       const { data, error } = await supabase

@@ -161,28 +161,51 @@ export function registerAtlasTools(server: McpServer) {
     'log_water',
     {
       description:
-        'Log plain water intake in ounces. Call when the user mentions drinking water. For caloric or hydrating drinks (juice, protein shake), use log_food with is_drink instead.',
+        "Log plain water intake. Call when the user mentions drinking water. Pass amount_oz when they give an amount; when they say 'a bottle' or 'a glass', pass bottles or glasses instead — Atlas converts using their configured container sizes (do NOT guess ounces for a bottle). For caloric or hydrating drinks (juice, protein shake), use log_food with is_drink instead.",
       inputSchema: {
-        amount_oz: z.number().positive(),
+        amount_oz: z.number().positive().optional().describe('Exact ounces, when the user states an amount'),
+        bottles: z.number().positive().optional().describe("Count of the user's configured bottles"),
+        glasses: z.number().positive().optional().describe("Count of the user's configured glasses"),
         date: dateSchema.optional(),
       },
     },
     async (args, extra) => {
       try {
         const userId = userIdOf(extra)
+        if (args.amount_oz == null && args.bottles == null && args.glasses == null) {
+          return err('Pass amount_oz, bottles or glasses.')
+        }
         const db = createServiceClient()
         const date = args.date ?? (await todayFor(userId))
+
+        const OZ_PER_ML = 1 / 29.5735
+        let bottleOz: number | null = null
+        let amountOz = args.amount_oz ?? 0
+        if (args.bottles != null || args.glasses != null) {
+          const { data: profile } = await db
+            .from('health_profile')
+            .select('bottle_ml, glass_ml')
+            .eq('user_id', userId)
+            .maybeSingle()
+          bottleOz = r1((profile?.bottle_ml ?? 500) * OZ_PER_ML)
+          const glassOz = r1((profile?.glass_ml ?? 250) * OZ_PER_ML)
+          amountOz += (args.bottles ?? 0) * bottleOz + (args.glasses ?? 0) * glassOz
+        }
+        amountOz = r1(amountOz)
+
         const { error } = await db
           .from('water_logs')
-          .insert({ user_id: userId, date, amount_oz: args.amount_oz })
+          .insert({ user_id: userId, date, amount_oz: amountOz })
         if (error) return err(error.message)
         const { data: rows } = await db
           .from('water_logs')
           .select('amount_oz')
           .eq('user_id', userId)
           .eq('date', date)
-        const day_total_oz = (rows ?? []).reduce((t, r) => t + (r.amount_oz ?? 0), 0)
-        return ok({ logged_oz: args.amount_oz, date, day_total_oz })
+        const day_total_oz = r1((rows ?? []).reduce((t, r) => t + (r.amount_oz ?? 0), 0))
+        const result: Record<string, unknown> = { logged_oz: amountOz, date, day_total_oz }
+        if (bottleOz) result.day_total_bottles = r1(day_total_oz / bottleOz)
+        return ok(result)
       } catch (e) {
         return err(msg(e))
       }
