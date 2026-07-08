@@ -6,7 +6,7 @@ import { format } from 'date-fns'
 import { useQueryClient } from '@tanstack/react-query'
 import { useJournalEntry } from '@/features/journal/queries'
 import { useUpdateEntry, useDeleteEntry } from '@/features/journal/mutations'
-import type { JournalEntry } from '@/features/journal/types'
+import type { EntryKind, JournalEntry, PlanItem } from '@/features/journal/types'
 import { useVoiceRecorder, formatElapsed } from '@/features/journal/useVoiceRecorder'
 import { uploadAudioToStorage } from '@/features/journal/uploadAudio'
 
@@ -58,6 +58,7 @@ export default function EntryDetail({ initialEntry }: Props) {
   const [editTitle, setEditTitle] = useState(entry.title ?? '')
   const [editBody, setEditBody] = useState(entry.body)
   const [editMood, setEditMood] = useState<number | null>(entry.mood)
+  const [kind, setKind] = useState<EntryKind>(entry.kind ?? 'night')
 
   const [reflectionText, setReflectionText] = useState(entry.ai_reflection ?? '')
   const [streaming, setStreaming] = useState(false)
@@ -70,6 +71,12 @@ export default function EntryDetail({ initialEntry }: Props) {
   const [streamingReply, setStreamingReply] = useState('')
   const [replyError, setReplyError] = useState<string | null>(null)
 
+  const [plan, setPlan] = useState<PlanItem[]>(entry.plan ?? [])
+  const [planning, setPlanning] = useState(false)
+  const [planError, setPlanError] = useState<string | null>(null)
+  const [refineText, setRefineText] = useState('')
+  const [focusItemId, setFocusItemId] = useState<string | null>(null)
+
   const [transcript, setTranscript] = useState(entry.audio_transcript)
   const [showTranscript, setShowTranscript] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
@@ -78,6 +85,9 @@ export default function EntryDetail({ initialEntry }: Props) {
 
   const bodyTextareaRef = useRef<HTMLTextAreaElement>(null)
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const planSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const isMorning = kind === 'morning'
 
   function autoGrow(el: HTMLTextAreaElement) {
     el.style.height = 'auto'
@@ -87,7 +97,7 @@ export default function EntryDetail({ initialEntry }: Props) {
   function scheduleAutoSave(title: string, body: string, mood: number | null) {
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     autoSaveTimer.current = setTimeout(() => {
-      if (!body.trim() && !entry.audio_path) return
+      if (!body.trim() && !entry.audio_path && !isMorning) return
       updateEntry.mutate({
         id: entry.id,
         title: title.trim() || undefined,
@@ -97,13 +107,103 @@ export default function EntryDetail({ initialEntry }: Props) {
     }, 1000)
   }
 
+  // ─── Plan (morning) ────────────────────────────────────────────────────────
+
+  function setPlanAndSave(next: PlanItem[]) {
+    setPlan(next)
+    if (planSaveTimer.current) clearTimeout(planSaveTimer.current)
+    planSaveTimer.current = setTimeout(() => {
+      // Blank rows stay local (mid-edit) but never persist
+      updateEntry.mutate({ id: entry.id, plan: next.filter(p => p.text.trim()) })
+    }, 1000)
+  }
+
+  function togglePlanItem(id: string) {
+    setPlanAndSave(plan.map(p => (p.id === id ? { ...p, done: !p.done } : p)))
+  }
+
+  function editPlanItem(id: string, text: string) {
+    setPlanAndSave(plan.map(p => (p.id === id ? { ...p, text } : p)))
+  }
+
+  function deletePlanItem(id: string) {
+    setPlanAndSave(plan.filter(p => p.id !== id))
+  }
+
+  function addPlanItem(afterId?: string) {
+    const item: PlanItem = { id: crypto.randomUUID(), text: '', done: false }
+    if (afterId) {
+      const idx = plan.findIndex(p => p.id === afterId)
+      const next = [...plan]
+      next.splice(idx + 1, 0, item)
+      setPlanAndSave(next)
+    } else {
+      setPlanAndSave([...plan, item])
+    }
+    setFocusItemId(item.id)
+  }
+
+  async function requestPlan(payload?: { message?: string; audioPath?: string }) {
+    setPlanning(true)
+    setPlanError(null)
+    try {
+      const res = await fetch(`/api/journal/${entry.id}/plan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload ?? {}),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Failed to build plan')
+      setPlan(json.plan)
+      queryClient.invalidateQueries({ queryKey: ['journal', entry.id] })
+      queryClient.invalidateQueries({ queryKey: ['journal'] })
+    } catch (err) {
+      setPlanError(String(err))
+    } finally {
+      setPlanning(false)
+    }
+  }
+
+  async function handleTextRefine() {
+    const msg = refineText.trim()
+    if (!msg || planning) return
+    setRefineText('')
+    await requestPlan({ message: msg })
+  }
+
+  async function handleVoiceRefine() {
+    const file = rec.toFile()
+    if (!file || planning) return
+    setPlanning(true)
+    setPlanError(null)
+    try {
+      const audioPath = await uploadAudioToStorage(entry.id, file, { reply: true })
+      rec.reset()
+      setPlanning(false)
+      await requestPlan({ audioPath })
+    } catch (err) {
+      setPlanError(String(err))
+      setPlanning(false)
+    }
+  }
+
+  // ─── Mode toggle ───────────────────────────────────────────────────────────
+
+  function toggleKind() {
+    const next: EntryKind = isMorning ? 'night' : 'morning'
+    setKind(next)
+    updateEntry.mutate({ id: entry.id, kind: next })
+  }
+
   async function handleSave() {
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+    if (planSaveTimer.current) clearTimeout(planSaveTimer.current)
     await updateEntry.mutateAsync({
       id: entry.id,
       title: editTitle.trim() || undefined,
       body: editBody.trim(),
-      mood: editMood,
+      mood: isMorning ? null : editMood,
+      ...(isMorning ? { plan: plan.filter(p => p.text.trim()) } : {}),
     })
     router.back()
   }
@@ -286,6 +386,13 @@ export default function EntryDetail({ initialEntry }: Props) {
   const savedReflection = entry.ai_reflection
   const displayReflection = reflectionText || savedReflection
 
+  // Morning: can generate a plan when there's source material to plan from
+  const canPlanFromEntry = !!entry.audio_path || !!editBody.trim() || !!entry.body?.trim()
+  const hasPlanItems = plan.length > 0
+  const canSaveEntry = isMorning
+    ? (hasPlanItems || !!entry.audio_path || !!editBody.trim()) && !updateEntry.isPending
+    : !updateEntry.isPending && (!!editBody.trim() || !!entry.audio_path)
+
   return (
     <div className="flex min-h-screen flex-col bg-black">
       <div
@@ -306,7 +413,17 @@ export default function EntryDetail({ initialEntry }: Props) {
             ← Back
           </button>
 
-          <span className="text-sm text-zinc-500">{dateLabel}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-zinc-500">{dateLabel}</span>
+            <button
+              onClick={toggleKind}
+              className="flex h-7 w-7 items-center justify-center rounded-full text-sm active:opacity-70 transition-colors"
+              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }}
+              title={isMorning ? 'Morning — tap to switch to night' : 'Night — tap to switch to morning'}
+            >
+              {isMorning ? '☀️' : '🌙'}
+            </button>
+          </div>
 
           <div className="flex items-center gap-3">
             <button
@@ -317,7 +434,7 @@ export default function EntryDetail({ initialEntry }: Props) {
             </button>
             <button
               onClick={handleSave}
-              disabled={updateEntry.isPending || (!editBody.trim() && !entry.audio_path)}
+              disabled={!canSaveEntry}
               className="px-1 py-2 text-sm font-semibold text-white disabled:text-zinc-600 active:opacity-70"
             >
               {updateEntry.isPending ? 'Saving…' : 'Save'}
@@ -333,7 +450,7 @@ export default function EntryDetail({ initialEntry }: Props) {
           value={editTitle}
           onChange={(e) => {
             setEditTitle(e.target.value)
-            scheduleAutoSave(e.target.value, editBody, editMood)
+            scheduleAutoSave(e.target.value, editBody, isMorning ? null : editMood)
           }}
           className="w-full bg-transparent text-xl font-semibold text-white outline-none placeholder:text-zinc-600"
         />
@@ -371,242 +488,403 @@ export default function EntryDetail({ initialEntry }: Props) {
           </div>
         )}
 
-        <textarea
-          ref={bodyTextareaRef}
-          value={editBody}
-          onChange={(e) => {
-            setEditBody(e.target.value)
-            autoGrow(e.target)
-            scheduleAutoSave(editTitle, e.target.value, editMood)
-          }}
-          rows={8}
-          className="w-full resize-none bg-transparent text-base text-white outline-none"
-        />
+        {isMorning ? (
+          /* ─── Morning: day plan ─────────────────────────────────────────── */
+          <div>
+            {planError && <p className="mb-3 text-sm text-red-400">{planError}</p>}
 
-        <div className="mt-6">
-          <p className="mb-2 text-xs text-zinc-500">How are you feeling?</p>
-          <div className="flex gap-2">
-            {([1, 2, 3, 4, 5] as const).map((n) => (
+            {!hasPlanItems && !planning && canPlanFromEntry && (
               <button
-                key={n}
-                onClick={() => {
-                  const next = editMood === n ? null : n
-                  setEditMood(next)
-                  scheduleAutoSave(editTitle, editBody, next)
-                }}
-                className={`flex-1 rounded-full py-2 text-2xl transition-colors ${
-                  editMood === n ? 'bg-white' : 'bg-zinc-900 active:opacity-80'
-                }`}
-              >
-                {MOOD_EMOJIS[n]}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-6 mb-6" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }} />
-
-        <div>
-          {(displayReflection || streaming) ? (
-            <>
-              <div className="mb-3 flex items-center gap-2">
-                <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-green-700">✦ ATLAS</span>
-                {streaming && (
-                  <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-green-600/60 align-middle" />
-                )}
-              </div>
-              <div
-                className="rounded-[16px] px-4 py-3 mb-2"
+                onClick={() => requestPlan()}
+                className="flex h-12 w-full items-center justify-center rounded-[16px] text-sm font-semibold text-zinc-300 active:opacity-80 transition-all"
                 style={{
-                  background: 'rgba(74,222,128,0.04)',
-                  border: '1px solid rgba(74,222,128,0.12)',
-                  borderLeft: '2px solid rgba(74,222,128,0.3)',
+                  background: 'rgba(251,191,36,0.06)',
+                  border: '1px solid rgba(251,191,36,0.2)',
                 }}
               >
-                <p className="text-[15px] italic leading-relaxed text-zinc-300">
-                  {displayReflection}
-                  {streaming && <span className="ml-1 inline-block h-[15px] w-[2px] bg-green-400/60 align-middle animate-pulse" />}
-                </p>
-              </div>
-              <div className="mt-2 flex gap-4">
-                {savedReflection && !streaming && (
-                  <button
-                    onClick={handleGetReflection}
-                    disabled={streaming || isReplying}
-                    className="text-xs text-zinc-600 underline active:opacity-70"
-                  >
-                    Regenerate
-                  </button>
-                )}
-                {displayReflection && !streaming && (
-                  <button
-                    onClick={() => handleGoLonger(-1)}
-                    disabled={isReplying}
-                    className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
-                  >
-                    Go longer →
-                  </button>
-                )}
-              </div>
+                <span className="flex items-center gap-2">
+                  <span>☀️</span>
+                  Plan my day
+                </span>
+              </button>
+            )}
 
-              {/* Follow-up conversation thread */}
-              {conversation.length > 0 && (
-                <div className="mt-6 space-y-4">
-                  {conversation.map((msg, i) => (
-                    <div key={i} className={msg.role === 'user' ? 'text-right' : ''}>
-                      {msg.role === 'user' ? (
-                        <div
-                          className="inline-block rounded-2xl px-4 py-3 text-sm text-white max-w-[85%] text-left"
-                          style={{ background: 'rgba(255,255,255,0.08)' }}
-                        >
-                          {msg.audio_url && (
-                            <audio controls src={msg.audio_url} className="mb-2 w-full min-w-[220px]" />
-                          )}
-                          {msg.audio_url ? (
-                            <span className="text-xs italic text-white/60">{msg.content}</span>
-                          ) : (
-                            msg.content
-                          )}
-                        </div>
-                      ) : (
-                        <div
-                          className="rounded-[16px] px-4 py-3"
-                          style={{
-                            background: 'rgba(74,222,128,0.04)',
-                            border: '1px solid rgba(74,222,128,0.12)',
-                            borderLeft: '2px solid rgba(74,222,128,0.25)',
-                          }}
-                        >
-                          <p className="text-sm italic leading-relaxed text-zinc-300">{msg.content}</p>
-                          <button
-                            onClick={() => handleGoLonger(i)}
-                            disabled={isReplying}
-                            className="text-xs text-zinc-700 hover:text-zinc-500 mt-1.5 transition-colors"
-                          >
-                            Go longer →
-                          </button>
-                        </div>
-                      )}
+            {planning && !hasPlanItems && (
+              <div
+                className="flex h-12 w-full items-center justify-center rounded-[16px] text-sm font-semibold text-zinc-400"
+                style={{ background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.2)' }}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  Building your plan…
+                </span>
+              </div>
+            )}
+
+            {(hasPlanItems || (!canPlanFromEntry && !planning)) && (
+              <div>
+                <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-600">
+                  ☀️ Today&apos;s plan
+                </p>
+                <div className={`space-y-1 ${planning ? 'opacity-50' : ''}`}>
+                  {plan.map((item) => (
+                    <div key={item.id} className="group flex items-center gap-3 rounded-xl px-1 py-1.5">
+                      <button
+                        onClick={() => togglePlanItem(item.id)}
+                        className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md transition-colors"
+                        style={{
+                          background: item.done ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.06)',
+                          border: item.done ? '1px solid rgba(251,191,36,0.4)' : '1px solid rgba(255,255,255,0.15)',
+                        }}
+                      >
+                        {item.done && <span className="text-[11px] leading-none text-amber-300">✓</span>}
+                      </button>
+                      <input
+                        type="text"
+                        value={item.text}
+                        autoFocus={focusItemId === item.id}
+                        placeholder="What's the move?"
+                        onChange={(e) => editPlanItem(item.id, e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            addPlanItem(item.id)
+                          }
+                        }}
+                        className={`flex-1 bg-transparent text-[15px] outline-none placeholder:text-zinc-700 transition-colors ${
+                          item.done
+                            ? 'text-zinc-500 line-through decoration-zinc-600'
+                            : 'text-white'
+                        }`}
+                      />
+                      <button
+                        onClick={() => deletePlanItem(item.id)}
+                        className="px-1 text-zinc-700 active:text-zinc-400"
+                      >
+                        ×
+                      </button>
                     </div>
                   ))}
                 </div>
-              )}
-
-              {/* In-progress streaming reply */}
-              {streamingReply && (
-                <div
-                  className="mt-4 rounded-[16px] px-4 py-3"
-                  style={{
-                    background: 'rgba(74,222,128,0.04)',
-                    border: '1px solid rgba(74,222,128,0.12)',
-                    borderLeft: '2px solid rgba(74,222,128,0.25)',
-                  }}
+                <button
+                  onClick={() => addPlanItem()}
+                  className="mt-2 px-1 text-sm text-zinc-600 active:text-zinc-400"
                 >
-                  <p className="text-sm italic leading-relaxed text-zinc-300">
-                    {streamingReply}
-                    <span className="ml-1 inline-block h-[13px] w-[2px] bg-green-400/60 align-middle animate-pulse" />
-                  </p>
-                </div>
-              )}
+                  + Add a line
+                </button>
+              </div>
+            )}
 
-              {replyError && (
-                <p className="mt-3 text-sm text-red-400">{replyError}</p>
-              )}
-
-              {/* Reply input */}
-              {rec.error && <p className="mt-3 text-xs text-red-400">{rec.error}</p>}
-              {rec.recording ? (
-                <div className="mt-6 flex items-center justify-between rounded-2xl bg-white/5 border border-white/10 px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
-                    <span className="text-sm tabular-nums text-white">{formatElapsed(rec.elapsed)}</span>
+            {/* Refine — voice or text, once a plan exists */}
+            {hasPlanItems && (
+              <>
+                {rec.error && <p className="mt-3 text-xs text-red-400">{rec.error}</p>}
+                {rec.recording ? (
+                  <div className="mt-6 flex items-center justify-between rounded-2xl bg-white/5 border border-white/10 px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
+                      <span className="text-sm tabular-nums text-white">{formatElapsed(rec.elapsed)}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button onClick={rec.reset} className="text-xs text-zinc-500 underline active:opacity-70">Cancel</button>
+                      <button
+                        onClick={rec.stop}
+                        className="rounded-full bg-white px-4 py-1.5 text-xs font-semibold text-black active:opacity-80"
+                      >
+                        Stop
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <button onClick={rec.reset} className="text-xs text-zinc-500 underline active:opacity-70">Cancel</button>
-                    <button
-                      onClick={rec.stop}
-                      className="rounded-full bg-white px-4 py-1.5 text-xs font-semibold text-black active:opacity-80"
-                    >
-                      Stop
-                    </button>
+                ) : rec.previewUrl ? (
+                  <div className="mt-6 space-y-2 rounded-2xl bg-white/5 border border-white/10 px-4 py-3">
+                    <audio controls src={rec.previewUrl} className="w-full" />
+                    <div className="flex items-center justify-end gap-4">
+                      <button onClick={rec.reset} className="text-xs text-zinc-500 underline active:opacity-70">Discard</button>
+                      <button
+                        onClick={handleVoiceRefine}
+                        disabled={planning}
+                        className="rounded-full bg-white px-4 py-1.5 text-xs font-semibold text-black disabled:opacity-50 active:opacity-80"
+                      >
+                        {planning ? 'Updating…' : 'Update plan'}
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ) : rec.previewUrl ? (
-                <div className="mt-6 space-y-2 rounded-2xl bg-white/5 border border-white/10 px-4 py-3">
-                  <audio controls src={rec.previewUrl} className="w-full" />
-                  <div className="flex items-center justify-end gap-4">
-                    <button onClick={rec.reset} className="text-xs text-zinc-500 underline active:opacity-70">Discard</button>
-                    <button
-                      onClick={handleVoiceReply}
-                      disabled={isReplying}
-                      className="rounded-full bg-white px-4 py-1.5 text-xs font-semibold text-black disabled:opacity-50 active:opacity-80"
-                    >
-                      {isReplying ? 'Sending…' : 'Send voice reply'}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-6 flex gap-3 items-end">
-                  <textarea
-                    value={replyText}
-                    onChange={e => setReplyText(e.target.value)}
-                    placeholder="Reply..."
-                    rows={2}
-                    className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-white/25 resize-none focus:outline-none focus:border-white/20"
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault()
-                        handleReply()
-                      }
-                    }}
-                  />
-                  <button
-                    onClick={rec.start}
-                    disabled={isReplying}
-                    className="px-3 py-3 rounded-2xl bg-white/10 text-base disabled:opacity-30"
-                    title="Record a voice reply"
-                  >
-                    🎙️
-                  </button>
-                  <button
-                    onClick={handleReply}
-                    disabled={!replyText.trim() || isReplying}
-                    className="px-4 py-3 rounded-2xl bg-white/10 text-sm text-white disabled:opacity-30 transition-opacity"
-                  >
-                    {isReplying ? '…' : 'Send'}
-                  </button>
-                </div>
-              )}
-            </>
-          ) : (
-            <>
-              {streamError && (
-                <p className="mb-3 text-sm text-red-400">{streamError}</p>
-              )}
-              <button
-                onClick={handleGetReflection}
-                disabled={streaming}
-                className="flex h-12 w-full items-center justify-center rounded-[16px] text-sm font-semibold text-zinc-300 active:opacity-80 transition-all disabled:opacity-40"
-                style={{
-                  background: 'rgba(74,222,128,0.06)',
-                  border: '1px solid rgba(74,222,128,0.2)',
-                }}
-              >
-                {streaming ? (
-                  <span className="flex items-center gap-2">
-                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-                    Getting reflection…
-                  </span>
                 ) : (
-                  <span className="flex items-center gap-2">
-                    <span className="text-green-700">✦</span>
-                    Get reflection
-                  </span>
+                  <div className="mt-6 flex gap-3 items-end">
+                    <textarea
+                      value={refineText}
+                      onChange={e => setRefineText(e.target.value)}
+                      placeholder="Change the plan… (“move the run after the gym”)"
+                      rows={2}
+                      className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-white/25 resize-none focus:outline-none focus:border-white/20"
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault()
+                          handleTextRefine()
+                        }
+                      }}
+                    />
+                    <button
+                      onClick={rec.start}
+                      disabled={planning}
+                      className="px-3 py-3 rounded-2xl bg-white/10 text-base disabled:opacity-30"
+                      title="Record a change"
+                    >
+                      🎙️
+                    </button>
+                    <button
+                      onClick={handleTextRefine}
+                      disabled={!refineText.trim() || planning}
+                      className="px-4 py-3 rounded-2xl bg-white/10 text-sm text-white disabled:opacity-30 transition-opacity"
+                    >
+                      {planning ? '…' : 'Update'}
+                    </button>
+                  </div>
                 )}
-              </button>
-            </>
-          )}
-        </div>
+              </>
+            )}
+          </div>
+        ) : (
+          /* ─── Night: reflection (unchanged) ─────────────────────────────── */
+          <>
+            <textarea
+              ref={bodyTextareaRef}
+              value={editBody}
+              onChange={(e) => {
+                setEditBody(e.target.value)
+                autoGrow(e.target)
+                scheduleAutoSave(editTitle, e.target.value, editMood)
+              }}
+              rows={8}
+              className="w-full resize-none bg-transparent text-base text-white outline-none"
+            />
+
+            <div className="mt-6">
+              <p className="mb-2 text-xs text-zinc-500">How are you feeling?</p>
+              <div className="flex gap-2">
+                {([1, 2, 3, 4, 5] as const).map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => {
+                      const next = editMood === n ? null : n
+                      setEditMood(next)
+                      scheduleAutoSave(editTitle, editBody, next)
+                    }}
+                    className={`flex-1 rounded-full py-2 text-2xl transition-colors ${
+                      editMood === n ? 'bg-white' : 'bg-zinc-900 active:opacity-80'
+                    }`}
+                  >
+                    {MOOD_EMOJIS[n]}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-6 mb-6" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }} />
+
+            <div>
+              {(displayReflection || streaming) ? (
+                <>
+                  <div className="mb-3 flex items-center gap-2">
+                    <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-green-700">✦ ATLAS</span>
+                    {streaming && (
+                      <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-green-600/60 align-middle" />
+                    )}
+                  </div>
+                  <div
+                    className="rounded-[16px] px-4 py-3 mb-2"
+                    style={{
+                      background: 'rgba(74,222,128,0.04)',
+                      border: '1px solid rgba(74,222,128,0.12)',
+                      borderLeft: '2px solid rgba(74,222,128,0.3)',
+                    }}
+                  >
+                    <p className="text-[15px] italic leading-relaxed text-zinc-300">
+                      {displayReflection}
+                      {streaming && <span className="ml-1 inline-block h-[15px] w-[2px] bg-green-400/60 align-middle animate-pulse" />}
+                    </p>
+                  </div>
+                  <div className="mt-2 flex gap-4">
+                    {savedReflection && !streaming && (
+                      <button
+                        onClick={handleGetReflection}
+                        disabled={streaming || isReplying}
+                        className="text-xs text-zinc-600 underline active:opacity-70"
+                      >
+                        Regenerate
+                      </button>
+                    )}
+                    {displayReflection && !streaming && (
+                      <button
+                        onClick={() => handleGoLonger(-1)}
+                        disabled={isReplying}
+                        className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+                      >
+                        Go longer →
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Follow-up conversation thread */}
+                  {conversation.length > 0 && (
+                    <div className="mt-6 space-y-4">
+                      {conversation.map((msg, i) => (
+                        <div key={i} className={msg.role === 'user' ? 'text-right' : ''}>
+                          {msg.role === 'user' ? (
+                            <div
+                              className="inline-block rounded-2xl px-4 py-3 text-sm text-white max-w-[85%] text-left"
+                              style={{ background: 'rgba(255,255,255,0.08)' }}
+                            >
+                              {msg.audio_url && (
+                                <audio controls src={msg.audio_url} className="mb-2 w-full min-w-[220px]" />
+                              )}
+                              {msg.audio_url ? (
+                                <span className="text-xs italic text-white/60">{msg.content}</span>
+                              ) : (
+                                msg.content
+                              )}
+                            </div>
+                          ) : (
+                            <div
+                              className="rounded-[16px] px-4 py-3"
+                              style={{
+                                background: 'rgba(74,222,128,0.04)',
+                                border: '1px solid rgba(74,222,128,0.12)',
+                                borderLeft: '2px solid rgba(74,222,128,0.25)',
+                              }}
+                            >
+                              <p className="text-sm italic leading-relaxed text-zinc-300">{msg.content}</p>
+                              <button
+                                onClick={() => handleGoLonger(i)}
+                                disabled={isReplying}
+                                className="text-xs text-zinc-700 hover:text-zinc-500 mt-1.5 transition-colors"
+                              >
+                                Go longer →
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* In-progress streaming reply */}
+                  {streamingReply && (
+                    <div
+                      className="mt-4 rounded-[16px] px-4 py-3"
+                      style={{
+                        background: 'rgba(74,222,128,0.04)',
+                        border: '1px solid rgba(74,222,128,0.12)',
+                        borderLeft: '2px solid rgba(74,222,128,0.25)',
+                      }}
+                    >
+                      <p className="text-sm italic leading-relaxed text-zinc-300">
+                        {streamingReply}
+                        <span className="ml-1 inline-block h-[13px] w-[2px] bg-green-400/60 align-middle animate-pulse" />
+                      </p>
+                    </div>
+                  )}
+
+                  {replyError && (
+                    <p className="mt-3 text-sm text-red-400">{replyError}</p>
+                  )}
+
+                  {/* Reply input */}
+                  {rec.error && <p className="mt-3 text-xs text-red-400">{rec.error}</p>}
+                  {rec.recording ? (
+                    <div className="mt-6 flex items-center justify-between rounded-2xl bg-white/5 border border-white/10 px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
+                        <span className="text-sm tabular-nums text-white">{formatElapsed(rec.elapsed)}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button onClick={rec.reset} className="text-xs text-zinc-500 underline active:opacity-70">Cancel</button>
+                        <button
+                          onClick={rec.stop}
+                          className="rounded-full bg-white px-4 py-1.5 text-xs font-semibold text-black active:opacity-80"
+                        >
+                          Stop
+                        </button>
+                      </div>
+                    </div>
+                  ) : rec.previewUrl ? (
+                    <div className="mt-6 space-y-2 rounded-2xl bg-white/5 border border-white/10 px-4 py-3">
+                      <audio controls src={rec.previewUrl} className="w-full" />
+                      <div className="flex items-center justify-end gap-4">
+                        <button onClick={rec.reset} className="text-xs text-zinc-500 underline active:opacity-70">Discard</button>
+                        <button
+                          onClick={handleVoiceReply}
+                          disabled={isReplying}
+                          className="rounded-full bg-white px-4 py-1.5 text-xs font-semibold text-black disabled:opacity-50 active:opacity-80"
+                        >
+                          {isReplying ? 'Sending…' : 'Send voice reply'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-6 flex gap-3 items-end">
+                      <textarea
+                        value={replyText}
+                        onChange={e => setReplyText(e.target.value)}
+                        placeholder="Reply..."
+                        rows={2}
+                        className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-white/25 resize-none focus:outline-none focus:border-white/20"
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault()
+                            handleReply()
+                          }
+                        }}
+                      />
+                      <button
+                        onClick={rec.start}
+                        disabled={isReplying}
+                        className="px-3 py-3 rounded-2xl bg-white/10 text-base disabled:opacity-30"
+                        title="Record a voice reply"
+                      >
+                        🎙️
+                      </button>
+                      <button
+                        onClick={handleReply}
+                        disabled={!replyText.trim() || isReplying}
+                        className="px-4 py-3 rounded-2xl bg-white/10 text-sm text-white disabled:opacity-30 transition-opacity"
+                      >
+                        {isReplying ? '…' : 'Send'}
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  {streamError && (
+                    <p className="mb-3 text-sm text-red-400">{streamError}</p>
+                  )}
+                  <button
+                    onClick={handleGetReflection}
+                    disabled={streaming}
+                    className="flex h-12 w-full items-center justify-center rounded-[16px] text-sm font-semibold text-zinc-300 active:opacity-80 transition-all disabled:opacity-40"
+                    style={{
+                      background: 'rgba(74,222,128,0.06)',
+                      border: '1px solid rgba(74,222,128,0.2)',
+                    }}
+                  >
+                    {streaming ? (
+                      <span className="flex items-center gap-2">
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                        Getting reflection…
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-2">
+                        <span className="text-green-700">✦</span>
+                        Get reflection
+                      </span>
+                    )}
+                  </button>
+                </>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {confirmDelete && (
@@ -620,7 +898,7 @@ export default function EntryDetail({ initialEntry }: Props) {
             onClick={(e) => e.stopPropagation()}
           >
             <p className="mb-1 text-base font-semibold">Delete entry?</p>
-            <p className="mb-6 text-sm text-zinc-400">This can't be undone.</p>
+            <p className="mb-6 text-sm text-zinc-400">This can&apos;t be undone.</p>
             <div className="flex gap-3">
               <button
                 onClick={() => setConfirmDelete(false)}

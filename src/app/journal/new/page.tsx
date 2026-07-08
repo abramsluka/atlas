@@ -7,6 +7,7 @@ import { format } from 'date-fns'
 import { useCreateEntry } from '@/features/journal/mutations'
 import { useVoiceRecorder, formatElapsed } from '@/features/journal/useVoiceRecorder'
 import { uploadJournalAudio } from '@/features/journal/uploadAudio'
+import type { EntryKind, PlanItem } from '@/features/journal/types'
 
 const MOOD_EMOJIS: Record<number, string> = {
   1: '😔',
@@ -16,12 +17,24 @@ const MOOD_EMOJIS: Record<number, string> = {
   5: '😄',
 }
 
+const MORNING_CUTOFF_HOUR = 12 // before noon → morning
+
+// Typed morning brain-dump → one plan item per non-empty line
+function linesToPlan(body: string): PlanItem[] {
+  return body
+    .split('\n')
+    .map(l => l.trim())
+    .filter(Boolean)
+    .map(text => ({ id: crypto.randomUUID(), text, done: false }))
+}
+
 export default function NewJournalEntryPage() {
   const router = useRouter()
   const createEntry = useCreateEntry()
 
   const [body, setBody] = useState('')
   const [mood, setMood] = useState<number | null>(null)
+  const [kind, setKind] = useState<EntryKind>('night')
   const [today, setToday] = useState('')
   const [todayDisplay, setTodayDisplay] = useState('')
   const [uploading, setUploading] = useState(false)
@@ -36,7 +49,10 @@ export default function NewJournalEntryPage() {
     const now = new Date()
     setToday(format(now, 'yyyy-MM-dd'))
     setTodayDisplay(format(now, 'EEEE, MMMM do, yyyy'))
+    setKind(now.getHours() < MORNING_CUTOFF_HOUR ? 'morning' : 'night')
   }, [])
+
+  const isMorning = kind === 'morning'
 
   function autoGrow(el: HTMLTextAreaElement) {
     el.style.height = 'auto'
@@ -54,7 +70,9 @@ export default function NewJournalEntryPage() {
         const entry = await createEntry.mutateAsync({
           date: today,
           body: body.trim(),
-          mood,
+          mood: isMorning ? null : mood,
+          kind,
+          plan: isMorning ? linesToPlan(body) : [],
         })
         entryId = entry.id
         createdEntryId.current = entry.id
@@ -108,7 +126,17 @@ export default function NewJournalEntryPage() {
       )}
 
       <div className="flex-1 overflow-y-auto px-6 pt-5 pb-36" style={{ marginTop: 'calc(env(safe-area-inset-top) + 56px)' }}>
-        <p className="mb-4 text-xl font-semibold text-white">{todayDisplay}</p>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <p className="text-xl font-semibold text-white">{todayDisplay}</p>
+          <button
+            onClick={() => setKind(isMorning ? 'night' : 'morning')}
+            className="flex flex-shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold text-zinc-300 active:opacity-70 transition-colors"
+            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }}
+            title="Tap to switch"
+          >
+            {isMorning ? '☀️ Morning' : '🌙 Night'}
+          </button>
+        </div>
 
         {/* Voice note */}
         <div className="mb-5 rounded-2xl bg-zinc-900 px-4 py-3">
@@ -120,7 +148,7 @@ export default function NewJournalEntryPage() {
               className="flex w-full items-center gap-3 py-1 text-sm text-zinc-400 active:opacity-70"
             >
               <span className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800 text-base">🎙️</span>
-              Record a voice note
+              {isMorning ? 'Talk through your day' : 'Record a voice note'}
             </button>
           )}
           {rec.recording && (
@@ -154,7 +182,7 @@ export default function NewJournalEntryPage() {
 
         <textarea
           ref={textareaRef}
-          placeholder="What's on your mind?"
+          placeholder={isMorning ? "What's the plan for today? One thing per line." : "What's on your mind?"}
           value={body}
           autoFocus
           onChange={(e) => {
@@ -166,25 +194,27 @@ export default function NewJournalEntryPage() {
         />
       </div>
 
-      <div
-        className="fixed bottom-0 left-0 right-0 border-t border-zinc-900 bg-black px-6 py-3"
-        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}
-      >
-        <p className="mb-2 text-xs text-zinc-500">How are you feeling?</p>
-        <div className="flex gap-2">
-          {([1, 2, 3, 4, 5] as const).map((n) => (
-            <button
-              key={n}
-              onClick={() => setMood(mood === n ? null : n)}
-              className={`flex-1 rounded-full py-2 text-2xl transition-colors ${
-                mood === n ? 'bg-white' : 'bg-zinc-900 active:opacity-80'
-              }`}
-            >
-              {MOOD_EMOJIS[n]}
-            </button>
-          ))}
+      {!isMorning && (
+        <div
+          className="fixed bottom-0 left-0 right-0 border-t border-zinc-900 bg-black px-6 py-3"
+          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}
+        >
+          <p className="mb-2 text-xs text-zinc-500">How are you feeling?</p>
+          <div className="flex gap-2">
+            {([1, 2, 3, 4, 5] as const).map((n) => (
+              <button
+                key={n}
+                onClick={() => setMood(mood === n ? null : n)}
+                className={`flex-1 rounded-full py-2 text-2xl transition-colors ${
+                  mood === n ? 'bg-white' : 'bg-zinc-900 active:opacity-80'
+                }`}
+              >
+                {MOOD_EMOJIS[n]}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

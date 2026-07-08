@@ -88,7 +88,12 @@ export default function JournalClient({ initialData }: Props) {
                       {format(new Date(entry.date + 'T12:00:00'), 'EEE, MMM d')}
                     </p>
                     <p className="truncate text-[15px] font-semibold text-white leading-snug">
-                      {entry.title || entry.body.slice(0, 80) || (entry.audio_path ? 'Voice note' : '')}
+                      <span className="mr-1.5">{entry.kind === 'morning' ? '☀️' : '🌙'}</span>
+                      {entry.title ||
+                        entry.body.slice(0, 80) ||
+                        (entry.kind === 'morning'
+                          ? entry.plan?.[0]?.text || 'Morning plan'
+                          : entry.audio_path ? 'Voice note' : '')}
                     </p>
                   </div>
                   {entry.mood != null && (

@@ -31,6 +31,7 @@ export default async function HomePage() {
       initialBriefing={home.briefing}
       initialWeeklyReports={home.weeklyReports}
       initialStreaks={home.streaks}
+      initialDayPlan={home.dayPlan}
     />
   )
 }

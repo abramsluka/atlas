@@ -34,9 +34,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
 
-  // Untitled text entries get a short generated title (voice-only entries get one after transcription)
+  // Untitled text entries get a short generated title (voice-only entries get one
+  // after transcription). Morning plans skip title generation — the list falls
+  // back to the first plan item.
   let title = parsed.data.title ?? null
-  if (!title && parsed.data.body.trim()) {
+  if (!title && parsed.data.kind !== 'morning' && parsed.data.body.trim()) {
     title = await generateTitle(parsed.data.body)
   }
 
@@ -49,6 +51,8 @@ export async function POST(request: NextRequest) {
       title,
       body: parsed.data.body,
       mood: parsed.data.mood ?? null,
+      kind: parsed.data.kind,
+      plan: parsed.data.plan,
     })
     .select()
     .single()

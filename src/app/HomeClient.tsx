@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation'
 import { useTodayCheckin } from '@/features/checkins/queries'
 import { useSaveEveningCheckin } from '@/features/checkins/mutations'
 import type { DailyCheckin } from '@/features/checkins/types'
+import type { PlanItem } from '@/features/journal/types'
 import type { BentoStats } from '@/lib/home/bentoStats'
 import type { Streaks } from '@/lib/home/streaks'
 import StreakStrip from './StreakStrip'
@@ -601,6 +602,7 @@ function TodaysCallCard({ initial }: { initial?: TodaysCallData | null }) {
   const [data, setData] = useState<TodaysCallData | null>(initial ?? null)
   const [loading, setLoading] = useState(false)
   const [noData, setNoData] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
   const fetched = useRef(false)
 
   const fetch_ = useCallback(async (refresh = false) => {
@@ -619,12 +621,22 @@ function TodaysCallCard({ initial }: { initial?: TodaysCallData | null }) {
   }, [loading])
 
   useEffect(() => {
+    setCollapsed(localStorage.getItem('atlas:todaysCall:collapsed') === '1')
+  }, [])
+
+  useEffect(() => {
     if (fetched.current) return
     fetched.current = true
     if (initial) return // seeded from server cache; skip the mount POST
     fetch_()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  function toggleCollapsed() {
+    const next = !collapsed
+    setCollapsed(next)
+    localStorage.setItem('atlas:todaysCall:collapsed', next ? '1' : '0')
+  }
 
   if (noData) return null
   if (!data && !loading) return null
@@ -634,15 +646,24 @@ function TodaysCallCard({ initial }: { initial?: TodaysCallData | null }) {
 
   return (
     <div
-      className="rounded-2xl p-5 mb-4"
+      className="rounded-2xl px-5 py-4 mb-4"
       style={{ background: '#0e0e10', border: `1px solid ${border}`, borderLeft: `3px solid ${color}` }}
     >
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/40">Today&apos;s Call</span>
+      <div
+        className="flex items-center justify-between cursor-pointer select-none"
+        onClick={toggleCollapsed}
+      >
+        <span className="flex items-center gap-2 text-[10px] font-bold tracking-[0.18em] uppercase text-white/40">
+          <span
+            className="inline-block text-white/25 transition-transform duration-200"
+            style={{ transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}
+          >▾</span>
+          Today&apos;s Call
+        </span>
         <div className="flex items-center gap-2">
-          {data && !loading && (
+          {data && !loading && !collapsed && (
             <button
-              onClick={() => fetch_(true)}
+              onClick={(e) => { e.stopPropagation(); fetch_(true) }}
               className="text-[11px] text-white/20 hover:text-white/50 transition-colors"
               title="Refresh"
             >↺</button>
@@ -660,20 +681,152 @@ function TodaysCallCard({ initial }: { initial?: TodaysCallData | null }) {
         </div>
       </div>
 
-      {data ? (
-        <>
-          <p className="text-sm font-semibold text-white leading-snug mb-3">{data.headline}</p>
-          <ul className="space-y-1">
-            {data.bullets.map((b, i) => (
-              <li key={i} className="text-xs text-white/50 leading-relaxed">{b}</li>
-            ))}
-          </ul>
-        </>
+      {!collapsed && (
+        <div className="mt-3">
+          {data ? (
+            <>
+              <p className="text-sm font-semibold text-white leading-snug mb-3">{data.headline}</p>
+              <ul className="space-y-1">
+                {data.bullets.map((b, i) => (
+                  <li key={i} className="text-xs text-white/50 leading-relaxed">{b}</li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <div className="space-y-2">
+              <div className="h-4 rounded bg-white/[0.06] animate-pulse w-3/4" />
+              <div className="h-3 rounded bg-white/[0.04] animate-pulse w-1/2" />
+              <div className="h-3 rounded bg-white/[0.04] animate-pulse w-2/3" />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Day Plan ─────────────────────────────────────────────────────────────────
+
+interface DayPlanData { entryId: string; plan: PlanItem[] }
+
+const DAY_PLAN_PREVIEW_COUNT = 3
+
+function DayPlanCard({ initial }: { initial?: DayPlanData | null }) {
+  const router = useRouter()
+  // undefined = loading (fallback fetch in flight), null = no morning entry today
+  const [data, setData] = useState<DayPlanData | null | undefined>(initial)
+  // Just-ticked items stay visible (struck through) briefly before dropping out
+  const [lingering, setLingering] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    if (initial !== undefined) return // server-seeded; skip the fetch
+    fetch('/api/home/day-plan')
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => setData(j?.entryId ? { entryId: j.entryId, plan: j.plan ?? [] } : null))
+      .catch(() => setData(null))
+  }, [initial])
+
+  function toggleItem(itemId: string) {
+    if (!data) return
+    const prev = data
+    const nextPlan = data.plan.map(p => (p.id === itemId ? { ...p, done: !p.done } : p))
+    setData({ ...data, plan: nextPlan })
+
+    const nowDone = nextPlan.find(p => p.id === itemId)?.done
+    if (nowDone) {
+      setLingering(s => new Set(s).add(itemId))
+      setTimeout(() => {
+        setLingering(s => {
+          const next = new Set(s)
+          next.delete(itemId)
+          return next
+        })
+      }, 900)
+    }
+
+    // Write back to the journal entry (source of truth); revert on failure
+    fetch(`/api/journal/${data.entryId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan: nextPlan }),
+    }).then(res => { if (!res.ok) setData(prev) }).catch(() => setData(prev))
+  }
+
+  if (data === undefined) return null
+
+  // No morning plan yet — soft nudge to make one
+  if (data === null || data.plan.length === 0) {
+    const href = data === null ? '/journal/new' : `/journal/${data.entryId}`
+    return (
+      <button
+        onClick={() => router.push(href)}
+        className="w-full rounded-2xl px-5 py-4 mb-4 flex items-center justify-between active:opacity-80 transition-opacity"
+        style={{ background: '#0e0e10', border: '1px solid rgba(251,191,36,0.15)' }}
+      >
+        <span className="flex items-center gap-2 text-sm text-zinc-400">
+          <span>☀️</span>
+          Plan your day
+        </span>
+        <span className="text-zinc-600 text-sm">→</span>
+      </button>
+    )
+  }
+
+  const unchecked = data.plan.filter(p => !p.done)
+  const preview = data.plan
+    .filter(p => !p.done || lingering.has(p.id))
+    .slice(0, DAY_PLAN_PREVIEW_COUNT)
+  const moreCount = unchecked.length - preview.filter(p => !p.done).length
+
+  return (
+    <div
+      className="rounded-2xl px-5 py-4 mb-4"
+      style={{ background: '#0e0e10', border: '1px solid rgba(251,191,36,0.15)', borderLeft: '3px solid rgba(251,191,36,0.45)' }}
+    >
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/40">☀️ Day Plan</span>
+        <button
+          onClick={() => router.push(`/journal/${data.entryId}`)}
+          className="text-[11px] text-white/25 active:text-white/50 transition-colors"
+        >
+          {unchecked.length}/{data.plan.length} left →
+        </button>
+      </div>
+
+      {preview.length === 0 ? (
+        <p className="text-sm text-zinc-500">Day planned ✓ — all done</p>
       ) : (
-        <div className="space-y-2">
-          <div className="h-4 rounded bg-white/[0.06] animate-pulse w-3/4" />
-          <div className="h-3 rounded bg-white/[0.04] animate-pulse w-1/2" />
-          <div className="h-3 rounded bg-white/[0.04] animate-pulse w-2/3" />
+        <div className="space-y-1.5">
+          {preview.map(item => (
+            <div key={item.id} className="flex items-center gap-3">
+              <button
+                onClick={() => toggleItem(item.id)}
+                className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md transition-colors"
+                style={{
+                  background: item.done ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.06)',
+                  border: item.done ? '1px solid rgba(251,191,36,0.4)' : '1px solid rgba(255,255,255,0.15)',
+                }}
+              >
+                {item.done && <span className="text-[11px] leading-none text-amber-300">✓</span>}
+              </button>
+              <button
+                onClick={() => router.push(`/journal/${data.entryId}`)}
+                className={`flex-1 text-left text-sm leading-snug transition-all duration-300 ${
+                  item.done ? 'text-zinc-600 line-through decoration-zinc-600' : 'text-zinc-200'
+                }`}
+              >
+                {item.text}
+              </button>
+            </div>
+          ))}
+          {moreCount > 0 && (
+            <button
+              onClick={() => router.push(`/journal/${data.entryId}`)}
+              className="pl-8 text-xs text-zinc-600 active:text-zinc-400"
+            >
+              +{moreCount} more →
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -858,6 +1011,7 @@ export default function HomeClient({
   initialBriefing,
   initialWeeklyReports,
   initialStreaks,
+  initialDayPlan,
 }: {
   today: string
   timezone: string
@@ -867,6 +1021,7 @@ export default function HomeClient({
   initialBriefing?: string | null
   initialWeeklyReports?: Array<{ week_of: string; report_text: string }>
   initialStreaks?: Streaks
+  initialDayPlan?: DayPlanData | null
 }) {
   const queryClient = useQueryClient()
   if (initialCheckin) queryClient.setQueryData(['checkin', today], initialCheckin)
@@ -984,6 +1139,7 @@ export default function HomeClient({
         >
           <DayRing />
           <TodaysCallCard initial={initialTodaysCall} />
+          <DayPlanCard initial={initialDayPlan} />
         </motion.div>
 
         {/* Consistency strip */}
