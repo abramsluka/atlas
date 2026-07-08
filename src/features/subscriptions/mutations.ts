@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { CreateSubscriptionPayload, UpdateSubscriptionPayload } from './types'
+import type { CreateSubscriptionPayload, UpdateSubscriptionPayload, ImportedSubscription } from './types'
 
 export function useCreateSubscription() {
   const qc = useQueryClient()
@@ -30,6 +30,20 @@ export function useUpdateSubscription() {
       return res.json()
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['subscriptions'] }),
+  })
+}
+
+export function useAnalyzeSubscriptionScreenshot() {
+  return useMutation({
+    mutationFn: async (payload: { imageBase64: string; mediaType: string }) => {
+      const res = await fetch('/api/subscriptions/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) throw new Error('Failed to read screenshot')
+      return res.json() as Promise<{ subscriptions: ImportedSubscription[] }>
+    },
   })
 }
 

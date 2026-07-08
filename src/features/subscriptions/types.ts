@@ -35,6 +35,16 @@ export interface UpdateSubscriptionPayload {
   notes?: string | null
 }
 
+// One subscription parsed out of a screenshot by /api/subscriptions/import
+export interface ImportedSubscription {
+  name: string
+  amount: number
+  currency: string
+  billing_period: 'weekly' | 'monthly' | 'yearly'
+  next_renewal: string | null
+  category: string | null
+}
+
 // Derived — computed on the client for display
 export interface SubscriptionWithMeta extends Subscription {
   monthlyEquivalent: number   // amount normalized to per-month cost

@@ -2,12 +2,18 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useSubscriptions } from '@/features/subscriptions/queries'
-import { useCreateSubscription, useUpdateSubscription, useDeleteSubscription } from '@/features/subscriptions/mutations'
+import {
+  useCreateSubscription,
+  useUpdateSubscription,
+  useDeleteSubscription,
+  useAnalyzeSubscriptionScreenshot,
+} from '@/features/subscriptions/mutations'
 import type {
   Subscription,
   SubscriptionWithMeta,
   CreateSubscriptionPayload,
   UpdateSubscriptionPayload,
+  ImportedSubscription,
 } from '@/features/subscriptions/types'
 import { BILLING_PERIODS, CURRENCIES, CATEGORIES } from '@/features/subscriptions/types'
 
@@ -111,6 +117,34 @@ function sortSubscriptions(subs: SubscriptionWithMeta[]): SubscriptionWithMeta[]
     if (b.daysUntilRenewal !== null) return 1
     return a.name.localeCompare(b.name)
   })
+}
+
+// Downscale + re-encode a picked image so the base64 payload stays small and the
+// media type is always one Claude accepts, regardless of what the picker returns.
+async function fileToBase64Image(file: File): Promise<{ imageBase64: string; mediaType: string }> {
+  try {
+    const bitmap = await createImageBitmap(file)
+    const maxDim = 1568
+    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale))
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('no canvas context')
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    bitmap.close()
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.9)
+    return { imageBase64: dataUrl.split(',')[1], mediaType: 'image/jpeg' }
+  } catch {
+    // Fallback: send the raw file as-is (covers browsers without createImageBitmap)
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.onerror = () => reject(new Error('read failed'))
+      reader.readAsDataURL(file)
+    })
+    return { imageBase64: dataUrl.split(',')[1], mediaType: file.type }
+  }
 }
 
 // ─── Renewal Ticker ───────────────────────────────────────────────────────────
@@ -398,6 +432,156 @@ function SubscriptionForm({
   )
 }
 
+// ─── Import Sheet ─────────────────────────────────────────────────────────────
+
+type ImportState =
+  | { status: 'analyzing' }
+  | { status: 'review'; items: ImportedSubscription[]; included: boolean[] }
+  | { status: 'error'; message: string }
+
+function ImportSheet({
+  state,
+  onToggle,
+  onConfirm,
+  onClose,
+  isAdding,
+}: {
+  state: ImportState
+  onToggle: (idx: number) => void
+  onConfirm: () => void
+  onClose: () => void
+  isAdding: boolean
+}) {
+  const selectedCount =
+    state.status === 'review' ? state.included.filter(Boolean).length : 0
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm p-4"
+      style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}
+      onClick={(e) => { if (e.target === e.currentTarget && state.status !== 'analyzing') onClose() }}
+    >
+      <div className="w-full max-w-md rounded-2xl bg-zinc-900 p-5 space-y-4 max-h-[88vh] overflow-y-auto">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-widest text-zinc-500">
+            Import from screenshot
+          </h2>
+          {state.status !== 'analyzing' && (
+            <button onClick={onClose} className="text-zinc-500 active:text-white">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-5 w-5">
+                <path d="M18 6 6 18M6 6l12 12" strokeLinecap="round" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        {state.status === 'analyzing' && (
+          <div className="flex flex-col items-center gap-3 py-10">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-emerald-400" />
+            <p className="text-sm text-zinc-400">Reading your screenshot…</p>
+          </div>
+        )}
+
+        {state.status === 'error' && (
+          <div className="space-y-4 py-4 text-center">
+            <p className="text-sm text-zinc-400">{state.message}</p>
+            <button
+              onClick={onClose}
+              className="w-full rounded-xl border border-zinc-700 py-3 text-sm font-medium text-zinc-400 active:bg-zinc-800"
+            >
+              Close
+            </button>
+          </div>
+        )}
+
+        {state.status === 'review' && state.items.length === 0 && (
+          <div className="space-y-4 py-4 text-center">
+            <p className="text-sm text-zinc-400">
+              No subscriptions found in that screenshot. Try one that shows the
+              service name and price — a receipt, confirmation email, or billing page.
+            </p>
+            <button
+              onClick={onClose}
+              className="w-full rounded-xl border border-zinc-700 py-3 text-sm font-medium text-zinc-400 active:bg-zinc-800"
+            >
+              Close
+            </button>
+          </div>
+        )}
+
+        {state.status === 'review' && state.items.length > 0 && (
+          <>
+            <p className="text-xs text-zinc-500">
+              Found {state.items.length} subscription{state.items.length === 1 ? '' : 's'}.
+              Tap to include or exclude, then add.
+            </p>
+            <div className="space-y-2">
+              {state.items.map((item, idx) => {
+                const included = state.included[idx]
+                const periodLabel = item.billing_period === 'monthly' ? '/month' :
+                  item.billing_period === 'yearly' ? '/year' : '/week'
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => onToggle(idx)}
+                    className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors ${
+                      included
+                        ? 'border-emerald-500/30 bg-emerald-500/5'
+                        : 'border-zinc-800 bg-zinc-800/40 opacity-50'
+                    }`}
+                  >
+                    <span
+                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${
+                        included ? 'border-emerald-400 bg-emerald-500/20' : 'border-zinc-600'
+                      }`}
+                    >
+                      {included && (
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="h-3 w-3 text-emerald-400">
+                          <path d="M20 6 9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-white">{item.name}</span>
+                      <span className="block text-xs text-zinc-500">
+                        {formatAmount(item.amount, item.currency)}{periodLabel}
+                        {item.next_renewal ? ` · renews ${shortDateLabel(item.next_renewal)}` : ''}
+                      </span>
+                    </span>
+                    {item.category && (
+                      <span className="shrink-0 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400">
+                        {item.category}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 rounded-xl border border-zinc-700 py-3 text-sm font-medium text-zinc-400 active:bg-zinc-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={onConfirm}
+                disabled={isAdding || selectedCount === 0}
+                className="flex-1 rounded-xl bg-white py-3 text-sm font-bold text-black disabled:opacity-50"
+              >
+                {isAdding ? 'Adding…' : `Add ${selectedCount}`}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Edit Sheet ───────────────────────────────────────────────────────────────
 
 function EditSheet({
@@ -599,9 +783,13 @@ export default function SubscriptionsClient({
 }) {
   const { data: subscriptions } = useSubscriptions()
   const createSubscription = useCreateSubscription()
+  const analyzeScreenshot = useAnalyzeSubscriptionScreenshot()
 
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingSub, setEditingSub] = useState<Subscription | null>(null)
+  const [importState, setImportState] = useState<ImportState | null>(null)
+  const [isAddingImports, setIsAddingImports] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const allSubs = subscriptions ?? initialSubscriptions
   const enriched = allSubs.map(enrichSubscription)
@@ -624,20 +812,95 @@ export default function SubscriptionsClient({
     })
   }
 
+  async function handleScreenshotPicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+
+    setImportState({ status: 'analyzing' })
+    try {
+      const payload = await fileToBase64Image(file)
+      const { subscriptions: items } = await analyzeScreenshot.mutateAsync(payload)
+      setImportState({ status: 'review', items, included: items.map(() => true) })
+    } catch {
+      setImportState({
+        status: 'error',
+        message: 'Could not read that screenshot. Try again with a clearer image.',
+      })
+    }
+  }
+
+  function toggleImportItem(idx: number) {
+    setImportState((s) => {
+      if (!s || s.status !== 'review') return s
+      const included = [...s.included]
+      included[idx] = !included[idx]
+      return { ...s, included }
+    })
+  }
+
+  async function confirmImport() {
+    if (!importState || importState.status !== 'review') return
+    const selected = importState.items.filter((_, i) => importState.included[i])
+    if (selected.length === 0) return
+    setIsAddingImports(true)
+    try {
+      for (const item of selected) {
+        await createSubscription.mutateAsync({
+          name: item.name,
+          amount: item.amount,
+          currency: item.currency,
+          billing_period: item.billing_period,
+          next_renewal: item.next_renewal,
+          auto_renews: true,
+          category: item.category,
+        })
+      }
+      setImportState(null)
+    } catch {
+      setImportState({
+        status: 'error',
+        message: 'Some subscriptions failed to save. Check the list and re-import the rest.',
+      })
+    } finally {
+      setIsAddingImports(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-black pb-24">
       <div className="mx-auto max-w-md px-4 pt-12">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-xl font-bold text-white">Subscriptions</h1>
           {!showAddForm && (
-            <button
-              onClick={() => setShowAddForm(true)}
-              className="rounded-xl bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white active:bg-zinc-800"
-            >
-              + Add
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-1.5 rounded-xl bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white active:bg-zinc-800"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-4 w-4">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" strokeLinecap="round" strokeLinejoin="round" />
+                  <circle cx="12" cy="13" r="4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                Import
+              </button>
+              <button
+                onClick={() => setShowAddForm(true)}
+                className="rounded-xl bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white active:bg-zinc-800"
+              >
+                + Add
+              </button>
+            </div>
           )}
         </div>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleScreenshotPicked}
+        />
 
         {enriched.length > 0 && <RenewalTicker subs={enriched} />}
 
@@ -662,7 +925,7 @@ export default function SubscriptionsClient({
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <span className="mb-3 text-4xl">💳</span>
             <p className="font-semibold text-white">No subscriptions tracked yet</p>
-            <p className="mt-1 text-sm text-zinc-500">Tap + Add to log your first one</p>
+            <p className="mt-1 text-sm text-zinc-500">Tap + Add, or import a receipt screenshot</p>
           </div>
         ) : (
           <div>
@@ -684,6 +947,16 @@ export default function SubscriptionsClient({
 
       {editingSub && (
         <EditSheet sub={editingSub} onClose={() => setEditingSub(null)} />
+      )}
+
+      {importState && (
+        <ImportSheet
+          state={importState}
+          onToggle={toggleImportItem}
+          onConfirm={confirmImport}
+          onClose={() => setImportState(null)}
+          isAdding={isAddingImports}
+        />
       )}
     </div>
   )
