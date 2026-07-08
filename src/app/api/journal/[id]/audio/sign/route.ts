@@ -31,8 +31,9 @@ export async function POST(
   const body = await req.json().catch(() => ({}))
   const rawExt = typeof body.ext === 'string' ? body.ext.toLowerCase() : 'webm'
   const ext = ALLOWED_EXT.has(rawExt) ? rawExt : 'webm'
+  const infix = body.reply ? '_reply_' : '_'
 
-  const path = `${user.id}/${id}_${Date.now()}.${ext}`
+  const path = `${user.id}/${id}${infix}${Date.now()}.${ext}`
 
   const { data, error } = await db.storage.from(BUCKET).createSignedUploadUrl(path)
   if (error || !data) {

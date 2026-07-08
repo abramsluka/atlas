@@ -8,6 +8,7 @@ import { useJournalEntry } from '@/features/journal/queries'
 import { useUpdateEntry, useDeleteEntry } from '@/features/journal/mutations'
 import type { JournalEntry } from '@/features/journal/types'
 import { useVoiceRecorder, formatElapsed } from '@/features/journal/useVoiceRecorder'
+import { uploadAudioToStorage } from '@/features/journal/uploadAudio'
 
 interface Props {
   initialEntry: JournalEntry
@@ -175,9 +176,14 @@ export default function EntryDetail({ initialEntry }: Props) {
     setReplyError(null)
 
     try {
-      const fd = new FormData()
-      fd.append('file', file)
-      const res = await fetch(`/api/journal/${entry.id}/reply`, { method: 'POST', body: fd })
+      // Upload the audio straight to storage first (no Vercel 4.5 MB body limit),
+      // then hand the reply route just the path.
+      const audioPath = await uploadAudioToStorage(entry.id, file, { reply: true })
+      const res = await fetch(`/api/journal/${entry.id}/reply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audioPath }),
+      })
       if (!res.ok || !res.body) throw new Error(await res.text() || 'Failed')
 
       const reader = res.body.getReader()

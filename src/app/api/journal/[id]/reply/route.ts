@@ -26,27 +26,33 @@ export async function POST(
 
   if (error || !entry) return new Response('Not found', { status: 404 })
 
-  // Voice replies come in as multipart form data; text replies as JSON
+  // All replies come in as JSON. Voice replies are uploaded straight to storage
+  // from the browser (bypassing Vercel's 4.5 MB body limit) and reference the
+  // resulting path; text replies carry `message`/`makeLonger`.
   let message: string | undefined
   let makeLonger: boolean | undefined
   let messageIndex: number | undefined
   let replyAudioPath: string | null = null
 
-  const contentType = request.headers.get('content-type') ?? ''
-  if (contentType.includes('multipart/form-data')) {
-    const formData = await request.formData()
-    const file = formData.get('file') as File | null
-    if (!file) return new Response('No audio file', { status: 400 })
+  const body = await request.json().catch(() => ({}))
+  const audioPath: unknown = body.audioPath
 
-    const ext = file.name.split('.').pop() ?? 'webm'
-    replyAudioPath = `${user.id}/${id}_reply_${Date.now()}.${ext}`
-    const { error: uploadError } = await db.storage
+  if (audioPath) {
+    // Path must be one we handed out: this user's folder, this entry.
+    if (typeof audioPath !== 'string' || !audioPath.startsWith(`${user.id}/${id}_`)) {
+      return new Response('Invalid audio path', { status: 400 })
+    }
+    replyAudioPath = audioPath
+
+    const { data: file, error: dlError } = await db.storage
       .from('journal-audio')
-      .upload(replyAudioPath, file, { contentType: file.type, upsert: false })
-    if (uploadError) return new Response(`Upload failed: ${uploadError.message}`, { status: 500 })
+      .download(audioPath)
+    if (dlError || !file) {
+      return new Response('Recording not found in storage', { status: 400 })
+    }
 
     try {
-      message = await transcribeAudio(file, file.name)
+      message = await transcribeAudio(file, audioPath.split('/').pop() ?? 'audio.webm')
     } catch (err) {
       console.error('[journal/reply] transcription failed:', err)
       await db.storage.from('journal-audio').remove([replyAudioPath])
@@ -57,7 +63,6 @@ export async function POST(
       return new Response('Recording was empty or unintelligible', { status: 400 })
     }
   } else {
-    const body = await request.json()
     ;({ message, makeLonger, messageIndex } = body as {
       message?: string
       makeLonger?: boolean
