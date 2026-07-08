@@ -93,7 +93,21 @@ type GymLogRow = {
   gym_exercises: { name: string } | null
 }
 
-function formatGymLogs(logs: GymLogRow[], tz: string): string {
+type GymSessionRow = { date_key: string; started_at: string; ended_at: string }
+
+function fmtClock(iso: string, tz: string): string {
+  return new Date(iso).toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' })
+}
+
+function fmtDuration(startIso: string, endIso: string): string {
+  const mins = Math.round((new Date(endIso).getTime() - new Date(startIso).getTime()) / 60000)
+  if (mins < 60) return `${mins} min`
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return m ? `${h}h ${m}m` : `${h}h`
+}
+
+function formatGymLogs(logs: GymLogRow[], tz: string, sessions: Record<string, GymSessionRow>): string {
   // Group by local date → exercise → sets
   const byDay: Record<string, Record<string, Array<{ reps: number | null; weight: number | null }>>> = {}
   for (const log of logs) {
@@ -113,7 +127,9 @@ function formatGymLogs(logs: GymLogRow[], tz: string): string {
           return `  ${name}: ${setsStr}`
         })
         .join('\n')
-      return `${date}:\n${exLines}`
+      const s = sessions[date]
+      const meta = s ? ` (${fmtClock(s.started_at, tz)}–${fmtClock(s.ended_at, tz)}, ${fmtDuration(s.started_at, s.ended_at)})` : ''
+      return `${date}${meta}:\n${exLines}`
     })
     .join('\n\n')
 }
@@ -255,8 +271,10 @@ export async function POST(req: NextRequest) {
   const patternPromise = computePatterns(db, user.id, TZ, today)
 
   // Step 3 — fetch all data sources unconditionally
+  const fourWeeksAgoDate = formatInTimeZone(subWeeks(new Date(), 4), TZ, 'yyyy-MM-dd')
   const [
     gymLogData,
+    gymSessionData,
     ouraData,
     waterData,
     weightData,
@@ -270,6 +288,7 @@ export async function POST(req: NextRequest) {
     cardioData,
   ] = await Promise.all([
     db.from('gym_logs').select('logged_at, weight, reps, exercise_id, gym_exercises(name)').eq('user_id', user.id).gte('logged_at', fourWeeksAgo).order('logged_at', { ascending: false }).limit(200),
+    db.from('gym_sessions').select('date_key, started_at, ended_at').eq('user_id', user.id).gte('date_key', fourWeeksAgoDate),
     getOuraContextRange(db, user.id, fourteenDaysAgo, today),
     db.from('water_logs').select('date, amount_oz').eq('user_id', user.id).gte('date', sevenDaysAgo).order('date', { ascending: false }),
     db.from('body_weights').select('date_key, weight').eq('user_id', user.id).gte('date_key', thirtyDaysAgo).order('date_key', { ascending: false }).limit(10),
@@ -320,8 +339,11 @@ When journal data is present: look for mood trends across entries (not just toda
   const dataSections: string[] = []
 
   if (gymLogData.data?.length) {
-    const formatted = formatGymLogs(gymLogData.data as unknown as GymLogRow[], TZ)
-    if (formatted) dataSections.push(`GYM TRAINING (last 4 weeks — grouped by day):\n${formatted}`)
+    const sessionsByDate = Object.fromEntries(
+      ((gymSessionData.data ?? []) as GymSessionRow[]).map(s => [s.date_key, s])
+    )
+    const formatted = formatGymLogs(gymLogData.data as unknown as GymLogRow[], TZ, sessionsByDate)
+    if (formatted) dataSections.push(`GYM TRAINING (last 4 weeks — grouped by day; each day shows start–end time and duration when recorded):\n${formatted}`)
   }
 
   if (Array.isArray(ouraData) && ouraData.length > 0) {

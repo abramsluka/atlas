@@ -48,6 +48,14 @@ export interface GymLog {
   logged_at: string  // ISO
 }
 
+export interface GymSession {
+  id: string
+  user_id?: string
+  date_key: string   // LA calendar day, YYYY-MM-DD
+  started_at: string // ISO
+  ended_at: string   // ISO
+}
+
 export interface BodyWeight {
   id: string
   user_id?: string
