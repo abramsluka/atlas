@@ -46,15 +46,27 @@ const db = createServiceClient()
 
 ## Database Schema
 
-**`workouts`** — id, user_id, name (nullable), completed_at (nullable = in progress), created_at
+### Gym — current model (what the Gym tab uses)
 
-**`exercises`** — id, workout_id, user_id (NOT NULL, always include in inserts), name, order_index, created_at
+**`gym_config`** — one row per user (unique user_id): gyms jsonb, days jsonb, split_rotation, units, upgrade_at_reps
 
-**`sets`** — id, exercise_id, user_id (NOT NULL, always include in inserts), reps (nullable), weight_lbs (nullable), rpe (nullable, 1-10), completed (bool), order_index, created_at
+**`gym_exercises`** — id, user_id, name, gym_id, day_id, bodyweight, start_weight, rep_min, rep_max, step, order_index
 
-**`daily_checkins`** — id, user_id, date (YYYY-MM-DD), morning_planned_training, morning_intent, evening_actual_training, evening_reflection
+**`gym_logs`** — ONE ROW PER SET: id, user_id, exercise_id (FK → gym_exercises), weight, reps, logged_at
 
-**`workout_coach_responses`** — id, workout_id, user_id, response_text, created_at
+### Gym — legacy workout logger (live at /workouts, do NOT extend)
+
+**`workouts`** / **`exercises`** / **`sets`** / **`workout_coach_responses`** — the original logger's tables (user_id NOT NULL on exercises and sets). New gym features target the gym_* tables above, never these.
+
+### Wearables
+
+**`wearable_data`** — ONE shared table for BOTH Oura and Whoop. PK (user_id, provider, date); the whole payload is a `data` jsonb blob. There are no per-provider tables and no typed sleep/readiness columns — shapes live in `src/features/health/types.ts` (OuraData, WhoopData). OAuth tokens in **`wearable_tokens`** (PK user_id, provider).
+
+### Other
+
+**`daily_checkins`** — id, user_id, date (YYYY-MM-DD), morning_planned_training, morning_intent, evening_actual_training, evening_reflection. No migration file — created out-of-band in the dashboard (same for `user_settings`).
+
+Health/food/journal tables (food_logs, water_logs, body_weights, caffeine_logs, supplements, supplement_logs, journal_entries, jots, apple_health_logs, apple_workouts) are defined in `supabase/migrations/` and their exact column gotchas are mapped in `MCP_SERVER_SPEC.md` → Gotchas.
 
 **RLS:** Enabled on all tables. API routes bypass it via createServiceClient().
 
@@ -95,7 +107,7 @@ src/lib/supabase/
   server.ts                         # createClient() + createServiceClient()
   browser.ts                        # browser createClient()
 
-proxy.ts                            # Next.js 16 middleware (session refresh)
+src/proxy.ts                        # Next.js 16 middleware (session refresh + login redirect)
 ```
 
 ## What's Built and Working
@@ -146,3 +158,4 @@ After code changes, always check /tmp/atlas-dev.log for TypeScript or compilatio
 - React Strict Mode fires effects twice in dev — the created.current guard in workouts/new/page.tsx handles this, don't remove it
 - RLS migrations in supabase/migrations/ must be manually run in Supabase SQL editor
 - completed_at = null means workout is in progress — coach route returns 400 if not finished
+- `src/proxy.ts` login-redirects EVERY unauthenticated request to /login — including API routes. Any endpoint that must work without a session cookie (token-authed sync routes, MCP, OAuth, .well-known) must be added to its bypass lists, or callers get a 307 to /login instead of a 401
