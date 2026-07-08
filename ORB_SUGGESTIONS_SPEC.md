@@ -23,8 +23,9 @@ chips** — every failure path below degrades to "show nothing."
   Globally mounted portal, knows its route via `usePathname()`, sends `page: pathname` in the chat
   POST body. `openSheet()` (~line 158) calls `startMic()` unconditionally — that's the voice-first
   auto-record. `closeSheet()` (~line 163) already cancels a live recording correctly (intent
-  nulled, `rec.stop()` + `rec.reset()`, nothing transcribed) — but the **Clear** button (~line 281)
-  only wipes messages and leaves the recording running. Hardcoded `HINTS` array (~line 199) renders
+  nulled, `rec.stop()` + `rec.reset()`, nothing transcribed); the **Clear** button (~line 281)
+  wipes messages and leaves the recording running — kept deliberately, see §1.3. Hardcoded
+  `HINTS` array (~line 199) renders
   three static chips on the empty thread only. Clarify chips (~line 368) are the existing
   tappable-pill pattern: `onClick={() => send(opt)}`.
 - **Chat route** — [src/app/api/assistant/chat/route.ts](src/app/api/assistant/chat/route.ts).
@@ -63,9 +64,12 @@ Three features, one spec:
      everywhere).
    - Tapping any chip while a recording is live cancels it silently — nothing transcribed, nothing
      filled into the input — then sends the chip. Input row returns to idle.
-   - **Clear** now also cancels a live recording (today it leaves the mic running). Close already
-     cancels correctly — codified here, don't regress it. Reopening always starts a brand-new
-     recording (except on /gym).
+   - **Clear** deliberately KEEPS a live recording running (unchanged from today): clearing wipes
+     the old conversation, while the mic is capturing the next one — orthogonal. The flow this
+     enables: open → listening → Clear → open-chips appear → either just speak (mic already hot,
+     no extra tap) or tap a chip (which cancels per the rule above). Close cancels correctly
+     today — codified here, don't regress it. Reopening always starts a brand-new recording
+     (except on /gym).
 
 ## 2. Done / Wrong
 
@@ -82,7 +86,9 @@ Three features, one spec:
   another set", "Was that a PR?", "What's next in my workout?" — grounded in what just happened.
 - Ask "should I train today?" → coach answers from recovery → chips like "Yes, starting now",
   "Make it a light session", "What does my HRV say?"
-- Hit Clear while the mic is live → recording stops, nothing transcribed, thread empty, input idle.
+- Hit Clear while the mic is live → thread empties, open-chips appear, and the mic KEEPS listening
+  ("Listening…" bar still visible); speaking then sends into the fresh thread, or tapping a chip
+  cancels the mic and sends the chip.
 - Close and reopen the orb → last response's follow-up chips still there (persisted with the
   thread); a fresh open on a page starts a brand-new recording.
 - Haiku (either call) fails or returns garbage → no chips, no error, nothing else affected.
@@ -352,10 +358,10 @@ feature's standard queries.ts slot.
      rec.reset()
    }
    ```
-   Callers: `closeSheet()` (behavior unchanged, now shared), **every chip onClick**
-   (`cancelMic(); send(s, 'chip')` — open chips, follow-up chips, AND clarify chips), and the
-   **Clear** button (`cancelMic(); setMessages([])` — new behavior; today Clear leaves the mic
-   running). Reopening the sheet starts a brand-new recording as today (gym-gated, item 5).
+   Callers: `closeSheet()` (behavior unchanged, now shared) and **every chip onClick**
+   (`cancelMic(); send(s, 'chip')` — open chips, follow-up chips, AND clarify chips). **Clear is
+   NOT a caller** — it wipes messages only and leaves the mic running (deliberate, §1.3).
+   Reopening the sheet starts a brand-new recording as today (gym-gated, item 5).
 5. **Mic gate:**
    ```ts
    const openSheet = () => {
@@ -435,8 +441,8 @@ all gym coach routes.
 6. **Chip-tap cancel:** open orb (recording live) → tap an open chip → no request to
    `/api/assistant/transcribe` fires (network tab), chip text sent as user message, input row
    idle and empty afterward. Same for a follow-up chip tapped mid-recording.
-7. **Clear cancel:** start a recording, hit Clear → recording stops, no transcribe request,
-   thread empty, input idle.
+7. **Clear keeps listening:** start a recording, hit Clear → thread empties, open-chips render,
+   "Listening…" bar persists; stop-to-send afterward → transcript sends into the fresh thread.
 8. Empty-thread chips differ between `/gym` (with `atlas.gym.timer` seeded active → tactical row)
    and `/health`; seed an >6h-old timer → falls back to no-session variants; with a warm chip
    cache on a non-gym page → learned chips render instead of the static row.
