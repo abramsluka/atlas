@@ -528,10 +528,10 @@ export default function EntryDetail({ initialEntry }: Props) {
                 </p>
                 <div className={`space-y-1 ${planning ? 'opacity-50' : ''}`}>
                   {plan.map((item) => (
-                    <div key={item.id} className="group flex items-center gap-3 rounded-xl px-1 py-1.5">
+                    <div key={item.id} className="group flex items-start gap-3 rounded-xl px-1 py-1.5">
                       <button
                         onClick={() => togglePlanItem(item.id)}
-                        className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md transition-colors"
+                        className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md transition-colors"
                         style={{
                           background: item.done ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.06)',
                           border: item.done ? '1px solid rgba(251,191,36,0.4)' : '1px solid rgba(255,255,255,0.15)',
@@ -539,19 +539,30 @@ export default function EntryDetail({ initialEntry }: Props) {
                       >
                         {item.done && <span className="text-[11px] leading-none text-amber-300">✓</span>}
                       </button>
-                      <input
-                        type="text"
+                      {/* textarea (not input) so long tasks wrap onto new lines
+                          under the same checkbox instead of trailing off-screen */}
+                      <textarea
                         value={item.text}
+                        rows={1}
+                        ref={(el) => {
+                          if (el) {
+                            el.style.height = 'auto'
+                            el.style.height = el.scrollHeight + 'px'
+                          }
+                        }}
                         autoFocus={focusItemId === item.id}
                         placeholder="What's the move?"
-                        onChange={(e) => editPlanItem(item.id, e.target.value)}
+                        onChange={(e) => {
+                          editPlanItem(item.id, e.target.value)
+                          autoGrow(e.target)
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault()
                             addPlanItem(item.id)
                           }
                         }}
-                        className={`flex-1 bg-transparent text-[15px] outline-none placeholder:text-zinc-700 transition-colors ${
+                        className={`min-w-0 flex-1 resize-none bg-transparent text-[15px] leading-snug outline-none placeholder:text-zinc-700 transition-colors ${
                           item.done
                             ? 'text-zinc-500 line-through decoration-zinc-600'
                             : 'text-white'

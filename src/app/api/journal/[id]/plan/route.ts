@@ -170,7 +170,7 @@ ${instruction}
       .eq('id', id)
       .maybeSingle()
     if (fresh && !fresh.title) {
-      const title = await generateTitle(`Plan for the day:\n${lines.join('\n')}`)
+      const title = await generateTitle(lines.join('\n'), 'plan')
       if (title) {
         await db
           .from('journal_entries')

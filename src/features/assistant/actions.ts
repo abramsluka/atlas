@@ -46,6 +46,24 @@ export type AssistantAction =
     }
   | { kind: 'log_habit'; habit_id: string; habit_name: string; already_done: boolean }
   | { kind: 'log_all_habits' }
+  // ── Day plan (today's morning journal checklist) ──
+  | {
+      kind: 'check_plan_item'
+      entry_id: string
+      item_id: string
+      item_text: string
+      done: boolean             // true = check off, false = un-check
+      already_done: boolean     // true when the item is already in the requested state
+    }
+  | {
+      kind: 'add_plan_item'
+      entry_id: string
+      text: string
+      after_item_id: string | null  // insert after this item; null = append (or start)
+      after_text: string | null     // display copy for the card
+      at_start: boolean
+    }
+  | { kind: 'remove_plan_item'; entry_id: string; item_id: string; item_text: string }
   // ── Gym coach (ported from coachActions.ts) ──
   | {
       kind: 'adjust_exercise'
@@ -159,6 +177,26 @@ export function describeAction(a: AssistantAction, units: string): { title: stri
       return { title: `Log ${a.habit_name}`, detail: a.already_done ? 'already done today' : 'mark done today', confirmLabel: 'Log it', doneLabel: 'Logged' }
     case 'log_all_habits':
       return { title: 'Log all habits', detail: 'mark every habit done today', confirmLabel: 'Log all', doneLabel: 'Logged' }
+    case 'check_plan_item':
+      return a.done
+        ? {
+            title: `Check off ${a.item_text}`,
+            detail: a.already_done ? 'already checked off' : "today's plan",
+            confirmLabel: 'Check it', doneLabel: 'Checked',
+          }
+        : {
+            title: `Un-check ${a.item_text}`,
+            detail: a.already_done ? 'already unchecked' : "today's plan",
+            confirmLabel: 'Un-check', doneLabel: 'Unchecked',
+          }
+    case 'add_plan_item':
+      return {
+        title: `Add to plan: ${a.text}`,
+        detail: a.at_start ? 'at the top' : a.after_text ? `after "${a.after_text}"` : 'at the end',
+        confirmLabel: 'Add it', doneLabel: 'Added',
+      }
+    case 'remove_plan_item':
+      return { title: `Remove ${a.item_text}`, detail: "from today's plan", confirmLabel: 'Remove', doneLabel: 'Removed' }
     case 'adjust_exercise': {
       const bits: string[] = []
       if (a.rep_min != null || a.rep_max != null) bits.push(`reps ${a.rep_min ?? '·'}–${a.rep_max ?? '·'}`)

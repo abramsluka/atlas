@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
   // after transcription; voice morning plans get one after plan generation).
   let title = parsed.data.title ?? null
   if (!title && parsed.data.body.trim()) {
-    title = await generateTitle(parsed.data.body)
+    title = await generateTitle(parsed.data.body, parsed.data.kind === 'morning' ? 'plan' : 'entry')
   }
 
   const db = createServiceClient()

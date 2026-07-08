@@ -12,6 +12,7 @@ import type { GymConfig, GymExercise } from '@/features/gym/types'
 import type { TimeSlot } from '@/features/health/types'
 import type { ProgramGoal, ProgramStructure } from '@/features/gym/programTypes'
 import { PORTION_STYLE_RULES } from '@/features/food/portionStyle'
+import type { PlanItem } from '@/features/journal/types'
 import type { AssistantAction } from './actions'
 
 type DB = ReturnType<typeof createServiceClient>
@@ -34,6 +35,8 @@ export interface AssistantContext {
   habits: Array<{ id: string; name: string; kind: string }>
   habitById: Map<string, { id: string; name: string; kind: string }>
   habitDoneToday: Set<string>
+  dayPlan: { entryId: string; items: PlanItem[] } | null   // today's morning journal plan
+  planItemById: Map<string, PlanItem>
   catalogBlock: string     // formatted context for the system prompt
 }
 
@@ -58,6 +61,16 @@ export async function loadAssistantContext(db: DB, userId: string): Promise<Assi
     db.from('habits').select('id, name, emoji, kind, order_index').eq('user_id', userId).eq('active', true).order('order_index'),
     db.from('habit_completions').select('habit_id').eq('user_id', userId).eq('date', today).eq('completed', true),
   ])
+
+  const dayPlanRes = await db
+    .from('journal_entries')
+    .select('id, plan')
+    .eq('user_id', userId)
+    .eq('date', today)
+    .eq('kind', 'morning')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
 
   const config = configRes.data as GymConfig | null
   const exercises = (exercisesRes.data as GymExercise[] | null) ?? []
@@ -115,6 +128,14 @@ export async function loadAssistantContext(db: DB, userId: string): Promise<Assi
   const habitCatalog = habits
     .map(h => `[${h.id}] ${h.name}${h.kind === 'auto' ? ' (auto — derives itself)' : ''}${habitDoneToday.has(h.id) ? ' — ALREADY DONE TODAY' : ''}`)
     .join('\n')
+
+  // Today's morning day plan (checklist on the morning journal entry)
+  const dayPlanRow = dayPlanRes.data as { id: string; plan: PlanItem[] | null } | null
+  const dayPlan = dayPlanRow ? { entryId: dayPlanRow.id, items: dayPlanRow.plan ?? [] } : null
+  const planItemById = new Map<string, PlanItem>((dayPlan?.items ?? []).map(p => [p.id, p]))
+  const planCatalog = dayPlan
+    ? dayPlan.items.map((p, i) => `${i + 1}. [${p.id}] ${p.text}${p.done ? ' — DONE' : ''}`).join('\n') || '(plan is empty)'
+    : '(no morning plan today)'
 
   const dayList = (config?.days ?? []).map(d => `[${d.id}] ${d.name}`).join('\n') || '(none)'
   const gymList = (config?.gyms ?? []).map(g => `[${g.id}] ${g.name}`).join('\n') || '(none)'
@@ -175,6 +196,9 @@ ${supplementCatalog || '(none configured)'}
 — HABITS (use these [id]s for log_habit; log_all_habits marks every manual habit done today):
 ${habitCatalog || '(none configured)'}
 
+— TODAY'S DAY PLAN (his morning journal checklist, in order; use these [id]s for check_plan_item / add_plan_item / remove_plan_item):
+${planCatalog}
+
 — TRAINING DAYS (splits):
 ${dayList}
 
@@ -184,7 +208,7 @@ ${gymList}
 — EXERCISE CATALOG (use these [id]s):
 ${exerciseCatalog || '(no exercises yet)'}`
 
-  return { tz, today, units, config, exercises, exerciseById, dayName, supplements, supplementById, loggedSlotsToday, bottleOz, glassOz, habits, habitById, habitDoneToday, catalogBlock }
+  return { tz, today, units, config, exercises, exerciseById, dayName, supplements, supplementById, loggedSlotsToday, bottleOz, glassOz, habits, habitById, habitDoneToday, dayPlan, planItemById, catalogBlock }
 }
 
 // ── Behavior rules shared by both routes (encodes the confirm-card contract) ──
@@ -201,6 +225,8 @@ HARD RULES:
 - When you call clarify, include likely answers as options when you can (e.g. offer his latest logged weight when clarifying a weight).
 
 HABITS: "log my pushups" / "did my hang" / "mark read done" → log_habit with the habit [id] from the HABITS list. "log everything" / "log all my habits" → log_all_habits. A habit tick is only for that manual checklist — water, supplements, food, weight, caffeine, and sets keep their own tools.
+
+DAY PLAN: his morning checklist is in TODAY'S DAY PLAN. "check off X" / "I did X" / "mark X done" (when X matches a plan item) → check_plan_item with that item's [id]; "actually un-check X" → check_plan_item with done=false. "add X to my plan" → add_plan_item; when he places it ("after the gym", "between X and Y", "at the top") set after_item_id to the item it should follow (between X and Y → X's [id]) or at_start. "take X off my plan" → remove_plan_item. Items marked DONE are already checked — say so instead of re-proposing. If there is no morning plan today, say so and suggest making one in the Journal (☀️) — don't call plan tools. A plan item is not a habit: only use log_habit when it matches the HABITS list.
 
 FOOD: when he says he ate or drank something caloric, call log_food with a calorie/macro estimate. Set is_hydrating + volume_oz for water-like drinks (juice, milk, sports drinks, soda); false for coffee/alcohol/milkshakes. Only ask a portion question (via clarify) when it's genuinely ambiguous AND high-impact — otherwise estimate and set confidence honestly (low if you had to guess). PLAIN WATER is NOT food: "drank 20 oz of water" → log_water, never log_food.
 ${PORTION_STYLE_RULES}`
@@ -325,6 +351,41 @@ export function buildAssistantTools(units: string): Anthropic.Tool[] {
       name: 'log_all_habits',
       description: 'Propose marking ALL of today\'s manual habits done at once. Call when Luka says "log everything", "log all my habits", or "mark all habits done".',
       input_schema: { type: 'object', properties: {} },
+    },
+    // Day plan tools (today's morning journal checklist)
+    {
+      name: 'check_plan_item',
+      description: 'Propose checking off (or un-checking) a task on today\'s day plan. Call when Luka says he did a task from TODAY\'S DAY PLAN ("check off the grocery run", "I did the Atlas work"). Use the item [id] from the plan list.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          item_id: { type: 'string', description: "Item [id] from TODAY'S DAY PLAN" },
+          done: { type: 'boolean', description: 'true to check off (default), false to un-check' },
+        },
+        required: ['item_id'],
+      },
+    },
+    {
+      name: 'add_plan_item',
+      description: 'Propose adding a new task to today\'s day plan. Call when Luka says "add X to my plan/day". Placement: set after_item_id to the [id] the new task should follow ("after the gym", "between X and Y" → X\'s id), or at_start for the top; omit both to append at the end.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: 'The task, short and action-first (like the other plan items)' },
+          after_item_id: { type: 'string', description: 'Insert after this item [id]' },
+          at_start: { type: 'boolean', description: 'Insert at the top of the plan' },
+        },
+        required: ['text'],
+      },
+    },
+    {
+      name: 'remove_plan_item',
+      description: 'Propose removing a task from today\'s day plan ("take the car wash off my plan", "drop the grocery run"). Use the item [id] from TODAY\'S DAY PLAN.',
+      input_schema: {
+        type: 'object',
+        properties: { item_id: { type: 'string', description: "Item [id] from TODAY'S DAY PLAN" } },
+        required: ['item_id'],
+      },
     },
     // Clarification
     {
@@ -527,6 +588,33 @@ export function resolveToolCall(name: string, input: Record<string, unknown>, ct
       }
       case 'log_all_habits':
         return { kind: 'log_all_habits' }
+      case 'check_plan_item': {
+        if (!ctx.dayPlan) return null
+        const item = ctx.planItemById.get(String(input.item_id))
+        if (!item) return null
+        const done = input.done == null ? true : !!input.done
+        return {
+          kind: 'check_plan_item', entry_id: ctx.dayPlan.entryId,
+          item_id: item.id, item_text: item.text, done, already_done: item.done === done,
+        }
+      }
+      case 'add_plan_item': {
+        if (!ctx.dayPlan) return null
+        const text = String(input.text || '').trim().slice(0, 500)
+        if (!text) return null
+        const after = input.after_item_id ? ctx.planItemById.get(String(input.after_item_id)) : null
+        return {
+          kind: 'add_plan_item', entry_id: ctx.dayPlan.entryId, text,
+          after_item_id: after?.id ?? null, after_text: after?.text ?? null,
+          at_start: !after && !!input.at_start,
+        }
+      }
+      case 'remove_plan_item': {
+        if (!ctx.dayPlan) return null
+        const item = ctx.planItemById.get(String(input.item_id))
+        if (!item) return null
+        return { kind: 'remove_plan_item', entry_id: ctx.dayPlan.entryId, item_id: item.id, item_text: item.text }
+      }
       case 'adjust_exercise': {
         const ex = exerciseById.get(String(input.exercise_id))
         if (!ex) return null

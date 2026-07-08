@@ -15,7 +15,7 @@ import {
 } from '@/features/gym/mutations'
 import { useLogSupplementDose, useLogWater, useLogCaffeine } from '@/features/health/mutations'
 import { useLogManualFood } from '@/features/food/mutations'
-import { useCreateEntry } from '@/features/journal/mutations'
+import { useCreateEntry, usePlanItemOp } from '@/features/journal/mutations'
 import { useSaveMorningCheckin, useSaveEveningCheckin } from '@/features/checkins/mutations'
 import { useToggleHabit, useLogAll } from '@/features/habits/mutations'
 import type { GymExercise } from '@/features/gym/types'
@@ -53,6 +53,7 @@ export function useAssistantActions() {
   const saveEvening = useSaveEveningCheckin(localToday)
   const toggleHabit = useToggleHabit()
   const logAllHabits = useLogAll()
+  const planItemOp = usePlanItemOp()
 
   const nextOrder = useCallback(
     () => (exercises.length ? Math.max(...exercises.map(e => e.order_index)) + 1 : 0),
@@ -105,6 +106,18 @@ export function useAssistantActions() {
         return
       case 'log_all_habits':
         await logAllHabits.mutateAsync({ date: localToday, completed: true })
+        return
+      case 'check_plan_item':
+        await planItemOp.mutateAsync({ entryId: a.entry_id, op: 'check', item_id: a.item_id, done: a.done })
+        return
+      case 'add_plan_item':
+        await planItemOp.mutateAsync({
+          entryId: a.entry_id, op: 'add', text: a.text,
+          after_item_id: a.after_item_id ?? undefined, at_start: a.at_start || undefined,
+        })
+        return
+      case 'remove_plan_item':
+        await planItemOp.mutateAsync({ entryId: a.entry_id, op: 'remove', item_id: a.item_id })
         return
       case 'adjust_exercise': {
         const upd: Partial<GymExercise> & { id: string } = { id: a.exercise_id }
@@ -159,7 +172,7 @@ export function useAssistantActions() {
         return
       }
     }
-  }, [logSet, logDose, logWeight, logWater, logCaffeine, logFood, createEntry, saveMorning, saveEvening, toggleHabit, logAllHabits, updateEx, createEx, deleteEx, saveConfig, config, nextOrder, localToday, pathname, router])
+  }, [logSet, logDose, logWeight, logWater, logCaffeine, logFood, createEntry, saveMorning, saveEvening, toggleHabit, logAllHabits, planItemOp, updateEx, createEx, deleteEx, saveConfig, config, nextOrder, localToday, pathname, router])
 
   return { executeAction, units }
 }

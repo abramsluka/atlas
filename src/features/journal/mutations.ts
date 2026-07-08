@@ -49,6 +49,36 @@ export function useUpdateEntry() {
   })
 }
 
+// Single-item plan ops (check / add / remove) against a morning entry.
+// The server does the read-modify-write, so callers only name the change.
+export type PlanItemOp =
+  | { entryId: string; op: 'check'; item_id: string; done: boolean }
+  | { entryId: string; op: 'add'; text: string; after_item_id?: string; at_start?: boolean }
+  | { entryId: string; op: 'remove'; item_id: string }
+
+export function usePlanItemOp() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ entryId, ...op }: PlanItemOp) => {
+      const res = await fetch(`/api/journal/${entryId}/plan/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(op),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error ?? `Failed to update plan (${res.status})`)
+      }
+      return res.json()
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['journal'] })
+      queryClient.invalidateQueries({ queryKey: ['journal', vars.entryId] })
+    },
+  })
+}
+
 export function useDeleteEntry() {
   const queryClient = useQueryClient()
 

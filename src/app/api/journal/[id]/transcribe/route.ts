@@ -17,7 +17,7 @@ export async function POST(
   const db = createServiceClient()
   const { data: entry } = await db
     .from('journal_entries')
-    .select('id, user_id, audio_path, audio_transcript, title')
+    .select('id, user_id, audio_path, audio_transcript, title, kind')
     .eq('id', id)
     .maybeSingle()
 

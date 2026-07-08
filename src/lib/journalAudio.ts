@@ -29,7 +29,7 @@ export async function transcribeAudio(audio: Blob, filename: string): Promise<st
 // Untitled entries also get a short generated title from the transcript.
 export async function ensureEntryTranscript(
   db: Db,
-  entry: { id: string; audio_path: string | null; audio_transcript: string | null; title?: string | null }
+  entry: { id: string; audio_path: string | null; audio_transcript: string | null; title?: string | null; kind?: string | null }
 ): Promise<string | null> {
   if (!entry.audio_path) return null
   if (entry.audio_transcript) return entry.audio_transcript
@@ -40,7 +40,9 @@ export async function ensureEntryTranscript(
   const filename = entry.audio_path.split('/').pop() ?? 'audio.webm'
   const transcript = await transcribeAudio(file, filename)
 
-  const title = !entry.title && transcript ? await generateTitle(transcript) : null
+  const title = !entry.title && transcript
+    ? await generateTitle(transcript, entry.kind === 'morning' ? 'plan' : 'entry')
+    : null
 
   await db
     .from('journal_entries')

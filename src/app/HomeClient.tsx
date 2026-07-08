@@ -798,10 +798,10 @@ function DayPlanCard({ initial }: { initial?: DayPlanData | null }) {
       ) : (
         <div className="space-y-1.5">
           {preview.map(item => (
-            <div key={item.id} className="flex items-center gap-3">
+            <div key={item.id} className="flex items-start gap-3">
               <button
                 onClick={() => toggleItem(item.id)}
-                className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md transition-colors"
+                className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md transition-colors"
                 style={{
                   background: item.done ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.06)',
                   border: item.done ? '1px solid rgba(251,191,36,0.4)' : '1px solid rgba(255,255,255,0.15)',
@@ -811,7 +811,7 @@ function DayPlanCard({ initial }: { initial?: DayPlanData | null }) {
               </button>
               <button
                 onClick={() => router.push(`/journal/${data.entryId}`)}
-                className={`flex-1 text-left text-sm leading-snug transition-all duration-300 ${
+                className={`min-w-0 flex-1 text-left text-sm leading-snug transition-all duration-300 ${
                   item.done ? 'text-zinc-600 line-through decoration-zinc-600' : 'text-zinc-200'
                 }`}
               >
