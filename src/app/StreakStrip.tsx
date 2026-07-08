@@ -55,14 +55,8 @@ const MODULES: ModuleDef[] = [
       </svg>
     ),
   },
-  {
-    key: 'water', label: 'Water', href: '/health', color: '#38bdf8',
-    icon: ({ color }) => (
-      <svg width="18" height="18" viewBox="0 0 24 24" stroke={color} {...stroke}>
-        <path d="M12 3.5c3 4 5.5 6.7 5.5 10a5.5 5.5 0 0 1-11 0c0-3.3 2.5-6 5.5-10z" />
-      </svg>
-    ),
-  },
+  // Water lives on the Habits page now (see MoreButton) — one auto habit there
+  // among the manual ones, keeping the strip at five slots on mobile.
 ]
 
 // ─── Cell ─────────────────────────────────────────────────────────────────────
@@ -103,6 +97,49 @@ function StreakCell({ def, stat }: { def: ModuleDef; stat: StreakStat }) {
   )
 }
 
+// ─── More button ──────────────────────────────────────────────────────────────
+// The door to the full Habits page. Takes an equal column like the four streaks
+// (even spacing), a glowing green chevron that breathes so it reads as live.
+
+function MoreButton() {
+  const router = useRouter()
+  return (
+    <motion.button
+      onClick={() => router.push('/habits')}
+      whileTap={{ scale: 0.9 }}
+      whileHover="hover"
+      initial="rest"
+      animate="rest"
+      className="flex flex-col items-center justify-center flex-1 min-w-0"
+      aria-label="Open Habits"
+    >
+      <motion.span
+        className="flex items-center justify-center"
+        variants={{ rest: { borderColor: 'rgba(74,222,128,0.42)' }, hover: { borderColor: 'rgba(74,222,128,0.85)' } }}
+        style={{
+          width: 40,
+          height: 40,
+          borderRadius: 12,
+          borderWidth: 1,
+          borderStyle: 'solid',
+          background: 'radial-gradient(120% 120% at 50% 25%, rgba(74,222,128,0.16), rgba(74,222,128,0.03) 62%, transparent)',
+          animation: 'cosmicPulseGlow 3.6s ease-in-out infinite',
+        }}
+      >
+        <motion.svg
+          width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#eafff2"
+          strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
+          variants={{ rest: { x: 0 }, hover: { x: 2 } }}
+          style={{ filter: 'drop-shadow(0 0 5px rgba(74,222,128,0.6))' }}
+        >
+          <polyline points="8 6 14 12 8 18" />
+          <polyline points="13 6 19 12 13 18" />
+        </motion.svg>
+      </motion.span>
+    </motion.button>
+  )
+}
+
 // ─── Strip ──────────────────────────────────────────────────────────────────
 
 function StripShell({ children }: { children: React.ReactNode }) {
@@ -136,6 +173,7 @@ export default function StreakStrip({ initial }: { initial?: Streaks }) {
             <div className="w-7 h-2 rounded bg-white/[0.04] animate-pulse" />
           </div>
         ))}
+        <MoreButton />
       </StripShell>
     )
   }
@@ -145,6 +183,7 @@ export default function StreakStrip({ initial }: { initial?: Streaks }) {
       {MODULES.map(def => (
         <StreakCell key={def.key} def={def} stat={data[def.key]} />
       ))}
+      <MoreButton />
     </StripShell>
   )
 }
