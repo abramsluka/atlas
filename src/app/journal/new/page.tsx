@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { useCreateEntry } from '@/features/journal/mutations'
 import { useVoiceRecorder, formatElapsed } from '@/features/journal/useVoiceRecorder'
+import { uploadJournalAudio } from '@/features/journal/uploadAudio'
 
 const MOOD_EMOJIS: Record<number, string> = {
   1: '😔',
@@ -25,6 +26,8 @@ export default function NewJournalEntryPage() {
   const [todayDisplay, setTodayDisplay] = useState('')
   const [uploading, setUploading] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  // Reused across retries so a failed upload doesn't spawn duplicate empty entries
+  const createdEntryId = useRef<string | null>(null)
 
   const rec = useVoiceRecorder()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -44,25 +47,33 @@ export default function NewJournalEntryPage() {
     if ((!body.trim() && !rec.blob) || !today) return
     setSaveError(null)
     try {
-      const entry = await createEntry.mutateAsync({
-        date: today,
-        body: body.trim(),
-        mood,
-      })
+      // Reuse the entry from a previous failed attempt so retrying doesn't
+      // create a second empty entry.
+      let entryId = createdEntryId.current
+      if (!entryId) {
+        const entry = await createEntry.mutateAsync({
+          date: today,
+          body: body.trim(),
+          mood,
+        })
+        entryId = entry.id
+        createdEntryId.current = entry.id
+      }
+
       const file = rec.toFile()
       if (file) {
         setUploading(true)
-        const fd = new FormData()
-        fd.append('file', file)
-        const res = await fetch(`/api/journal/${entry.id}/audio`, { method: 'POST', body: fd })
-        if (!res.ok) {
-          setSaveError('Entry saved, but the recording failed to upload. You can re-record from the entry later.')
-        }
+        // Throws on failure — the recording stays on the page so the user can retry
+        await uploadJournalAudio(entryId, file)
       }
-      router.replace(`/journal/${entry.id}`)
+      router.replace(`/journal/${entryId}`)
     } catch (err) {
       console.error('Save failed:', err)
-      setSaveError(String(err))
+      setSaveError(
+        rec.blob
+          ? "Couldn't upload the recording. Your voice note is still here — tap Save to try again."
+          : String(err)
+      )
     } finally {
       setUploading(false)
     }

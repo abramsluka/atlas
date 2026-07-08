@@ -27,7 +27,9 @@ export function useVoiceRecorder() {
       // Safari records audio/mp4; Chrome/Firefox audio/webm
       const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4'
       mimeRef.current = mime
-      const rec = new MediaRecorder(stream, { mimeType: mime })
+      // 64 kbps is plenty for speech and keeps long recordings small — a 7-min
+      // note is ~3 MB instead of ~7 MB. Prevents oversized-upload failures.
+      const rec = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 64000 })
       chunksRef.current = []
       rec.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data) }
       rec.onstop = () => {

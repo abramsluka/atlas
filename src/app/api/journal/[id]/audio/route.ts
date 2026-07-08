@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 
-// Attach (or replace) the voice recording on a journal entry
+const BUCKET = 'journal-audio'
+
+// Commit an audio recording to a journal entry. The bytes are uploaded straight
+// from the browser to Supabase Storage via a signed URL (see ./sign), so this
+// route only receives the resulting storage path — no large body, no Vercel
+// 4.5 MB limit.
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -23,39 +28,39 @@ export async function POST(
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  const formData = await req.formData()
-  const file = formData.get('file') as File | null
-  if (!file) return NextResponse.json({ error: 'No file' }, { status: 400 })
-
-  const ext = file.name.split('.').pop() ?? 'webm'
-  const storagePath = `${user.id}/${id}_${Date.now()}.${ext}`
-
-  const { error: uploadError } = await db.storage
-    .from('journal-audio')
-    .upload(storagePath, file, { contentType: file.type, upsert: false })
-
-  if (uploadError) return NextResponse.json({ error: uploadError.message }, { status: 500 })
-
-  // Replace any previous recording; transcript no longer matches, so clear it
-  if (entry.audio_path) {
-    await db.storage.from('journal-audio').remove([entry.audio_path])
+  const body = await req.json().catch(() => ({}))
+  const path: unknown = body.path
+  // Path must be the one we handed out: this user's folder, this entry.
+  if (typeof path !== 'string' || !path.startsWith(`${user.id}/${id}_`)) {
+    return NextResponse.json({ error: 'Invalid path' }, { status: 400 })
   }
+
+  // Confirm the object actually landed in storage before we point the entry at it.
+  const { data: signed, error: signErr } = await db.storage
+    .from(BUCKET)
+    .createSignedUrl(path, 3600)
+  if (signErr || !signed) {
+    return NextResponse.json({ error: 'Recording not found in storage' }, { status: 400 })
+  }
+
+  // Replace any previous recording; transcript no longer matches, so clear it.
+  const previousPath = entry.audio_path
 
   const { data: updated, error: dbError } = await db
     .from('journal_entries')
-    .update({ audio_path: storagePath, audio_transcript: null, updated_at: new Date().toISOString() })
+    .update({ audio_path: path, audio_transcript: null, updated_at: new Date().toISOString() })
     .eq('id', id)
     .select()
     .single()
 
   if (dbError) {
-    await db.storage.from('journal-audio').remove([storagePath])
+    await db.storage.from(BUCKET).remove([path])
     return NextResponse.json({ error: dbError.message }, { status: 500 })
   }
 
-  const { data: signed } = await db.storage
-    .from('journal-audio')
-    .createSignedUrl(storagePath, 3600)
+  if (previousPath && previousPath !== path) {
+    await db.storage.from(BUCKET).remove([previousPath])
+  }
 
-  return NextResponse.json({ ...updated, audio_url: signed?.signedUrl ?? null })
+  return NextResponse.json({ ...updated, audio_url: signed.signedUrl })
 }
