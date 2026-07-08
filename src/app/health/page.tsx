@@ -2,9 +2,8 @@ import { redirect } from 'next/navigation'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import HealthClient from './HealthClient'
 import type { OuraData, WhoopData } from '@/features/health/types'
-import type { WorkoutPoint, MealPoint } from '@/features/health/energyModel'
+import { toEnergyDate, nextCalendarDate, isoToEnergyDayHour, energyDayUtcWindow, type WorkoutPoint, type MealPoint } from '@/features/health/energyModel'
 import { getUserTimezone } from '@/lib/getUserTimezone'
-import { toLocalDate } from '@/lib/date'
 import { sessionLabel, sessionVolumeLbs, type GymActivityLog } from '@/lib/gymActivity'
 
 export const dynamic = 'force-dynamic'
@@ -16,9 +15,12 @@ export default async function HealthPage() {
 
   const db = createServiceClient()
   const tz = await getUserTimezone(user.id)
-  const today = toLocalDate(tz)
-  const todayStart = `${today}T00:00:00`
-  const todayEnd   = `${today}T23:59:59`
+  // Energy day (6am rollover, same boundary as rolledDate): before 6am the
+  // whole page still shows the day being lived — water/supplement totals
+  // don't reset at midnight while you're up, and now match the client-side
+  // rolledDate() the water/supplement sections already use.
+  const today = toEnergyDate(tz)
+  const { start: dayStart, end: dayEnd } = energyDayUtcWindow(today, tz)
 
   const [
     supplementsResult,
@@ -34,7 +36,7 @@ export default async function HealthPage() {
     db.from('supplements').select('*').eq('user_id', user.id).eq('active', true).order('created_at', { ascending: true }),
     db.from('supplement_logs').select('*').eq('user_id', user.id).eq('date', today),
     db.from('water_logs').select('*').eq('user_id', user.id).eq('date', today).order('logged_at', { ascending: true }),
-    db.from('caffeine_logs').select('*').eq('user_id', user.id).eq('date', today).order('logged_at', { ascending: true }),
+    db.from('caffeine_logs').select('*').eq('user_id', user.id).in('date', [today, nextCalendarDate(today)]).order('logged_at', { ascending: true }),
     db.from('health_profile').select('*').eq('user_id', user.id).maybeSingle(),
     db.from('wearable_tokens').select('provider').eq('user_id', user.id).eq('provider', 'oura').maybeSingle(),
     db.from('wearable_tokens').select('provider').eq('user_id', user.id).eq('provider', 'whoop').maybeSingle(),
@@ -43,13 +45,14 @@ export default async function HealthPage() {
     db.from('gym_logs')
       .select('logged_at, weight, reps, gym_exercises(name)')
       .eq('user_id', user.id)
-      .gte('logged_at', todayStart)
-      .lte('logged_at', todayEnd)
+      .gte('logged_at', dayStart)
+      .lt('logged_at', dayEnd)
       .order('logged_at', { ascending: false }),
     db.from('food_logs')
       .select('id, item_name, calories, taken_at')
       .eq('user_id', user.id)
-      .eq('date', today)
+      .gte('taken_at', dayStart)
+      .lt('taken_at', dayEnd)
       .order('taken_at', { ascending: true }),
   ])
 
@@ -84,21 +87,18 @@ export default async function HealthPage() {
   const gymLogs = (workoutsResult.data ?? []) as unknown as GymActivityLog[]
   const workoutPoints: WorkoutPoint[] = []
   if (gymLogs.length > 0) {
-    const lastLog = new Date(gymLogs[0].logged_at)
     workoutPoints.push({
       id: `gym-${today}`,
       name: sessionLabel(gymLogs),
-      completedHour: lastLog.getHours() + lastLog.getMinutes() / 60,
+      completedHour: isoToEnergyDayHour(gymLogs[0].logged_at, tz),
       volumeLbs: sessionVolumeLbs(gymLogs),
     })
   }
 
   const mealPoints: MealPoint[] = (foodResult.data ?? [])
     .filter((f: { calories: number | null }) => f.calories != null && f.calories > 0)
-    .map((f: { id: string; item_name: string | null; calories: number | null; taken_at: string }) => {
-      const d = new Date(f.taken_at)
-      return { id: f.id, hour: d.getHours() + d.getMinutes() / 60, calories: f.calories!, name: f.item_name ?? 'Meal' }
-    })
+    .map((f: { id: string; item_name: string | null; calories: number | null; taken_at: string }) =>
+      ({ id: f.id, hour: isoToEnergyDayHour(f.taken_at, tz), calories: f.calories!, name: f.item_name ?? 'Meal' }))
 
   return (
     <HealthClient

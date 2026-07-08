@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/browser'
+import { nextCalendarDate } from './energyModel'
 import type {
   Supplement,
   SupplementLog,
@@ -73,10 +74,12 @@ export function useCaffeineLogs(today: string, initialData?: CaffeineLog[]) {
     ...REMOTE_WRITE_POLL,
     queryFn: async (): Promise<CaffeineLog[]> => {
       const supabase = createClient()
+      // Two-date fetch: post-midnight doses may carry the next calendar date
+      // (e.g. logged via MCP) but still belong to this energy day.
       const { data, error } = await supabase
         .from('caffeine_logs')
         .select('*')
-        .eq('date', today)
+        .in('date', [today, nextCalendarDate(today)])
         .order('logged_at', { ascending: true })
       if (error) throw error
       return (data ?? []) as CaffeineLog[]

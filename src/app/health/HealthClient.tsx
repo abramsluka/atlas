@@ -58,6 +58,7 @@ import AppleHealthCard from './AppleHealthCard'
 import { rolledDate } from '@/features/food/date'
 import {
   currentEnergyFromLogs,
+  toEnergyDayHour,
   energyColor as energyColorShared,
   energyLabel as energyLabelShared,
   type WorkoutPoint,
@@ -1789,7 +1790,7 @@ function CaffeineSection({
   // Live energy score — same model + inputs as Today's Curve, so the two match.
   const computeNow = useCallback(() => {
     const now = new Date()
-    const h = now.getHours() + now.getMinutes() / 60
+    const h = toEnergyDayHour(now.getHours() + now.getMinutes() / 60)
     return currentEnergyFromLogs(h, caffeineLogs ?? initialCaffeine, ouraData, whoopData, workouts, meals)
   }, [caffeineLogs, initialCaffeine, ouraData, whoopData, workouts, meals])
 

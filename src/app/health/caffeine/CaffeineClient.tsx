@@ -16,10 +16,12 @@ import {
   energyLabel,
   energyColor,
   deriveSleepQuality,
-  deriveWakeHour,
+  deriveWake,
+  toEnergyDayHour,
   computePeakWindows,
   CAF_SCALE,
   ADENOSINE_RATE,
+  ENERGY_DAY_END_HOUR,
   type DosePoint,
 } from '@/features/health/energyModel'
 
@@ -33,9 +35,10 @@ interface EnergyRating {
 const DOSE_COLORS = ['#4ade80', '#60a5fa', '#fb923c', '#c084fc', '#f472b6', '#34d399']
 
 // Change 1: formatHourShort now includes minutes when non-zero
+// Hours ≥ 24 are the post-midnight stretch of the energy day (24.5 → 12:30a)
 function formatHourShort(h: number): string {
-  const hr = Math.floor(h)
-  const min = Math.round((h - hr) * 60)
+  const min = Math.round((h - Math.floor(h)) * 60)
+  const hr = Math.floor(h) % 24
   const displayH = hr === 0 ? 12 : hr > 12 ? hr - 12 : hr
   const suffix = hr < 12 ? 'a' : 'p'
   return min > 0
@@ -44,8 +47,8 @@ function formatHourShort(h: number): string {
 }
 
 function formatHour(h: number): string {
-  const hr = Math.floor(h)
-  const min = Math.round((h - hr) * 60)
+  const min = Math.round((h - Math.floor(h)) * 60)
+  const hr = Math.floor(h) % 24
   const suffix = hr < 12 ? 'am' : 'pm'
   const displayH = hr === 0 ? 12 : hr > 12 ? hr - 12 : hr
   return min > 0
@@ -59,7 +62,7 @@ function formatHourRange(start: number, end: number): string {
 
 function isoToHour(iso: string): number {
   const d = new Date(iso)
-  return d.getHours() + d.getMinutes() / 60
+  return toEnergyDayHour(d.getHours() + d.getMinutes() / 60)
 }
 
 function formatTime(iso: string): string {
@@ -81,9 +84,9 @@ const SVG_W = 800
 const SVG_H = 220
 const CHART_START_OFFSET = 1
 
-function hToX(h: number, wakeHour: number): number {
+function hToX(h: number, wakeHour: number, endH: number): number {
   const startH = wakeHour - CHART_START_OFFSET
-  return ((h - startH) / (24 - startH)) * SVG_W
+  return ((h - startH) / (endH - startH)) * SVG_W
 }
 
 function eToY(e: number): number {
@@ -127,20 +130,23 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
   const qc = useQueryClient()
   // ── Model inputs ──────────────────────────────────────────────────────────
   const sleepQuality = deriveSleepQuality(ouraData, whoopData)
-  const wakeHour = deriveWakeHour(ouraData)
+  const { hour: wakeHour, known: wakeKnown } = deriveWake(ouraData)
 
-  // ── Live clock ────────────────────────────────────────────────────────────
+  // ── Live clock — energy-day hours, so 12:30am reads as 24.5 not 0.5 ──────
   const [currentHour, setCurrentHour] = useState(() => {
     const now = new Date()
-    return now.getHours() + now.getMinutes() / 60
+    return toEnergyDayHour(now.getHours() + now.getMinutes() / 60)
   })
   useEffect(() => {
     const id = setInterval(() => {
       const now = new Date()
-      setCurrentHour(now.getHours() + now.getMinutes() / 60)
+      setCurrentHour(toEnergyDayHour(now.getHours() + now.getMinutes() / 60))
     }, 60_000)
     return () => clearInterval(id)
   }, [])
+
+  // Past midnight the chart grows to cover the energy day's post-midnight tail
+  const dayEndH = currentHour >= 24 ? 24 + ENERGY_DAY_END_HOUR : 24
 
   // ── Data ─────────────────────────────────────────────────────────────────
   const { data: caffeineLogs } = useCaffeineLogs(today, initialCaffeine)
@@ -203,7 +209,7 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
     const startH = wakeHour - CHART_START_OFFSET
     // Fine-grained pass for accurate Y-scale bounds
     const allEnergies: number[] = []
-    for (let h = startH; h <= 24; h += 0.25) {
+    for (let h = startH; h <= dayEndH; h += 0.25) {
       allEnergies.push(computeEnergy(h, wakeHour, sleepQuality, doses, workouts, meals))
     }
     const dataMin = Math.min(...allEnergies)
@@ -214,13 +220,13 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
 
     // 0.5h grid + exact dose hours so the curve always passes through dose positions
     const sampleSet = new Set<number>()
-    for (let h = startH; h <= 24; h += 0.5) sampleSet.add(Math.round(h * 1000) / 1000)
+    for (let h = startH; h <= dayEndH; h += 0.5) sampleSet.add(Math.round(h * 1000) / 1000)
     for (const d of doses) sampleSet.add(Math.round(d.hour * 1000) / 1000)
     const sampleHours = Array.from(sampleSet).sort((a, b) => a - b)
 
     const pts: [number, number][] = sampleHours.map(h => {
       const e = computeEnergy(h, wakeHour, sleepQuality, doses, workouts, meals)
-      return [hToX(h, wakeHour), eToYScaled(e, chartYMin, chartYMax)]
+      return [hToX(h, wakeHour, dayEndH), eToYScaled(e, chartYMin, chartYMax)]
     })
 
     // Catmull-Rom → smooth curve that passes through all points without overshooting
@@ -246,21 +252,21 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
       ` L ${pts[pts.length - 1][0].toFixed(1)} ${SVG_H} Z`
 
     const timeLabelHours: number[] = []
-    for (let h = Math.ceil(startH); h <= 24; h += 3) timeLabelHours.push(h)
+    for (let h = Math.ceil(startH); h <= dayEndH; h += 3) timeLabelHours.push(h)
     return { areaPath, linePath, timeLabelHours, chartYMin, chartYMax }
-  }, [wakeHour, sleepQuality, doses, workouts, meals])
+  }, [wakeHour, sleepQuality, doses, workouts, meals, dayEndH])
 
   // ── Peak windows ─────────────────────────────────────────────────────────
   // Local maxima of the curve (tight window per bump), not one wide span.
   const peakWindows = useMemo(
-    () => computePeakWindows(wakeHour, sleepQuality, doses, workouts, meals),
-    [wakeHour, sleepQuality, doses, workouts, meals]
+    () => computePeakWindows(wakeHour, sleepQuality, doses, workouts, meals, 3, dayEndH),
+    [wakeHour, sleepQuality, doses, workouts, meals, dayEndH]
   )
 
   // ── Smart timing ─────────────────────────────────────────────────────────
   const { crashHour, lastCoffeeHour, peakFocusWindow } = useMemo(() => {
     let crashHour: number | null = null, pastPeak = false, peakE = 0
-    for (let h = currentHour; h <= 24; h += 0.25) {
+    for (let h = currentHour; h <= dayEndH; h += 0.25) {
       const e = computeEnergy(h, wakeHour, sleepQuality, doses, workouts, meals)
       if (!pastPeak && e > peakE) peakE = e
       else if (!pastPeak && e < peakE - 5) pastPeak = true
@@ -273,7 +279,7 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
     }
     const peakFocusWindow = peakWindows.find(w => w.end > currentHour) ?? null
     return { crashHour, lastCoffeeHour: lo, peakFocusWindow }
-  }, [wakeHour, sleepQuality, doses, workouts, meals, currentHour, peakWindows])
+  }, [wakeHour, sleepQuality, doses, workouts, meals, currentHour, peakWindows, dayEndH])
 
   // ── Model contributors at current hour ────────────────────────────────────
   const contributors = useMemo(() => {
@@ -287,7 +293,7 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
 
     // Find the peak meal dip across the whole day (so it shows even after the window passes)
     let peakMealDip = 0
-    for (let h = wakeHour; h <= 24; h += 0.25) {
+    for (let h = wakeHour; h <= dayEndH; h += 0.25) {
       const d = mealDipAt(h, meals)
       if (d < peakMealDip) peakMealDip = d
     }
@@ -301,7 +307,7 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
     if (mealValue < -1)     items.push({ label: 'Meal dip',      value: Math.round(peakMealDip), color: '#f87171', past: mealNow > -1 })
     items.push({             label: 'Adenosine',                  value: Math.round(adenosine), color: '#52525b' })
     return items
-  }, [currentHour, wakeHour, doses, workouts, meals])
+  }, [currentHour, wakeHour, doses, workouts, meals, dayEndH])
 
   // ── Chart scrub ───────────────────────────────────────────────────────────
   const chartRef = useRef<HTMLDivElement>(null)
@@ -313,9 +319,9 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
       const rect = chartRef.current.getBoundingClientRect()
       const relX = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
       const startH = wakeHour - CHART_START_OFFSET
-      setScrubHour(startH + relX * (24 - startH))
+      setScrubHour(startH + relX * (dayEndH - startH))
     },
-    [wakeHour]
+    [wakeHour, dayEndH]
   )
 
   const displayHour = scrubHour ?? currentHour
@@ -324,8 +330,8 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
   const circumference = 2 * Math.PI * 38
   const ringOffset = circumference * (1 - displayEnergy / 100)
 
-  const nowX = hToX(currentHour, wakeHour)
-  const scrubX = scrubHour !== null ? hToX(scrubHour, wakeHour) : null
+  const nowX = hToX(currentHour, wakeHour, dayEndH)
+  const scrubX = scrubHour !== null ? hToX(scrubHour, wakeHour, dayEndH) : null
   const scrubY = scrubHour !== null ? eToYScaled(computeEnergy(scrubHour, wakeHour, sleepQuality, doses, workouts, meals), chartYMin, chartYMax) : null
   const scrubXPct = scrubX !== null ? (scrubX / SVG_W) * 100 : null
 
@@ -353,6 +359,10 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
     if (isNaN(h) || isNaN(m)) return
     const now = new Date()
     const logged = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0)
+    // Past midnight, a daytime/evening time means the energy day — yesterday
+    if (now.getHours() < ENERGY_DAY_END_HOUR && h >= ENERGY_DAY_END_HOUR) {
+      logged.setDate(logged.getDate() - 1)
+    }
     logCaffeine.mutate({
       source: modalLabel || MODAL_PRESETS[modalPresetIdx].source,
       amount_mg: MODAL_PRESETS[modalPresetIdx].amount_mg,
@@ -363,7 +373,7 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
 
   // ── Dose timeline data ────────────────────────────────────────────────────
   const timelineStartH = wakeHour
-  const timelineEndH = 24
+  const timelineEndH = dayEndH
   const totalActiveMg = doses.reduce((s, d) => s + caffeineConc(currentHour - d.hour, d.mg), 0)
   const maxPossibleMg = Math.max(totalMg, 1)
 
@@ -375,9 +385,9 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
     const maxMg = Math.max(...doses.map(d => d.mg), 1)
     return doses.map((d, i) => {
       const pts: [number, number][] = []
-      for (let h = startH; h <= 24; h += 0.25) {
+      for (let h = startH; h <= dayEndH; h += 0.25) {
         const mg = caffeineConc(h - d.hour, d.mg)
-        const x = hToX(h, wakeHour)
+        const x = hToX(h, wakeHour, dayEndH)
         const y = STACK_SVG_H - (mg / maxMg) * STACK_SVG_H
         pts.push([x, y])
       }
@@ -388,7 +398,7 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
       areaPath += ` L ${last[0].toFixed(1)} ${STACK_SVG_H} Z`
       return { linePts, areaPath, color: DOSE_COLORS[i % DOSE_COLORS.length], dose: d }
     })
-  }, [doses, wakeHour])
+  }, [doses, wakeHour, dayEndH])
 
   return (
     <main className="nebula-health min-h-screen pb-28 pt-4">
@@ -517,10 +527,10 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
               )}
             </div>
 
-            {/* Date + Oura */}
+            {/* Date + Oura — the energy day, which stays yesterday until 4am */}
             <div className="text-right">
               <p className="text-[9px] text-zinc-600 font-mono tracking-wider">
-                {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase()}
+                {new Date(`${today}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase()}
               </p>
               {ouraData?.sleep?.score != null && (
                 <p className="text-[10px] text-zinc-500 font-mono">
@@ -565,10 +575,10 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
               </div>
               <p className="text-[9px] font-mono text-zinc-600 mt-1.5">
                 {ouraData?.sleep?.score != null
-                  ? `Sleep ${ouraData.sleep.score} · wake ${formatHour(wakeHour)}`
+                  ? `Sleep ${ouraData.sleep.score} · ${wakeKnown ? 'wake' : 'est. wake'} ${formatHour(wakeHour)}`
                   : whoopData?.recovery?.score != null
-                  ? `Recovery ${whoopData.recovery.score} · wake ${formatHour(wakeHour)}`
-                  : `Baseline sleep · wake ${formatHour(wakeHour)}`}
+                  ? `Recovery ${whoopData.recovery.score} · ${wakeKnown ? 'wake' : 'est. wake'} ${formatHour(wakeHour)}`
+                  : `Baseline sleep · est. wake ${formatHour(wakeHour)}`}
               </p>
             </div>
 
@@ -603,7 +613,7 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
               <path d={areaPath} fill="url(#cafAreaGrad)" />
               <path d={linePath} fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
               {doses.map(d => (
-                <circle key={d.id} cx={hToX(d.hour, wakeHour)} cy={eToYScaled(computeEnergy(d.hour, wakeHour, sleepQuality, doses, workouts, meals), chartYMin, chartYMax)} r="4.5" fill="#050508" stroke="#4ade80" strokeWidth="2" />
+                <circle key={d.id} cx={hToX(d.hour, wakeHour, dayEndH)} cy={eToYScaled(computeEnergy(d.hour, wakeHour, sleepQuality, doses, workouts, meals), chartYMin, chartYMax)} r="4.5" fill="#050508" stroke="#4ade80" strokeWidth="2" />
               ))}
               <line x1={nowX} x2={nowX} y1="0" y2={SVG_H} stroke="rgba(255,255,255,0.25)" strokeWidth="1.5" strokeDasharray="3,5" />
               {scrubX !== null && (
@@ -783,7 +793,7 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
             <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3">
               <p className="text-[8px] font-mono text-zinc-600 tracking-[0.15em] uppercase mb-1.5">Predicted Crash</p>
               <p className={`font-serif italic text-base leading-tight ${crashHour && crashHour - currentHour < 2 ? 'text-orange-400' : 'text-white'}`}>
-                {crashHour ? `~${formatHour(crashHour)}` : 'After midnight'}
+                {crashHour ? `~${formatHour(crashHour)}` : dayEndH > 24 ? `Not before ${formatHour(dayEndH)}` : 'After midnight'}
               </p>
               <p className="text-[10px] text-zinc-500 mt-1">Energy drops below 50</p>
             </div>
@@ -836,7 +846,7 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
 
             {/* Time labels */}
             <div className="flex justify-between mb-4">
-              {[wakeHour, 12, 15, 18, 21, 24].filter(h => h >= wakeHour).map(h => (
+              {[wakeHour, 12, 15, 18, 21, 24, ...(dayEndH > 24 ? [dayEndH] : [])].filter(h => h >= wakeHour).map(h => (
                 <span key={h} className="text-[9px] font-mono text-zinc-700">{formatHourShort(h)}</span>
               ))}
             </div>

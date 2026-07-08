@@ -2,7 +2,56 @@
 // Consumed by both the caffeine page (full curve) and the health page compact
 // card so the two always read the same number. Do not fork this math.
 
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import type { OuraData, WhoopData } from './types'
+
+// ── Energy day ────────────────────────────────────────────────────────────────
+// The energy day runs from wake until 6am the next calendar day — the same
+// boundary as rolledDate() in src/features/food/date.ts, so food, supplements,
+// water, and energy all flip days together. Between midnight and 6am you are
+// still living the previous day's curve, so the model keeps counting hours
+// past 24 (12:30am → 24.5) instead of resetting to a fresh empty day, which
+// would hard-zero the score and redraw the chart as a forecast for a day that
+// has not started.
+export const ENERGY_DAY_END_HOUR = 6
+
+// Map a local clock hour (0–24) into energy-day hours (6–30).
+export function toEnergyDayHour(h: number): number {
+  return h < ENERGY_DAY_END_HOUR ? h + 24 : h
+}
+
+// YYYY-MM-DD of the energy day currently being lived in the given timezone.
+export function toEnergyDate(timezone: string): string {
+  const now = new Date()
+  const h = Number(formatInTimeZone(now, timezone, 'H'))
+  const d = h < ENERGY_DAY_END_HOUR ? new Date(now.getTime() - 86400000) : now
+  return formatInTimeZone(d, timezone, 'yyyy-MM-dd')
+}
+
+export function nextCalendarDate(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + 1)
+  return d.toISOString().slice(0, 10)
+}
+
+// UTC instants bounding an energy day: [date 6am, date+1 6am) local time.
+// Use these for timestamp-window queries so post-midnight rows stay on the day.
+export function energyDayUtcWindow(dateStr: string, timezone: string): { start: string; end: string } {
+  const hh = `${String(ENERGY_DAY_END_HOUR).padStart(2, '0')}:00:00`
+  return {
+    start: fromZonedTime(`${dateStr}T${hh}`, timezone).toISOString(),
+    end: fromZonedTime(`${nextCalendarDate(dateStr)}T${hh}`, timezone).toISOString(),
+  }
+}
+
+// Energy-day hour of an ISO timestamp, resolved in the user's timezone. Server
+// components must use this (Vercel runs in UTC, so getHours() there is wrong);
+// client components can use the device clock via toEnergyDayHour directly.
+export function isoToEnergyDayHour(iso: string, timezone: string): number {
+  const d = new Date(iso)
+  const h = Number(formatInTimeZone(d, timezone, 'H')) + Number(formatInTimeZone(d, timezone, 'm')) / 60
+  return toEnergyDayHour(h)
+}
 
 // ── Pharmacokinetic + physiological constants ─────────────────────────────────
 export const HALF_LIFE_H = 5.5
@@ -135,7 +184,9 @@ export function deriveSleepQuality(
 
 export const DEFAULT_WAKE_HOUR = 7
 
-export function deriveWakeHour(ouraData: OuraData | null): number {
+// known=false means we had no usable Oura bedtime_end (e.g. Whoop-only day)
+// and fell back to the default — surfaces should present it as an estimate.
+export function deriveWake(ouraData: OuraData | null): { hour: number; known: boolean } {
   const be = ouraData?.sleep?.bedtime_end
   if (be) {
     const d = new Date(be)
@@ -146,10 +197,14 @@ export function deriveWakeHour(ouraData: OuraData | null): number {
       // night) whose bedtime_end is an evening time. Trusting that would push
       // wakeHour into the night and zero out the entire energy curve, so reject
       // anything outside a plausible wake window and fall back to the default.
-      if (h >= 3 && h < 12) return h
+      if (h >= 3 && h < 12) return { hour: h, known: true }
     }
   }
-  return DEFAULT_WAKE_HOUR
+  return { hour: DEFAULT_WAKE_HOUR, known: false }
+}
+
+export function deriveWakeHour(ouraData: OuraData | null): number {
+  return deriveWake(ouraData).hour
 }
 
 // ── Dose mapping ──────────────────────────────────────────────────────────────
@@ -159,7 +214,7 @@ export function logsToDoses(
   return logs
     .map(l => ({
       id: l.id,
-      hour: new Date(l.logged_at).getHours() + new Date(l.logged_at).getMinutes() / 60,
+      hour: toEnergyDayHour(new Date(l.logged_at).getHours() + new Date(l.logged_at).getMinutes() / 60),
       mg: l.amount_mg,
       source: l.source,
       loggedAt: l.logged_at,
@@ -202,11 +257,12 @@ export function computePeakWindows(
   workouts: WorkoutPoint[] = [],
   meals: MealPoint[] = [],
   maxWindows = 3,
+  endHour = 24,
 ): PeakWindow[] {
   const startH = wakeHour
   const hours: number[] = []
   const vals: number[] = []
-  for (let h = startH; h <= 24 + 1e-9; h += PEAK_STEP) {
+  for (let h = startH; h <= endHour + 1e-9; h += PEAK_STEP) {
     hours.push(h)
     vals.push(computeEnergy(h, wakeHour, sleepQuality, doses, workouts, meals))
   }
