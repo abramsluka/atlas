@@ -6,7 +6,7 @@ import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion
 
 const EASE_OUT = [0.16, 1, 0.3, 1] as const
 import { useQueryClient } from '@tanstack/react-query'
-import { useGymConfig, useGymExercises, useAllGymLogs, useBodyWeights, useBodyMeasurements, useProgressPhotos } from '@/features/gym/queries'
+import { useGymConfig, useGymExercises, useAllGymLogs, useGymSessions, useBodyWeights, useBodyMeasurements, useProgressPhotos } from '@/features/gym/queries'
 import { useHealthProfile } from '@/features/health/queries'
 import {
   useSaveGymConfig,
@@ -48,6 +48,25 @@ function todayDateLabel(): string {
 
 function logDatePST(utcStr: string): string {
   return new Date(utcStr).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
+}
+
+// "6:32 PM" in LA time
+function fmtTimePST(iso: string): string {
+  return new Date(iso).toLocaleTimeString('en-US', {
+    timeZone: 'America/Los_Angeles',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+// "6:32 – 7:24 PM" — drops the first meridiem when it matches the second
+function fmtTimeRangePST(startIso: string, endIso: string): string {
+  const start = fmtTimePST(startIso)
+  const end = fmtTimePST(endIso)
+  const [, startMerid] = start.split(' ')
+  const [, endMerid] = end.split(' ')
+  const startShown = startMerid === endMerid ? start.replace(' ' + startMerid, '') : start
+  return `${startShown} – ${end}`
 }
 
 // US Navy body fat formula — circumferences in inches
@@ -399,6 +418,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const { data: config = initialConfig } = useGymConfig()
   const { data: exercises = [] } = useGymExercises()
   const { data: allLogs = [] } = useAllGymLogs()
+  const { data: sessions = [] } = useGymSessions()
   const { data: bodyWeights = [] } = useBodyWeights()
   const { data: bodyMeasurements = [] } = useBodyMeasurements()
   const { data: photos = [] } = useProgressPhotos()
@@ -1100,6 +1120,10 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const pastDates = [...new Set(
     allLogs.filter(l => logDatePST(l.logged_at) !== today).map(l => logDatePST(l.logged_at))
   )].sort((a, b) => b.localeCompare(a)).slice(0, 10)
+  const sessionByDate = useMemo(
+    () => Object.fromEntries(sessions.map(s => [s.date_key, s])),
+    [sessions],
+  )
 
   return (
     <>
@@ -1923,7 +1947,14 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     <div key={date} className="rounded-2xl bg-white/5 border border-white/8 overflow-hidden" style={{ backdropFilter: 'blur(8px)' }}>
                       {/* Day header */}
                       <div className="flex items-center justify-between px-5 py-3 border-b border-white/6">
-                        <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">{label}</span>
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">{label}</span>
+                          {sessionByDate[date] && (
+                            <span className="text-[11px] text-white/30 tabular-nums">
+                              {fmtTimeRangePST(sessionByDate[date].started_at, sessionByDate[date].ended_at)}
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-3">
                           <span className="text-xs text-white/30 tabular-nums">
                             {dateLogs.length} sets · {Math.round(dateVol).toLocaleString()} {config.units}

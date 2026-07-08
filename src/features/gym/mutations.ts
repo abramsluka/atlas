@@ -116,6 +116,8 @@ export function useLogSet() {
     onSuccess: (data) => {
       qc.setQueryData<GymLog[]>(['gym-logs', data.exercise_id], (old = []) => [...old, data])
       qc.setQueryData<GymLog[]>(['gym-logs-all'], (old = []) => [...old, data])
+      // Session start/end is server-derived from the logs — refetch it.
+      qc.invalidateQueries({ queryKey: ['gym-sessions'] })
     },
   })
 }
@@ -135,6 +137,7 @@ export function useDeleteLog() {
       qc.setQueryData<GymLog[]>(['gym-logs-all'], (old = []) =>
         old.filter(l => l.id !== id)
       )
+      qc.invalidateQueries({ queryKey: ['gym-sessions'] })
     },
   })
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { laDateKey, syncGymSession } from '@/lib/gymSessions'
 
 export async function GET(req: NextRequest) {
   const authClient = await createClient()
@@ -37,5 +38,13 @@ export async function POST(req: NextRequest) {
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // Keep the day's workout session (start/end time) in sync with its set logs.
+  try {
+    await syncGymSession(db, user.id, laDateKey(data.logged_at))
+  } catch (e) {
+    console.error('gym session sync failed', e)
+  }
+
   return NextResponse.json(data)
 }
