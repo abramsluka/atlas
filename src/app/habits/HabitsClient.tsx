@@ -5,7 +5,7 @@ import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import { useHabits, useHabitHistory } from '@/features/habits/queries'
 import { useToggleHabit, useUpdateGoal, useLogAll } from '@/features/habits/mutations'
-import type { HabitView } from '@/features/habits/types'
+import type { HabitView, HabitHistoryWeek } from '@/features/habits/types'
 
 const GREEN = '#4ade80'
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
@@ -49,7 +49,7 @@ function BigCheck({ done, onToggle }: { done: boolean; onToggle: () => void }) {
   )
 }
 
-// ─── Small week dot (expand detail + week grid + history) ───────────────────
+// ─── Small week dot (expand detail + week grid) ─────────────────────────────
 
 function WeekDot({ day, onToggle }: { day: { done: boolean; today: boolean; future: boolean }; onToggle: () => void }) {
   return (
@@ -98,7 +98,7 @@ function TodayCard({ habit, expanded, onExpand, onToggleDay, onGoal }: {
               {habit.kind === 'auto' && <span className="flex-none rounded-full px-1.5 py-px text-[8px] font-bold uppercase tracking-[0.1em]" style={{ color: GREEN, background: 'rgba(74,222,128,0.12)' }}>auto</span>}
             </div>
             <div className="mt-1 flex items-center gap-2">
-              <span className="text-[11.5px] tabular-nums" style={{ color: 'var(--zinc, #52525b)' }}>{habit.weeklyDone}/{habit.perWeek} this week</span>
+              <span className="text-[11.5px] tabular-nums" style={{ color: '#52525b' }}>{habit.weeklyDone}/{habit.perWeek} this week</span>
               <span className="h-[3px] w-14 overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.07)' }}>
                 <span className="block h-full rounded-full" style={{ width: `${pct}%`, background: GREEN }} />
               </span>
@@ -137,97 +137,41 @@ function TodayCard({ habit, expanded, onExpand, onToggleDay, onGoal }: {
   )
 }
 
-// ─── Week grid (review + backfill) ──────────────────────────────────────────
+// ─── Week grid — one selected week, from the history pager ───────────────────
 
-function WeekGrid({ habits, onHistory, onToggleDay }: {
-  habits: HabitView[]
-  onHistory: () => void
+function WeekGrid({ week, isLoading, todayDate, onToggleDay }: {
+  week: HabitHistoryWeek | undefined
+  isLoading: boolean
+  todayDate: string
   onToggleDay: (id: string, date: string, completed: boolean) => void
 }) {
+  if (isLoading || !week) {
+    return <div className="py-16 text-center text-[13px]" style={{ color: '#52525b' }}>{isLoading ? 'Loading…' : 'No data'}</div>
+  }
   return (
     <>
       <div className="mb-2 grid items-center gap-1 px-1" style={{ gridTemplateColumns: '116px repeat(7, 1fr)' }}>
-        <button onClick={onHistory} className="text-left text-[10.5px] font-semibold underline decoration-white/25 underline-offset-2" style={{ color: 'rgba(255,255,255,0.5)' }}>History</button>
+        <span />
         {WEEKDAYS.map((d, i) => <span key={i} className="text-center text-[8.5px] font-bold uppercase tracking-wide" style={{ color: '#52525b' }}>{d}</span>)}
       </div>
       <div className="flex flex-col gap-1.5">
-        {habits.map((h) => (
+        {week.habits.map((h) => (
           <div key={h.id} className="grid items-center gap-1 rounded-xl border py-2 pl-3 pr-1" style={{ gridTemplateColumns: '116px repeat(7, 1fr)', borderColor: 'var(--cosmic-border)', background: 'var(--cosmic-surface)' }}>
             <div className="flex min-w-0 items-center gap-2">
               <span className="flex-none text-[15px]">{h.emoji}</span>
               <span className="truncate text-[12.5px] font-semibold">{h.name}</span>
             </div>
-            {h.week.map((d) => (
-              <div key={d.date} className="flex justify-center">
-                <WeekDot day={d} onToggle={() => onToggleDay(h.id, d.date, !d.done)} />
-              </div>
-            ))}
+            {h.done.map((dn, di) => {
+              const date = week.dates[di]
+              return (
+                <div key={date} className="flex justify-center">
+                  <WeekDot day={{ done: dn, today: date === todayDate, future: date > todayDate }} onToggle={() => onToggleDay(h.id, date, !dn)} />
+                </div>
+              )
+            })}
           </div>
         ))}
       </div>
-    </>
-  )
-}
-
-// ─── History pager (Whoop-style week navigation) ────────────────────────────
-
-function HistoryPager({ todayDate, onClose, onToggleDay }: {
-  todayDate: string
-  onClose: () => void
-  onToggleDay: (id: string, date: string, completed: boolean) => void
-}) {
-  const { data: weeks, isLoading } = useHabitHistory(true)
-  const [i, setI] = useState(0) // index into weeks (0 = this week, newest)
-  const week = weeks?.[i]
-
-  return (
-    <>
-      <div className="mb-3 flex items-center justify-between">
-        <button onClick={onClose} className="flex items-center gap-1 text-[12px] font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
-          Back
-        </button>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setI((x) => Math.min((weeks?.length ?? 1) - 1, x + 1))} disabled={!weeks || i >= weeks.length - 1} className="grid h-8 w-8 place-items-center rounded-full border disabled:opacity-25" style={{ borderColor: 'var(--cosmic-border)' }} aria-label="Older week">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
-          </button>
-          <span className="min-w-[118px] text-center text-[12.5px] font-bold tabular-nums">
-            {week ? (i === 0 ? 'This week' : `${fmtMD(week.startDate)} – ${fmtMD(week.endDate)}`) : '—'}
-          </span>
-          <button onClick={() => setI((x) => Math.max(0, x - 1))} disabled={i <= 0} className="grid h-8 w-8 place-items-center rounded-full border disabled:opacity-25" style={{ borderColor: 'var(--cosmic-border)' }} aria-label="Newer week">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
-          </button>
-        </div>
-      </div>
-
-      {isLoading || !week ? (
-        <div className="py-16 text-center text-[13px]" style={{ color: '#52525b' }}>{isLoading ? 'Loading history…' : 'No history yet'}</div>
-      ) : (
-        <>
-          <div className="mb-2 grid items-center gap-1 px-1" style={{ gridTemplateColumns: '116px repeat(7, 1fr)' }}>
-            <span />
-            {WEEKDAYS.map((d, idx) => <span key={idx} className="text-center text-[8.5px] font-bold uppercase tracking-wide" style={{ color: '#52525b' }}>{d}</span>)}
-          </div>
-          <div className="flex flex-col gap-1.5">
-            {week.habits.map((h) => (
-              <div key={h.id} className="grid items-center gap-1 rounded-xl border py-2 pl-3 pr-1" style={{ gridTemplateColumns: '116px repeat(7, 1fr)', borderColor: 'var(--cosmic-border)', background: 'var(--cosmic-surface)' }}>
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className="flex-none text-[15px]">{h.emoji}</span>
-                  <span className="truncate text-[12.5px] font-semibold">{h.name}</span>
-                </div>
-                {h.done.map((dn, di) => {
-                  const date = week.dates[di]
-                  return (
-                    <div key={date} className="flex justify-center">
-                      <WeekDot day={{ done: dn, today: date === todayDate, future: date > todayDate }} onToggle={() => onToggleDay(h.id, date, !dn)} />
-                    </div>
-                  )
-                })}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
     </>
   )
 }
@@ -242,8 +186,11 @@ export default function HabitsClient({ initial }: { initial: HabitView[] }) {
   const logAll = useLogAll()
 
   const [view, setView] = useState<'today' | 'week'>('today')
-  const [history, setHistory] = useState(false)
+  const [weekIndex, setWeekIndex] = useState(0) // 0 = this week
   const [expandedId, setExpandedId] = useState<string | null>(null)
+
+  const { data: weeks, isLoading: histLoading } = useHabitHistory(view === 'week')
+  const week = weeks?.[weekIndex]
 
   const todayDate = habits[0]?.week.find((d) => d.today)?.date ?? ''
   const todayDone = habits.filter((h) => h.week.find((d) => d.today)?.done).length
@@ -277,19 +224,36 @@ export default function HabitsClient({ initial }: { initial: HabitView[] }) {
         </div>
       </div>
 
-      {/* view toggle + log all (log all only in Today) */}
+      {/* toggle row: Today | Week, with Log all (today) or inline week nav (week) */}
       <div className="mb-4 flex items-center gap-2.5">
         <div className="flex gap-0.5 rounded-xl border p-0.5" style={{ borderColor: 'var(--cosmic-border)', background: 'rgba(255,255,255,0.03)' }}>
           {(['today', 'week'] as const).map((v) => (
-            <button key={v} onClick={() => { setView(v); setHistory(false) }} className="rounded-[9px] px-3.5 py-1.5 text-[12.5px] font-semibold capitalize transition-colors"
+            <button key={v} onClick={() => { setView(v); setWeekIndex(0) }} className="rounded-[9px] px-3.5 py-1.5 text-[12.5px] font-semibold capitalize transition-colors"
               style={view === v ? { color: '#eafff2', background: 'rgba(74,222,128,0.13)', boxShadow: 'inset 0 0 0 1px rgba(74,222,128,0.32)' } : { color: 'rgba(255,255,255,0.5)' }}>{v}</button>
           ))}
         </div>
+
         {view === 'today' && (
           <button onClick={() => logAll.mutate({ date: todayDate, completed: !allManualDone })} className="ml-auto rounded-[10px] border px-3 py-2 text-[12.5px] font-semibold"
             style={{ color: '#dffbe9', borderColor: 'rgba(74,222,128,0.4)', background: 'radial-gradient(120% 150% at 50% 0%, rgba(74,222,128,0.18), transparent)' }}>
             {allManualDone ? '↺ Reset today' : 'Log all'}
           </button>
+        )}
+
+        {view === 'week' && (
+          <div className="ml-auto flex items-center gap-1.5">
+            <button onClick={() => setWeekIndex((i) => Math.min((weeks?.length ?? 1) - 1, i + 1))} disabled={!weeks || weekIndex >= weeks.length - 1}
+              className="grid h-7 w-7 place-items-center rounded-full border disabled:opacity-25" style={{ borderColor: 'var(--cosmic-border)' }} aria-label="Older week">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+            </button>
+            <span className="min-w-[86px] text-center text-[12px] font-bold tabular-nums">
+              {week ? (weekIndex === 0 ? 'This week' : `${fmtMD(week.startDate)} – ${fmtMD(week.endDate)}`) : '…'}
+            </span>
+            <button onClick={() => setWeekIndex((i) => Math.max(0, i - 1))} disabled={weekIndex <= 0}
+              className="grid h-7 w-7 place-items-center rounded-full border disabled:opacity-25" style={{ borderColor: 'var(--cosmic-border)' }} aria-label="Newer week">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+            </button>
+          </div>
         )}
       </div>
 
@@ -308,12 +272,8 @@ export default function HabitsClient({ initial }: { initial: HabitView[] }) {
         </div>
       )}
 
-      {view === 'week' && !history && (
-        <WeekGrid habits={habits} onHistory={() => setHistory(true)} onToggleDay={(id, date, completed) => toggle.mutate({ id, date, completed })} />
-      )}
-
-      {view === 'week' && history && (
-        <HistoryPager todayDate={todayDate} onClose={() => setHistory(false)} onToggleDay={(id, date, completed) => toggle.mutate({ id, date, completed })} />
+      {view === 'week' && (
+        <WeekGrid week={week} isLoading={histLoading} todayDate={todayDate} onToggleDay={(id, date, completed) => toggle.mutate({ id, date, completed })} />
       )}
     </main>
   )
