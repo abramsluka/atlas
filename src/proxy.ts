@@ -32,12 +32,16 @@ export async function proxy(request: NextRequest) {
   // Endpoints authed by a long-lived sync token (the iOS Shortcut has no session
   // cookie) — they enforce their own Bearer auth, so skip the login redirect.
   const TOKEN_AUTHED_PATHS = ['/api/health/apple/sync', '/api/health/apple/export']
+  // Public surfaces that must never bounce to /login: the MCP endpoint does its
+  // own Bearer auth (and must 401, not 307), OAuth + discovery are pre-auth.
+  const PUBLIC_PREFIXES = ['/api/mcp', '/api/oauth', '/.well-known']
 
   if (
     !user &&
     pathname !== '/login' &&
     !pathname.startsWith('/auth/') &&
-    !TOKEN_AUTHED_PATHS.includes(pathname)
+    !TOKEN_AUTHED_PATHS.includes(pathname) &&
+    !PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))
   ) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
