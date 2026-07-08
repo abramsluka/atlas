@@ -182,7 +182,7 @@ export default function NewJournalEntryPage() {
 
         <textarea
           ref={textareaRef}
-          placeholder={isMorning ? "What's the plan for today? One thing per line." : "What's on your mind?"}
+          placeholder={isMorning ? "What's the plan for today?" : "What's on your mind?"}
           value={body}
           autoFocus
           onChange={(e) => {
