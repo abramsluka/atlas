@@ -115,7 +115,8 @@ function MoreButton() {
     >
       <motion.span
         className="flex items-center justify-center"
-        variants={{ rest: { borderColor: 'rgba(74,222,128,0.42)' }, hover: { borderColor: 'rgba(74,222,128,0.85)' } }}
+        variants={{ rest: { borderColor: 'rgba(74,222,128,0.42)', scale: 1 }, hover: { borderColor: 'rgba(74,222,128,0.85)', scale: 1.12 } }}
+        transition={{ type: 'spring', stiffness: 420, damping: 18 }}
         style={{
           width: 40,
           height: 40,
@@ -126,15 +127,14 @@ function MoreButton() {
           animation: 'cosmicPulseGlow 3.6s ease-in-out infinite',
         }}
       >
-        <motion.svg
+        <svg
           width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#eafff2"
           strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
-          variants={{ rest: { x: 0 }, hover: { x: 2 } }}
           style={{ filter: 'drop-shadow(0 0 5px rgba(74,222,128,0.6))' }}
         >
           <polyline points="8 6 14 12 8 18" />
           <polyline points="13 6 19 12 13 18" />
-        </motion.svg>
+        </svg>
       </motion.span>
     </motion.button>
   )
