@@ -45,6 +45,11 @@ export async function proxy(request: NextRequest) {
   ) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
+    // OAuth consent must survive the login bounce: carry the original URL so
+    // the login page can return there after sign-in. Only for /oauth/authorize.
+    if (pathname === '/oauth/authorize') {
+      url.search = `?next=${encodeURIComponent(request.nextUrl.pathname + request.nextUrl.search)}`
+    }
     return NextResponse.redirect(url)
   }
 

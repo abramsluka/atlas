@@ -27,7 +27,10 @@ export default function LoginPage() {
     if (error) {
       setError(error.message)
     } else {
-      router.push('/')
+      // Honor a same-origin, path-only ?next= (set by the proxy for the OAuth
+      // consent page). Anything absolute or protocol-relative falls back to /.
+      const next = new URLSearchParams(window.location.search).get('next')
+      router.push(next && next.startsWith('/') && !next.startsWith('//') ? next : '/')
     }
   }
 

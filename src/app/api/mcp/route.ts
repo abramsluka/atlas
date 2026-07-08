@@ -2,6 +2,7 @@ import { createMcpHandler, withMcpAuth } from 'mcp-handler'
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js'
 import { resolveMcpUser } from '@/lib/mcpAuth'
 import { registerAtlasTools, ATLAS_INSTRUCTIONS } from '@/features/mcp/tools'
+import { APP_URL } from '@/lib/appUrl'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -41,6 +42,11 @@ const verifyToken = async (_req: Request, bearerToken?: string): Promise<AuthInf
 // On missing/invalid token this responds 401 with
 // WWW-Authenticate: Bearer ..., resource_metadata="<origin>/.well-known/oauth-protected-resource"
 // — required even in Phase 2 so claude.ai starts the OAuth dance in Phase 3.
-const authHandler = withMcpAuth(handler, verifyToken, { required: true })
+const authHandler = withMcpAuth(handler, verifyToken, {
+  required: true,
+  // Pin the advertised resource_metadata origin to the canonical URL instead
+  // of trusting X-Forwarded-* headers.
+  resourceUrl: `${APP_URL}/api/mcp`,
+})
 
 export { authHandler as GET, authHandler as POST, authHandler as DELETE }
