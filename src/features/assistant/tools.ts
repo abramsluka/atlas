@@ -6,7 +6,8 @@ import Anthropic from '@anthropic-ai/sdk'
 import { subDays } from 'date-fns'
 import type { createServiceClient } from '@/lib/supabase/server'
 import { getUserTimezone } from '@/lib/getUserTimezone'
-import { toLocalDate } from '@/lib/date'
+import { toLocalDate, daysAgoLocal } from '@/lib/date'
+import { formatInTimeZone } from 'date-fns-tz'
 import type { GymConfig, GymExercise } from '@/features/gym/types'
 import type { TimeSlot } from '@/features/health/types'
 import type { ProgramGoal, ProgramStructure } from '@/features/gym/programTypes'
@@ -28,6 +29,8 @@ export interface AssistantContext {
   supplements: Array<{ id: string; name: string; times: TimeSlot[] }>
   supplementById: Map<string, { id: string; name: string; times: TimeSlot[] }>
   loggedSlotsToday: Map<string, Set<string>>   // supplement_id → time_slots logged today
+  bottleOz: number         // his configured bottle size, for "drank a bottle"
+  glassOz: number          // his configured glass size
   catalogBlock: string     // formatted context for the system prompt
 }
 
@@ -35,14 +38,20 @@ export async function loadAssistantContext(db: DB, userId: string): Promise<Assi
   const tz = await getUserTimezone(userId)
   const today = toLocalDate(tz)
   const thirtyDaysAgoIso = subDays(new Date(), 30).toISOString()
+  const sevenDaysAgo = daysAgoLocal(7, tz)
 
-  const [configRes, exercisesRes, logsRes, suppsRes, doseRes, weightRes] = await Promise.all([
+  const [configRes, exercisesRes, logsRes, suppsRes, doseRes, weightRes, waterRes, caffeineRes, foodRes, checkinRes, containerRes] = await Promise.all([
     db.from('gym_config').select('*').eq('user_id', userId).maybeSingle(),
     db.from('gym_exercises').select('*').eq('user_id', userId).order('order_index').order('created_at'),
     db.from('gym_logs').select('exercise_id, weight, reps, logged_at').eq('user_id', userId).gte('logged_at', thirtyDaysAgoIso).order('logged_at', { ascending: false }),
     db.from('supplements').select('id, name, times').eq('user_id', userId).eq('active', true).order('order_index'),
     db.from('supplement_logs').select('supplement_id, time_slot').eq('user_id', userId).eq('date', today),
     db.from('body_weights').select('date_key, weight').eq('user_id', userId).order('date_key', { ascending: false }).limit(1).maybeSingle(),
+    db.from('water_logs').select('date, amount_oz').eq('user_id', userId).gte('date', sevenDaysAgo),
+    db.from('caffeine_logs').select('source, amount_mg').eq('user_id', userId).eq('date', today),
+    db.from('food_logs').select('date, item_name, calories, protein_g, carbs_g').eq('user_id', userId).gte('date', sevenDaysAgo).order('date', { ascending: false }).limit(40),
+    db.from('daily_checkins').select('morning_planned_training, morning_intent, evening_actual_training, evening_reflection').eq('user_id', userId).eq('date', today).maybeSingle(),
+    db.from('health_profile').select('bottle_ml, glass_ml').eq('user_id', userId).maybeSingle(),
   ])
 
   const config = configRes.data as GymConfig | null
@@ -99,8 +108,53 @@ export async function loadAssistantContext(db: DB, userId: string): Promise<Assi
   const lastWeight = weightRes.data as { date_key: string; weight: number } | null
   const localTime = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date())
 
+  // ── Today so far: water / caffeine / food / training / check-in ──
+  const r1 = (n: number) => Math.round(n * 10) / 10
+  const OZ_PER_ML = 1 / 29.5735
+  const containers = containerRes.data as { bottle_ml: number | null; glass_ml: number | null } | null
+  const bottleOz = r1((containers?.bottle_ml ?? 500) * OZ_PER_ML)
+  const glassOz = r1((containers?.glass_ml ?? 250) * OZ_PER_ML)
+
+  const waterRows = (waterRes.data ?? []) as Array<{ date: string; amount_oz: number | null }>
+  const waterTodayOz = r1(waterRows.filter(w => w.date === today).reduce((t, w) => t + (w.amount_oz ?? 0), 0))
+  const pastWater = waterRows.filter(w => w.date !== today)
+  const pastWaterDays = new Set(pastWater.map(w => w.date)).size
+  const waterAvg = pastWaterDays ? Math.round(pastWater.reduce((t, w) => t + (w.amount_oz ?? 0), 0) / pastWaterDays) : null
+
+  const caffeineRows = (caffeineRes.data ?? []) as Array<{ source: string; amount_mg: number | null }>
+  const caffeineTodayMg = Math.round(caffeineRows.reduce((t, c) => t + (c.amount_mg ?? 0), 0))
+  const caffeineSources = caffeineRows.map(c => c.source).join(', ')
+
+  const foodRows = (foodRes.data ?? []) as Array<{ date: string; item_name: string; calories: number | null; protein_g: number | null; carbs_g: number | null }>
+  const foodToday = foodRows.filter(f => f.date === today)
+  const calToday = Math.round(foodToday.reduce((t, f) => t + (f.calories ?? 0), 0))
+  const proteinToday = Math.round(foodToday.reduce((t, f) => t + (f.protein_g ?? 0), 0))
+  const carbsToday = Math.round(foodToday.reduce((t, f) => t + (f.carbs_g ?? 0), 0))
+  const foodItems = foodToday.map(f => f.item_name).join(', ')
+
+  const setsToday = logs.filter(l => formatInTimeZone(new Date(l.logged_at), tz, 'yyyy-MM-dd') === today)
+  const setsTodayByEx = new Map<string, number>()
+  for (const s of setsToday) setsTodayByEx.set(s.exercise_id, (setsTodayByEx.get(s.exercise_id) ?? 0) + 1)
+  const trainingToday = setsToday.length
+    ? `${setsToday.length} set${setsToday.length === 1 ? '' : 's'} — ${[...setsTodayByEx.entries()].map(([id, n]) => `${exerciseById.get(id)?.name ?? 'unknown'}×${n}`).join(', ')}`
+    : 'nothing logged yet'
+
+  const checkin = checkinRes.data as { morning_planned_training: boolean | null; morning_intent: string | null; evening_actual_training: boolean | null; evening_reflection: string | null } | null
+  const checkinLine = checkin
+    ? `morning ${checkin.morning_planned_training == null ? 'not done' : checkin.morning_planned_training ? 'training planned' : 'rest day'}${checkin.morning_intent ? ` ("${checkin.morning_intent}")` : ''} · evening ${checkin.evening_actual_training == null ? 'not done' : checkin.evening_actual_training ? 'trained' : "didn't train"}`
+    : 'not done yet'
+
+  const todayBlock = `— TODAY SO FAR (answer intake/progress questions from this — it is his live data):
+  water: ${waterTodayOz} oz${bottleOz ? ` (≈${r1(waterTodayOz / bottleOz)} bottles)` : ''}${waterAvg != null ? ` — 7d avg ${waterAvg} oz/day` : ''}
+  caffeine: ${caffeineTodayMg} mg${caffeineSources ? ` (${caffeineSources})` : ''}
+  food: ${calToday} cal · ${proteinToday}g protein · ${carbsToday}g carbs${foodItems ? ` (${foodItems})` : ' (nothing logged)'}
+  training: ${trainingToday}
+  check-in: ${checkinLine}
+— WATER CONTAINERS: his bottle = ${bottleOz} oz, his glass = ${glassOz} oz`
+
   const catalogBlock = `— NOW: ${localTime} (${today}, timezone ${tz})
 — LATEST BODY WEIGHT: ${lastWeight ? `${lastWeight.weight} ${units} on ${lastWeight.date_key}` : 'none logged'}
+${todayBlock}
 
 — SUPPLEMENTS (use these [id]s for log_supplement_dose):
 ${supplementCatalog || '(none configured)'}
@@ -114,7 +168,7 @@ ${gymList}
 — EXERCISE CATALOG (use these [id]s):
 ${exerciseCatalog || '(no exercises yet)'}`
 
-  return { tz, today, units, config, exercises, exerciseById, dayName, supplements, supplementById, loggedSlotsToday, catalogBlock }
+  return { tz, today, units, config, exercises, exerciseById, dayName, supplements, supplementById, loggedSlotsToday, bottleOz, glassOz, catalogBlock }
 }
 
 // ── Behavior rules shared by both routes (encodes the confirm-card contract) ──
@@ -174,11 +228,14 @@ export function buildAssistantTools(units: string): Anthropic.Tool[] {
     },
     {
       name: 'log_water',
-      description: 'Propose logging water intake in ounces. Call when Luka says he drank water ("had 20 oz of water", "drank a liter" → convert to oz).',
+      description: 'Propose logging plain water. Call when Luka says he drank water. Pass amount_oz when he states an amount ("had 20 oz", "drank a liter" → 33.8). When he says "a bottle" or "a glass", pass bottles/glasses instead — Atlas converts from his configured container sizes; do NOT guess ounces for a bottle.',
       input_schema: {
         type: 'object',
-        properties: { amount_oz: { type: 'number' } },
-        required: ['amount_oz'],
+        properties: {
+          amount_oz: { type: 'number', description: 'Exact ounces, when he states an amount' },
+          bottles: { type: 'number', description: 'Count of his bottles ("drank a bottle" → 1)' },
+          glasses: { type: 'number', description: 'Count of his glasses' },
+        },
       },
     },
     {
@@ -384,9 +441,13 @@ export function resolveToolCall(name: string, input: Record<string, unknown>, ct
         return { kind: 'log_weight', weight }
       }
       case 'log_water': {
-        const oz = num(input.amount_oz)
-        if (oz == null || oz <= 0 || oz > 300) return null
-        return { kind: 'log_water', amount_oz: Math.round(oz * 10) / 10 }
+        // amount_oz, or bottles/glasses converted from his configured sizes (MCP parity)
+        const oz = num(input.amount_oz) ?? 0
+        const bottles = num(input.bottles) ?? 0
+        const glasses = num(input.glasses) ?? 0
+        const total = Math.round((oz + bottles * ctx.bottleOz + glasses * ctx.glassOz) * 10) / 10
+        if (total <= 0 || total > 300) return null
+        return { kind: 'log_water', amount_oz: total }
       }
       case 'log_caffeine': {
         const mg = num(input.amount_mg)
