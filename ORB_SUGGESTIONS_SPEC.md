@@ -1,86 +1,110 @@
-# ORB_SUGGESTIONS_SPEC.md — Suggested Replies + Gym-Page Mic Behavior (Atlas Orb V3)
+# ORB_SUGGESTIONS_SPEC.md — Suggested Replies, Learned Commands + Mic Behavior (Atlas Orb V3)
 
 > Follows [VOICE_SPEC.md](VOICE_SPEC.md) and [FOOD_VOICE_SPEC.md](FOOD_VOICE_SPEC.md). The Orb (V1/V2)
 > handles voice logging, gym coaching, and food. This spec adds WHOOP-Coach-style suggested-reply
-> chips — three tappable boxes that appear when the orb opens and regenerate after every assistant
-> response — plus one behavior change: the orb must NOT auto-start recording when opened on /gym.
+> chips — tappable boxes on open and after every assistant response — where the open-chips are
+> LEARNED from Luka's own most common commands over time. Plus mic behavior changes: no auto-record
+> on /gym, and tapping a chip / Clear cancels a live recording.
 
 ## 0. Context — prior art and what already exists
 
 **WHOOP Coach (the reference UX).** Pre-curated prompt boxes appear at each conversation entry
 point (Home, Sleep, Strain, Recovery screens) and are context-seeded per screen; a morning "Daily
 Outlook" also feeds suggested conversations. WHOOP's own curated prompts are short, first-person,
-single-clause, ~4–10 words ("How hard should I train today?", "Why do I feel so tired today?").
-NN/g's guidance on follow-up chips: they must "respond to where the user is in the conversation,
-not revisit what they've already passed on" — irrelevant or repetitive chips actively annoy
-(ChatGPT shipped an off-switch for exactly this reason). Industry-default tap behavior is
-immediate send, not populate-for-editing. Design consequence: **no chips beats bad chips** — every
-failure path below degrades to "show nothing."
+single-clause, ~4–10 words. NN/g's guidance on follow-up chips: they must "respond to where the
+user is in the conversation, not revisit what they've already passed on" — irrelevant or repetitive
+chips actively annoy (ChatGPT shipped an off-switch for exactly this reason). Industry-default tap
+behavior is immediate send, not populate-for-editing. Design consequence: **no chips beats bad
+chips** — every failure path below degrades to "show nothing."
 
 **What Atlas already has** (all in the codebase today):
 
 - **Orb component** — [src/features/assistant/OrbAssistant.tsx](src/features/assistant/OrbAssistant.tsx).
   Globally mounted portal, knows its route via `usePathname()`, sends `page: pathname` in the chat
   POST body. `openSheet()` (~line 158) calls `startMic()` unconditionally — that's the voice-first
-  auto-record. Hardcoded `HINTS` array (~line 199) renders three static chips on the empty thread
-  only. Clarify chips (~line 368) are the existing tappable-pill pattern: `onClick={() => send(opt)}`.
+  auto-record. `closeSheet()` (~line 163) already cancels a live recording correctly (intent
+  nulled, `rec.stop()` + `rec.reset()`, nothing transcribed) — but the **Clear** button (~line 281)
+  only wipes messages and leaves the recording running. Hardcoded `HINTS` array (~line 199) renders
+  three static chips on the empty thread only. Clarify chips (~line 368) are the existing
+  tappable-pill pattern: `onClick={() => send(opt)}`.
 - **Chat route** — [src/app/api/assistant/chat/route.ts](src/app/api/assistant/chat/route.ts).
   `claude-sonnet-4-6`, streams NDJSON events typed by `AssistantStreamEvent`
   ([actions.ts](src/features/assistant/actions.ts) ~line 109: `text | action | clarify | error`).
   Already assembles recovery (Oura/Whoop), profile, and the exercise/supplement catalog server-side.
 - **Thread persistence** — `usePersistentChat` keeps the last 40 `OrbMsg`s in localStorage
-  (`atlas-orb-thread-v1`).
+  (`atlas-orb-thread-v1`). **Nothing about orb usage is persisted server-side today** — which is
+  why learning "his most common commands" needs a new table.
 - **Gym session state** — the set/rest stopwatch lives ONLY in
   [src/app/gym/GymClient.tsx](src/app/gym/GymClient.tsx) (~line 25): localStorage key
   `atlas.gym.timer`, shape `{ phase: 'idle'|'active'|'rest', phaseStart, sessionStart }`, restored
   only if < 6h old. The Orb currently cannot see it.
-- **Cheap structured-call precedent** — `/api/gym/coach-step` uses `claude-haiku-4-5-20251001` for
-  a fast JSON answer; the subscriptions import route uses a forced `tool_choice` tool call for
-  structured output. The suggestions generator reuses both patterns.
+- **Precedents to reuse** — `/api/gym/coach-step` uses `claude-haiku-4-5-20251001` for a fast
+  structured answer; subscriptions import uses a forced `tool_choice` tool call; the mentor route
+  wraps background writes in `after()` from next/server because fire-and-forget writes get dropped
+  on Vercel once the response streams.
 
 ## 1. What this is
 
-Two features, one spec:
+Three features, one spec:
 
-1. **Suggested-reply chips.** Three tappable boxes at the bottom of the orb conversation.
-   - **On open (empty thread or returning):** deterministic, context-aware starters computed
-     client-side from page + time of day + gym-session state. Replaces the hardcoded `HINTS`.
-   - **After every assistant response:** three fresh suggestions generated by Haiku server-side
+1. **Suggested-reply chips.** Tappable boxes at the bottom of the orb conversation.
+   - **On open (up to 4 chips):** Luka's most common orb commands, learned from his real usage and
+     served from a per-user cache — in his own phrasing ("Log all my vitamins"), split by time of
+     day (§5). Until enough history exists, or while a gym session is active, fall back to the
+     deterministic rules table (§7). Replaces the hardcoded `HINTS`.
+   - **After every assistant response (3 chips):** fresh suggestions generated by Haiku server-side
      from the last exchange + Luka's live context, streamed as a final NDJSON event on the same
-     response. They change after every turn, WHOOP-style.
-   - Tapping a chip sends it immediately as Luka's message (same as clarify chips today).
-2. **No auto-record on /gym.** Opening the orb on the gym page opens the sheet idle (mic available
-   via the button). Every other page keeps the current voice-first auto-record.
+     response (§4). They change after every turn, WHOOP-style.
+   - Tapping any chip sends it immediately as Luka's message (same as clarify chips today).
+2. **Command learning.** Every message sent through the orb is logged server-side
+   (`orb_commands`); a periodic Haiku clustering pass distills them into the cached open-chips.
+3. **Mic behavior.**
+   - Opening the orb on /gym does NOT auto-record (voice-first everywhere else, mic button works
+     everywhere).
+   - Tapping any chip while a recording is live cancels it silently — nothing transcribed, nothing
+     filled into the input — then sends the chip. Input row returns to idle.
+   - **Clear** now also cancels a live recording (today it leaves the mic running). Close already
+     cancels correctly — codified here, don't regress it. Reopening always starts a brand-new
+     recording (except on /gym).
 
 ## 2. Done / Wrong
 
 **Done looks like:**
-- Open orb on /gym mid-session → sheet opens NOT recording; chips read like "Log my next set",
-  "How long should I rest?", "What's left today?"
-- Open orb on /health in the morning → recording starts as today; chips read like "Weight is 176",
-  "Took my morning supplements", "Had 16 oz of water".
-- Say "did bench 8 at 135", confirm the card → ~1s later three new chips fade in, e.g. "Log another
-  set", "Was that a PR?", "What's next in my workout?" — grounded in what just happened.
+- After ~2 weeks of use, opening the orb in the morning shows chips in Luka's own words: "Log all
+  my vitamins", "Weight is 176", "Had 20 oz of water" — his top morning commands, one tap each.
+- Fresh install / new user → same open behaves like today, with the static rules-table chips
+  (page + time + gym session aware).
+- Open orb on /gym mid-session → sheet opens NOT recording; chips are the tactical static row
+  ("Log my next set", "How long should I rest?", "What's left in today's workout?").
+- Open orb on /health (auto-recording starts) → tap "Log all my vitamins" → recording dies
+  silently, the chip sends, supplements card appears, input is idle and empty.
+- Say "did bench 8 at 135", confirm the card → ~1s later three follow-up chips fade in, e.g. "Log
+  another set", "Was that a PR?", "What's next in my workout?" — grounded in what just happened.
 - Ask "should I train today?" → coach answers from recovery → chips like "Yes, starting now",
   "Make it a light session", "What does my HRV say?"
-- Close and reopen the orb with an existing thread → the last response's chips are still there
-  (persisted with the thread).
-- Haiku call fails or returns garbage → no chips, no error, nothing else affected.
+- Hit Clear while the mic is live → recording stops, nothing transcribed, thread empty, input idle.
+- Close and reopen the orb → last response's follow-up chips still there (persisted with the
+  thread); a fresh open on a page starts a brand-new recording.
+- Haiku (either call) fails or returns garbage → no chips, no error, nothing else affected.
 
 **Wrong looks like (guardrails):**
-- ❌ Chips that suggest things Atlas can't do ("Show me a graph", "Change my subscription").
+- ❌ Chips that suggest things Atlas can't do ("Show me a graph", "Set a reminder").
 - ❌ Chips repeating something already logged/executed this conversation (NN/g rule).
-- ❌ Chips visible at the same time as clarify chips — clarify always wins the slot.
-- ❌ The main response stream delayed, blocked, or errored because of the suggestions call.
-- ❌ A new API endpoint or a second client request for suggestions — they ride the existing stream.
+- ❌ Follow-up chips visible at the same time as clarify chips — clarify always wins the slot.
+- ❌ The main response stream delayed, blocked, or errored by the suggestions call OR the command
+  logging — both are post-stream and individually try/caught.
+- ❌ Chip recomputation (the clustering call) on any hot path — it runs in `after()` only.
+- ❌ A tapped chip transcribing the dead recording, or leaving text in the input box.
 - ❌ Auto-record disabled anywhere other than /gym, or the manual mic button broken on /gym.
-- ❌ Chips longer than ~8 words / ~48 chars (they must fit three-across or stacked on an iPhone).
+- ❌ Chips longer than ~8 words / ~48 chars (must fit stacked on an iPhone).
+- ❌ Learned chips leaking across users (everything is user_id-scoped; service client + explicit
+  `eq('user_id', ...)` like every other route).
 
 ## 3. Architecture
 
-### 3.1 Dynamic suggestions ride the existing NDJSON stream
+### 3.1 Follow-up suggestions ride the existing NDJSON stream
 
-No new endpoint. In `/api/assistant/chat`, after the Sonnet stream finishes (after the
+No new endpoint for these. In `/api/assistant/chat`, after the Sonnet stream finishes (after the
 `for await` loop, before `controller.close()`), the route makes ONE Haiku call and, if it
 validates, emits one final event:
 
@@ -90,20 +114,32 @@ validates, emits one final event:
 ```
 
 - Client renders them when the stream is done. Failure of the Haiku call = skip the event and
-  close the stream normally (wrap in its own try/catch — it must never emit `{t:'error'}`).
-- Cost/latency: one Haiku call (`claude-haiku-4-5-20251001`, `max_tokens: 200`) per orb turn,
-  ~0.5–1s appended to the stream's lifetime. The text is already fully rendered by then, so
-  perceived latency is zero; the chips just fade in.
+  close the stream normally (own try/catch — it must never emit `{t:'error'}`).
+- Cost/latency: one `claude-haiku-4-5-20251001` call (`max_tokens: 200`) per orb turn, ~0.5–1s
+  appended to the stream's lifetime. Text is already fully rendered by then; chips just fade in.
 - MentorClient parses the same event union but switches on known `t` values — the new event is
-  ignored there. Verify, don't wire Mentor up (out of scope, see §8).
+  ignored there. Verify, don't wire Mentor up (out of scope, §9).
 
-### 3.2 Static (orb-open) chips are deterministic and client-side
+### 3.2 Open-chips are learned, cached, and read instantly
 
-No model call. Replace `HINTS` with `getOrbHints(ctx)` in a new
-[src/features/assistant/hints.ts](src/features/assistant/hints.ts) — a pure rules table over
-`{ pathname, hour, gymSession }`. Instant, testable, no loading state.
+- **Write:** the chat route logs every incoming orb message to `orb_commands` (text, resolved
+  action kinds, source, client hour). Runs after the stream loop, concurrently with the
+  suggestions call, individually try/caught.
+- **Distill:** a Haiku clustering pass (§5.3) turns the last 60 days of commands into up to 4
+  canonical chips per time band, cached in `orb_chip_cache`. Recomputed lazily in `after()` when
+  the cache is > 24h stale — never on a hot path, never blocking a response.
+- **Read:** `GET /api/assistant/chips` returns the cache verbatim (or `{ chips: null }`). The orb
+  fetches it with a TanStack query; opening the sheet is never blocked on it (falls back to the
+  static table until data arrives).
 
-### 3.3 The gym-session signal
+### 3.3 Static rules table is the fallback layer
+
+`getOrbHints(ctx)` in a new [src/features/assistant/hints.ts](src/features/assistant/hints.ts) — a
+pure rules table over `{ pathname, hour, gymSession }` (§7). Used when: no learned chips yet
+(cold start), the band's learned list is empty, the chips fetch hasn't resolved, or a gym session
+is active (tactical context beats habits — "Log all my vitamins" is the wrong chip mid-set).
+
+### 3.4 The gym-session signal
 
 New tiny module [src/features/gym/sessionSignal.ts](src/features/gym/sessionSignal.ts):
 
@@ -118,25 +154,27 @@ export function readGymSession(): { active: boolean; minutes: number } // parse 
 - The orb calls `readGymSession()` at two moments only: computing open-chips, and building the
   chat POST body. No polling, no storage listeners.
 
-### 3.4 Client context goes to the server
+### 3.5 Client context goes to the server
 
 Extend `ChatBody` with:
 
 ```ts
 context?: { hour: number; inGymSession: boolean; sessionMinutes: number }
+source?: 'voice' | 'text' | 'chip'
 ```
 
-(`hour` = client-local hour 0–23; the server runs UTC and can't know it.) The route injects one
-line into the EXISTING system prompt — this improves the main coach too, not just suggestions:
+(`hour` = client-local hour 0–23; the server runs UTC and can't know it. `source` feeds
+`orb_commands`.) The route injects one line into the EXISTING system prompt — this improves the
+main coach too, not just suggestions:
 
 ```
 — NOW: ${hourLabel} (hour ${hour})${inGymSession ? ` · IN A GYM SESSION, ${sessionMinutes} min in` : ''}
 ```
 
-and passes the same context to the suggestions call. Missing `context` (old clients, Mentor) →
-omit the line, everything still works.
+and passes the same context to the suggestions call. Missing `context`/`source` (old clients,
+Mentor) → omit the line, default source `'text'`, everything still works.
 
-## 4. The suggestions generator (prompt-engineered, use verbatim)
+## 4. The follow-up suggestions generator (prompt-engineered, use verbatim)
 
 Model `claude-haiku-4-5-20251001`, `max_tokens: 200`, forced tool call
 (`tool_choice: { type: 'tool', name: 'suggest' }`), tool schema:
@@ -196,37 +234,144 @@ wrap the exchange as data so the model doesn't follow instructions inside it.)
 input; trim each string; drop empties, dupes (case-insensitive), and anything > 60 chars; if < 2
 survive, emit nothing. Slice to 3.
 
-## 5. Client changes (OrbAssistant.tsx)
+## 5. Command learning (the open-chips pipeline)
+
+### 5.1 Tables — one migration, run via psql per standing rule
+
+`supabase/migrations/20260708000001_orb_commands.sql`:
+
+```sql
+create table orb_commands (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  text text not null,
+  action_kinds text[] not null default '{}',       -- resolved kinds, e.g. {log_supplement_dose,log_water}
+  source text not null default 'text' check (source in ('voice','text','chip')),
+  hour smallint,                                    -- client-local hour 0–23, null if unknown
+  created_at timestamptz not null default now()
+);
+create index orb_commands_user_recent on orb_commands (user_id, created_at desc);
+alter table orb_commands enable row level security;
+
+create table orb_chip_cache (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  chips jsonb not null,                             -- { morning: string[], midday: string[], evening: string[] }
+  computed_at timestamptz not null default now()
+);
+alter table orb_chip_cache enable row level security;
+```
+
+No RLS policies — accessed only via `createServiceClient()`, same as the mcp_* tables.
+
+### 5.2 Write path (chat route)
+
+After the Sonnet loop, alongside the suggestions call: insert one row — `text` = the message,
+`action_kinds` = kinds of actions resolved this turn, `source` + `hour` from the body. Try/caught;
+a failed insert never touches the stream. Chip taps ARE logged (`source: 'chip'`) and DO count
+toward frequency — a tap is a real expression of intent and keeps stable habits from aging out of
+the 60-day window.
+
+### 5.3 The clustering pass (prompt-engineered, use verbatim)
+
+Runs inside `after()` from the chips GET route when `computed_at` > 24h old (or row missing) AND
+the user has ≥ 20 commands in the last 60 days. Input: last 60 days of commands, pre-grouped by
+exact text server-side into `{text, count, typicalHour}` lines (cap 200 lines, most frequent
+first) to keep tokens down. Model `claude-haiku-4-5-20251001`, `max_tokens: 400`, forced tool
+`set_chips`:
+
+```ts
+{ name: 'set_chips', input_schema: { type: 'object', properties: {
+    morning: { type: 'array', items: { type: 'string' }, maxItems: 4 },
+    midday:  { type: 'array', items: { type: 'string' }, maxItems: 4 },
+    evening: { type: 'array', items: { type: 'string' }, maxItems: 4 }
+  }, required: ['morning','midday','evening'] } }
+```
+
+**System prompt (verbatim):**
+
+```
+You maintain the quick-launch chips for Luka's assistant orb. Below is every command he sent it
+in the last 60 days, grouped with counts and typical hour. Produce the chips he'd most likely
+want one tap away when he opens the orb, per time of day (morning < 11, midday 11–16, evening 17+).
+
+RULES
+- Up to 4 chips per band, ordered most→least common. Fewer is fine; NEVER pad with inventions.
+- Merge variants of one intent into ONE chip ("log all my vitamins" / "took my vitamins" /
+  "vitamins done" are the same chip). The label is HIS own most-used phrasing, lightly cleaned
+  (capitalize, drop filler). ≤ 48 characters.
+- Only recurring intents (total count ≥ 3 across variants). No one-offs.
+- A chip must read as a command he'd send verbatim — it is sent as his message when tapped.
+- Put an intent in the band(s) where he actually does it; an all-day habit may appear in more
+  than one band.
+```
+
+**User message (data-wrapped):** `<commands>` … one `"{text}" ×{count} (~{typicalHour}h)` per
+line … `</commands>` `Produce the chips.`
+
+**Validation:** per band — trim, dedupe case-insensitively, drop > 60 chars, slice to 4. Upsert
+`orb_chip_cache` with whatever survives (empty bands allowed; the client falls back per-band).
+
+### 5.4 Read path
+
+`GET /api/assistant/chips` (standard route pattern: SSR client for auth, service client for data):
+returns `{ chips, computedAt }` from the cache or `{ chips: null }`. Then, in `after()`, runs the
+staleness check + recompute from §5.3. The response is never delayed by recomputation.
+
+Client: new [src/features/assistant/queries.ts](src/features/assistant/queries.ts) with
+`useOrbChips()` — `queryKey: ['orb-chips']`, `staleTime: 5 * 60_000`. First file in the assistant
+feature's standard queries.ts slot.
+
+## 6. Client changes (OrbAssistant.tsx)
 
 1. **`OrbMsg` gains `suggestions?: string[]`.** Set when the `suggestions` event arrives
    (`updateMsg(assistantId, m => ({ ...m, suggestions: ev.options }))`). Persists with the thread
    for free via `usePersistentChat`.
-2. **Render slot** — same position as clarify chips (above the input row):
+2. **Follow-up chip render slot** — same position as clarify chips (above the input row):
    ```
    const suggestions = !streaming && !clarify && lastMsg?.role === 'assistant' ? lastMsg.suggestions : null
    ```
    Chips styled like clarify pills but neutral (white/4% bg, like HINTS) to distinguish
-   suggestion-taps from clarify-answers. `onClick={() => send(s)}`. Fade in with framer-motion
-   (`initial={{opacity:0, y:4}}`). Hide while `rec.recording || transcribing`, and when the input
-   has text (Luka typing = he knows what he wants; NN/g).
-   Sending any message naturally clears them (lastMsg stops being that assistant message).
-3. **Empty-state chips** — replace the `HINTS` const with `getOrbHints({ pathname, hour: new
-   Date().getHours(), gymSession: readGymSession() })`, computed when the sheet opens (memo on
-   `open`), not on every render. Rendering stays exactly as today.
-4. **Mic behavior:**
+   suggestion-taps from clarify-answers. Fade in with framer-motion (`initial={{opacity:0, y:4}}`).
+   Hide while `rec.recording || transcribing`, and when the input has text (typing = he knows what
+   he wants; NN/g). Sending any message naturally clears them.
+3. **Open chips** — replace the `HINTS` const:
+   ```ts
+   const { data: learned } = useOrbChips()
+   const band = hour < 11 ? 'morning' : hour < 17 ? 'midday' : 'evening'
+   const openChips = gymSession.active
+     ? GYM_SESSION_HINTS                                   // tactical static row, always
+     : (learned?.chips?.[band]?.length ? learned.chips[band].slice(0, 4) : getOrbHints(ctx))
+   ```
+   Computed when the sheet opens (memo on `open`), rendered exactly where HINTS render today.
+4. **`cancelMic()` — one cancel path, three callers.** Extract closeSheet's existing cancel logic:
+   ```ts
+   const cancelMic = () => {
+     if (!rec.recording) return
+     micIntent.current = null   // the blob-effect requires an intent — null means the blob is ignored
+     rec.stop()
+     rec.reset()
+   }
+   ```
+   Callers: `closeSheet()` (behavior unchanged, now shared), **every chip onClick**
+   (`cancelMic(); send(s, 'chip')` — open chips, follow-up chips, AND clarify chips), and the
+   **Clear** button (`cancelMic(); setMessages([])` — new behavior; today Clear leaves the mic
+   running). Reopening the sheet starts a brand-new recording as today (gym-gated, item 5).
+5. **Mic gate:**
    ```ts
    const openSheet = () => {
      setOpen(true)
      if (!pathname.startsWith('/gym')) startMic()   // gym page: open idle, voice-first everywhere else
    }
    ```
-   `closeSheet` cancel-on-close logic unchanged; the manual mic button already works on all pages.
-5. **POST body** — add `context: { hour, inGymSession, sessionMinutes }` from `readGymSession()`.
+   Manual mic button untouched — works on all pages.
+6. **`send(text, source)`** — `send` takes a source param (`'chip'` from chips, `'voice'` from the
+   transcription effect, default `'text'`); POST body gains `context` (from `readGymSession()` +
+   `new Date().getHours()`) and `source`.
 
-## 6. The static hints table (hints.ts)
+## 7. The static hints table (hints.ts — the fallback layer)
 
 Return exactly 3. First match wins, top-to-bottom. Time bands: morning < 11, midday 11–16,
-evening ≥ 17.
+evening ≥ 17. (The gym-session row is also exported as `GYM_SESSION_HINTS` for §6.3.)
 
 | Condition | Chips |
 |---|---|
@@ -241,47 +386,63 @@ evening ≥ 17.
 | fallback (anything unmatched) | current HINTS verbatim |
 
 Numbers ("176", "135") are cosmetic examples exactly as today's HINTS — do NOT fetch live values
-for V1 (deferred, §8). Keep the table data-driven (array of `{match, chips}`) so rows are easy to
-add.
+(deferred, §9). Keep the table data-driven (array of `{match, chips}`) so rows are easy to add.
+Learned chips make this table matter less over time; it must still be correct standalone.
 
-## 7. Files
+## 8. Files
 
 | File | Change |
 |---|---|
+| `supabase/migrations/20260708000001_orb_commands.sql` | NEW — `orb_commands` + `orb_chip_cache` (§5.1); run via psql |
 | `src/features/assistant/actions.ts` | add `{ t: 'suggestions'; options: string[] }` to `AssistantStreamEvent` |
-| `src/app/api/assistant/chat/route.ts` | accept `context` in body + inject NOW line; post-stream Haiku suggestions call + validation + emit event |
-| `src/features/assistant/OrbAssistant.tsx` | `suggestions` on `OrbMsg` + event handling + chip render slot; `getOrbHints` for empty state; gym-page mic gate; `context` in POST body |
-| `src/features/assistant/hints.ts` | NEW — `getOrbHints()` rules table |
+| `src/app/api/assistant/chat/route.ts` | accept `context`/`source` + inject NOW line; post-stream: log to `orb_commands` + Haiku suggestions call + emit event (concurrent, individually try/caught) |
+| `src/app/api/assistant/chips/route.ts` | NEW — GET cached chips; stale → recompute in `after()` (§5.3–5.4) |
+| `src/features/assistant/queries.ts` | NEW — `useOrbChips()` |
+| `src/features/assistant/hints.ts` | NEW — `getOrbHints()` rules table + `GYM_SESSION_HINTS` |
 | `src/features/gym/sessionSignal.ts` | NEW — `SET_TIMER_KEY`, timer shape, `readGymSession()` |
 | `src/app/gym/GymClient.tsx` | import key/shape from `sessionSignal.ts` (delete local dupes; zero behavior change) |
+| `src/features/assistant/OrbAssistant.tsx` | `suggestions` on `OrbMsg` + event handling + chip slots; `useOrbChips` + open-chips logic; `cancelMic()` on chips/Clear/close; gym mic gate; `send(text, source)` + `context` in POST body |
 
 Untouched: transcribe route, tools.ts, useAssistantActions, ActionCard, Mentor (event ignored),
 all gym coach routes.
 
-## 8. Deferred (do not build now)
+## 9. Deferred (do not build now)
 
 - **Mentor suggestions** — same event could render in MentorClient; separate decision.
 - **Live values in static chips** — reading TanStack cache for real weight/supplement state.
-- **Suggestion analytics** — tracking tap-rate to tune the prompt.
+- **Suggestion analytics** — `source='chip'` rows already capture taps; a tap-rate view can come
+  later to tune both prompts.
 - **In-session set-aware chips** — deep GymClient integration (which exercise is next, etc.);
-  the Haiku call already gets today's exercise names, which covers most of the value.
+  the suggestions call already gets today's exercise names, which covers most of the value.
+- **Manual chip pinning** — letting Luka pin/hide a learned chip from the UI.
 
-## 9. Verification
+## 10. Verification
 
-1. `npm run dev`, `/tmp/atlas-dev.log` clean; `npx tsc --noEmit` clean.
-2. **Authed route test** (same magiclink harness as V1): POST to `/api/assistant/chat` with a gym
-   message + `context: { hour: 9, inGymSession: true, sessionMinutes: 22 }` → NDJSON contains
-   text/action events AND a final `{t:'suggestions', options:[3 strings ≤60 chars]}`.
-3. Same POST with the Haiku key sabotaged (or model name typo'd locally) → stream completes
-   normally with NO suggestions event and NO error event.
-4. Playwright (or manual): orb on `/` → opens RECORDING; orb on `/gym` → opens idle, mic button
-   still starts recording; close-while-recording still cancels.
-5. Empty-thread chips differ between `/gym` (with `atlas.gym.timer` seeded active) and `/health`;
-   seed an >6h-old timer → gym chips fall back to no-session variants.
-6. Send a message → after response, chips fade in; tap one → it sends as a user message and new
-   chips arrive after that response; clarify case ("log my weight") → clarify pills show, NO
-   suggestion chips alongside.
-7. Close/reopen orb → last chips still render from the persisted thread.
-8. Mentor still streams normally (unknown event ignored).
-9. No DB writes anywhere in this feature (chips are ephemeral + localStorage only) — nothing to
-   clean up.
+1. `npm run dev`, `/tmp/atlas-dev.log` clean; `npx tsc --noEmit` clean. Migration applied via psql.
+2. **Authed route test** (same magiclink harness as V1): POST `/api/assistant/chat` with a gym
+   message + `context: { hour: 9, inGymSession: true, sessionMinutes: 22 }`, `source: 'voice'` →
+   NDJSON has text/action events AND a final `{t:'suggestions', options:[3 strings ≤60 chars]}`;
+   psql shows one `orb_commands` row with correct text/kinds/source/hour.
+3. Same POST with the Haiku model name sabotaged locally → stream completes normally, NO
+   suggestions event, NO error event; command row still inserted.
+4. **Learning loop:** seed ~25 fake `orb_commands` rows via psql (mornings dominated by vitamin
+   phrasings), expire/delete the cache row → GET `/api/assistant/chips` returns null-or-stale
+   immediately, then (after `after()` completes) the cache row exists and morning chips include a
+   single merged "Log all my vitamins"-style chip in his phrasing. < 20 commands → GET returns
+   `{ chips: null }` and no recompute fires.
+5. Playwright/manual: orb on `/` → opens RECORDING; orb on `/gym` → opens idle, mic button still
+   records; close-while-recording still cancels; reopen starts a fresh recording.
+6. **Chip-tap cancel:** open orb (recording live) → tap an open chip → no request to
+   `/api/assistant/transcribe` fires (network tab), chip text sent as user message, input row
+   idle and empty afterward. Same for a follow-up chip tapped mid-recording.
+7. **Clear cancel:** start a recording, hit Clear → recording stops, no transcribe request,
+   thread empty, input idle.
+8. Empty-thread chips differ between `/gym` (with `atlas.gym.timer` seeded active → tactical row)
+   and `/health`; seed an >6h-old timer → falls back to no-session variants; with a warm chip
+   cache on a non-gym page → learned chips render instead of the static row.
+9. Send a message → after response, follow-up chips fade in; tap one → sends + new chips arrive
+   after that response; clarify case ("log my weight") → clarify pills show, NO suggestion chips
+   alongside.
+10. Close/reopen orb → last follow-up chips still render from the persisted thread.
+11. Mentor still streams normally (unknown event ignored).
+12. Clean up all test rows (`orb_commands`, `orb_chip_cache`) via psql after.
