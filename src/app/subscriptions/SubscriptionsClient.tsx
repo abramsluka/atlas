@@ -922,8 +922,6 @@ export default function SubscriptionsClient({
       <div className="mx-auto max-w-md px-4 pt-12">
         <h1 className="mb-4 text-2xl font-bold text-white">Subscriptions</h1>
 
-        {enriched.length > 0 && <RenewalTicker subs={enriched} />}
-
         {!showAddForm && (
           <div className="mb-4 flex gap-2">
             <button
@@ -955,6 +953,8 @@ export default function SubscriptionsClient({
           className="hidden"
           onChange={handleScreenshotPicked}
         />
+
+        {enriched.length > 0 && <RenewalTicker subs={enriched} />}
 
         {allSubs.length > 0 && <SummaryCard subs={enriched} />}
 
