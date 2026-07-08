@@ -222,29 +222,32 @@ function SummaryCard({ subs }: { subs: SubscriptionWithMeta[] }) {
   const primaryCurrency = currencies[0] ?? 'USD'
 
   return (
-    <div className="mb-4 rounded-2xl bg-zinc-900 p-5">
-      <div className="flex items-start justify-between">
+    <div className="mb-4 rounded-2xl border border-zinc-800/80 bg-zinc-900 px-4 py-3">
+      <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
             Monthly burn
           </p>
-          <p className="mt-1 text-3xl font-bold text-white">
+          <p className="mt-0.5 text-2xl font-bold leading-tight text-white">
             {formatAmount(monthlyBurn, primaryCurrency)}
+            <span className="ml-1 text-xs font-medium text-zinc-500">/mo</span>
           </p>
-          <p className="mt-0.5 text-sm text-zinc-500">
-            {formatAmount(yearlyProjection, primaryCurrency)}/yr projected
-          </p>
-          {mixedCurrencies && (
-            <p className="mt-1 text-[10px] text-zinc-600">
-              Mixed currencies — amounts shown in originals
-            </p>
-          )}
         </div>
         <div className="text-right">
-          <p className="text-2xl font-bold text-white">{subs.length}</p>
-          <p className="text-xs text-zinc-500">subscriptions</p>
+          <p className="text-sm font-semibold text-emerald-400">
+            {formatAmount(yearlyProjection, primaryCurrency)}
+            <span className="font-normal text-zinc-500">/yr</span>
+          </p>
+          <p className="mt-0.5 text-[11px] text-zinc-500">
+            {subs.length} subscription{subs.length === 1 ? '' : 's'}
+          </p>
         </div>
       </div>
+      {mixedCurrencies && (
+        <p className="mt-1 text-[10px] text-zinc-600">
+          Mixed currencies — amounts shown in originals
+        </p>
+      )}
     </div>
   )
 }
@@ -789,7 +792,9 @@ export default function SubscriptionsClient({
   const [editingSub, setEditingSub] = useState<Subscription | null>(null)
   const [importState, setImportState] = useState<ImportState | null>(null)
   const [isAddingImports, setIsAddingImports] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const dragDepth = useRef(0)
 
   const allSubs = subscriptions ?? initialSubscriptions
   const enriched = allSubs.map(enrichSubscription)
@@ -812,11 +817,11 @@ export default function SubscriptionsClient({
     })
   }
 
-  async function handleScreenshotPicked(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
-
+  async function importFile(file: File) {
+    if (!file.type.startsWith('image/')) {
+      setImportState({ status: 'error', message: 'That file is not an image. Drop a screenshot instead.' })
+      return
+    }
     setImportState({ status: 'analyzing' })
     try {
       const payload = await fileToBase64Image(file)
@@ -829,6 +834,51 @@ export default function SubscriptionsClient({
       })
     }
   }
+
+  // Keep a ref so the window drag listeners (bound once) always call the latest closure
+  const importFileRef = useRef(importFile)
+  importFileRef.current = importFile
+
+  function handleScreenshotPicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (file) importFile(file)
+  }
+
+  useEffect(() => {
+    const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files')
+    function onDragEnter(e: DragEvent) {
+      if (!hasFiles(e)) return
+      dragDepth.current++
+      setIsDragging(true)
+    }
+    function onDragLeave(e: DragEvent) {
+      if (!hasFiles(e)) return
+      dragDepth.current = Math.max(0, dragDepth.current - 1)
+      if (dragDepth.current === 0) setIsDragging(false)
+    }
+    function onDragOver(e: DragEvent) {
+      if (hasFiles(e)) e.preventDefault()
+    }
+    function onDrop(e: DragEvent) {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      dragDepth.current = 0
+      setIsDragging(false)
+      const file = e.dataTransfer?.files?.[0]
+      if (file) importFileRef.current(file)
+    }
+    window.addEventListener('dragenter', onDragEnter)
+    window.addEventListener('dragleave', onDragLeave)
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      window.removeEventListener('dragenter', onDragEnter)
+      window.removeEventListener('dragleave', onDragLeave)
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('drop', onDrop)
+    }
+  }, [])
 
   function toggleImportItem(idx: number) {
     setImportState((s) => {
@@ -870,29 +920,31 @@ export default function SubscriptionsClient({
   return (
     <div className="min-h-screen bg-black pb-24">
       <div className="mx-auto max-w-md px-4 pt-12">
-        <div className="mb-6 flex items-center justify-between">
-          <h1 className="text-xl font-bold text-white">Subscriptions</h1>
-          {!showAddForm && (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-1.5 rounded-xl bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white active:bg-zinc-800"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-4 w-4">
-                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" strokeLinecap="round" strokeLinejoin="round" />
-                  <circle cx="12" cy="13" r="4" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                Import
-              </button>
-              <button
-                onClick={() => setShowAddForm(true)}
-                className="rounded-xl bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white active:bg-zinc-800"
-              >
-                + Add
-              </button>
-            </div>
-          )}
-        </div>
+        <h1 className="mb-4 text-2xl font-bold text-white">Subscriptions</h1>
+
+        {!showAddForm && (
+          <div className="mb-4 flex gap-2">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-zinc-900 py-3 text-sm font-semibold text-white active:bg-zinc-800"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-4.5 w-4.5">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="12" cy="13" r="4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Import
+            </button>
+            <button
+              onClick={() => setShowAddForm(true)}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-zinc-900 py-3 text-sm font-semibold text-white active:bg-zinc-800"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-4.5 w-4.5">
+                <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+              </svg>
+              Add
+            </button>
+          </div>
+        )}
 
         <input
           ref={fileInputRef}
@@ -925,7 +977,7 @@ export default function SubscriptionsClient({
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <span className="mb-3 text-4xl">💳</span>
             <p className="font-semibold text-white">No subscriptions tracked yet</p>
-            <p className="mt-1 text-sm text-zinc-500">Tap + Add, or import a receipt screenshot</p>
+            <p className="mt-1 text-sm text-zinc-500">Add one manually, import a receipt screenshot, or drag one in</p>
           </div>
         ) : (
           <div>
@@ -957,6 +1009,19 @@ export default function SubscriptionsClient({
           onClose={() => setImportState(null)}
           isAdding={isAddingImports}
         />
+      )}
+
+      {isDragging && (
+        <div className="pointer-events-none fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm">
+          <div className="flex w-full max-w-md flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-emerald-400/60 bg-emerald-500/5 px-6 py-12">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-8 w-8 text-emerald-400">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" strokeLinecap="round" strokeLinejoin="round" />
+              <circle cx="12" cy="13" r="4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <p className="text-base font-semibold text-white">Drop screenshot to import</p>
+            <p className="text-sm text-zinc-400">Receipts, App Store pages, statements</p>
+          </div>
+        </div>
       )}
     </div>
   )
