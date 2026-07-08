@@ -21,9 +21,9 @@ import ProgramGenerator, { type GeneratorPrefill } from './ProgramGenerator'
 import { GENERATOR_PREFILL_KEY, GENERATOR_PREFILL_EVENT } from '@/features/assistant/useAssistantActions'
 import ProgramHistory from './ProgramHistory'
 import SetTimerRing, { fmtClock, type TimerPhase } from './SetTimerRing'
+import { SET_TIMER_KEY } from '@/features/gym/sessionSignal'
 
 type SetTimerState = { phase: TimerPhase; phaseStart: number | null; sessionStart: number | null }
-const SET_TIMER_KEY = 'atlas.gym.timer'
 const GYM_LAST_KEY = 'atlas.gym.last' // last exercise + weight + reps, restored on app open
 
 // ─── helpers ────────────────────────────────────────────────────────────────

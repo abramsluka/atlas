@@ -338,8 +338,9 @@ feature's standard queries.ts slot.
    ```
    Chips styled like clarify pills but neutral (white/4% bg, like HINTS) to distinguish
    suggestion-taps from clarify-answers. Fade in with framer-motion (`initial={{opacity:0, y:4}}`).
-   Hide while `rec.recording || transcribing`, and when the input has text (typing = he knows what
-   he wants; NN/g). Sending any message naturally clears them.
+   Hide while `transcribing` and when the input has text (typing = he knows what he wants; NN/g).
+   Chips stay VISIBLE during a live recording — tap = cancel + send, the uniform rule.
+   Sending any message naturally clears them.
 3. **Open chips** — replace the `HINTS` const:
    ```ts
    const { data: learned } = useOrbChips()

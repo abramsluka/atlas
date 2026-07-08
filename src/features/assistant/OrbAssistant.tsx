@@ -6,7 +6,7 @@
 // same TanStack mutations the manual UIs use. One thread, shared across pages
 // (single localStorage key). Generalized from the old GymChatbot.
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { usePathname } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -15,6 +15,9 @@ import { usePersistentChat } from '@/lib/usePersistentChat'
 import { useVoiceRecorder, formatElapsed } from '@/features/journal/useVoiceRecorder'
 import { describeAction, type AssistantStreamEvent, type ProposedAction } from './actions'
 import { useAssistantActions } from './useAssistantActions'
+import { useOrbChips } from './queries'
+import { getOrbHints, bandOf, GYM_SESSION_HINTS } from './hints'
+import { readGymSession } from '@/features/gym/sessionSignal'
 import ActionCard from './ActionCard'
 
 interface OrbMsg {
@@ -23,7 +26,10 @@ interface OrbMsg {
   content: string
   actions?: ProposedAction[]
   clarify?: { question: string; options: string[] } | null
+  suggestions?: string[]
 }
+
+type SendSource = 'voice' | 'text' | 'chip'
 
 const HIDDEN_ON = ['/login', '/mentor']
 
@@ -44,6 +50,8 @@ export default function OrbAssistant() {
 
   const { executeAction, units } = useAssistantActions()
   const rec = useVoiceRecorder()
+  const hidden = HIDDEN_ON.some(p => pathname.startsWith(p))
+  const chipsQuery = useOrbChips(mounted && !hidden)
 
   useEffect(() => { setMounted(true) }, [])
 
@@ -65,7 +73,7 @@ export default function OrbAssistant() {
       return { role: m.role, content: m.content + (notes ? `\n${notes}` : '') }
     })
 
-  const send = useCallback(async (text: string) => {
+  const send = useCallback(async (text: string, source: SendSource = 'text') => {
     const trimmed = text.trim()
     if (!trimmed || streaming) return
     setInput('')
@@ -77,10 +85,17 @@ export default function OrbAssistant() {
     setStreaming(true)
 
     try {
+      const gym = readGymSession()
       const res = await fetch('/api/assistant/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: trimmed, history, page: pathname }),
+        body: JSON.stringify({
+          message: trimmed,
+          history,
+          page: pathname,
+          source,
+          context: { hour: new Date().getHours(), inGymSession: gym.active, sessionMinutes: gym.minutes },
+        }),
       })
       if (!res.body) throw new Error('no body')
       const reader = res.body.getReader()
@@ -103,6 +118,8 @@ export default function OrbAssistant() {
             updateMsg(assistantId, m => ({ ...m, actions: [...(m.actions ?? []), pa] }))
           } else if (ev.t === 'clarify') {
             updateMsg(assistantId, m => ({ ...m, clarify: { question: ev.question, options: ev.options } }))
+          } else if (ev.t === 'suggestions') {
+            updateMsg(assistantId, m => ({ ...m, suggestions: ev.options }))
           } else if (ev.t === 'error') {
             updateMsg(assistantId, m => ({ ...m, content: m.content || ev.v }))
           }
@@ -135,7 +152,7 @@ export default function OrbAssistant() {
           setMicNote("Didn't hear anything — try again.")
           return
         }
-        if (intent === 'send') await send(text)
+        if (intent === 'send') await send(text, 'voice')
         else setInput(prev => (prev.trim() ? `${prev.trim()} ${text}` : text))
       } catch {
         setMicNote('Transcription failed — try again.')
@@ -154,18 +171,26 @@ export default function OrbAssistant() {
     rec.stop()
   }
 
-  // Tapping the FAB opens the sheet already recording (voice-first).
+  // Kill a live recording without transcribing anything — used by close and by
+  // every chip tap (the tapped chip supersedes whatever the mic was hearing).
+  const cancelMic = () => {
+    if (!rec.recording) return
+    micIntent.current = null
+    rec.stop()
+    rec.reset()
+  }
+
+  // Tapping the FAB opens the sheet already recording (voice-first) — except on
+  // /gym, where it opens idle (mid-workout you tap chips, not hold a monologue).
   const openSheet = () => {
     setOpen(true)
-    startMic()
+    if (!pathname.startsWith('/gym')) startMic()
   }
   // Closing while recording cancels it — mic off, nothing transcribed or sent.
+  // Clear deliberately does NOT cancel: clearing wipes the old conversation,
+  // while the mic is capturing the next one.
   const closeSheet = () => {
-    if (rec.recording) {
-      micIntent.current = null
-      rec.stop()
-      rec.reset()
-    }
+    cancelMic()
     setOpen(false)
   }
 
@@ -190,17 +215,31 @@ export default function OrbAssistant() {
     for (const pa of pending) await runAction(msgId, pa)
   }
 
+  // Empty-state chips: learned per-user commands when available for this time
+  // band; the static rules table otherwise. A live gym session always wins.
+  const openChips = useMemo(() => {
+    if (!open) return []
+    const hour = new Date().getHours()
+    const gym = readGymSession()
+    if (gym.active) return GYM_SESSION_HINTS
+    const learned = chipsQuery.data?.chips?.[bandOf(hour)]
+    if (learned?.length) return learned.slice(0, 4)
+    return getOrbHints({ pathname, hour, inGymSession: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, chipsQuery.data, pathname])
+
   if (!mounted) return null
-  if (HIDDEN_ON.some(p => pathname.startsWith(p))) return null
+  if (hidden) return null
 
   const lastMsg = messages[messages.length - 1]
   const clarify = !streaming && lastMsg?.role === 'assistant' ? lastMsg.clarify : null
-
-  const HINTS = [
-    'Did bench, 8 reps at 135',
-    'Took my magnesium and multivitamin',
-    'Weight is 176, had 20 oz of water',
-  ]
+  // Follow-up chips for the last assistant message. Clarify owns the slot when
+  // present; typing hides them; a live recording does NOT (tap = cancel + send).
+  const followUps =
+    !streaming && !transcribing && !clarify && !input.trim() &&
+    lastMsg?.role === 'assistant' && lastMsg.suggestions && lastMsg.suggestions.length > 0
+      ? lastMsg.suggestions
+      : null
 
   return createPortal(
     <>
@@ -299,8 +338,8 @@ export default function OrbAssistant() {
                       Tell me what happened and I&apos;ll log it — sets, supplements, weight, water, caffeine, notes. I can also manage your gym setup from anywhere.
                     </p>
                     <div className="flex flex-col gap-2 w-full max-w-[280px]">
-                      {HINTS.map(s => (
-                        <button key={s} onClick={() => send(s)}
+                      {openChips.map(s => (
+                        <button key={s} onClick={() => { cancelMic(); send(s, 'chip') }}
                           className="text-[12px] text-zinc-300 px-3 py-2 rounded-xl text-left"
                           style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
                           &ldquo;{s}&rdquo;
@@ -368,11 +407,28 @@ export default function OrbAssistant() {
               {clarify && clarify.options.length > 0 && (
                 <div className="px-4 pb-2 flex flex-wrap gap-2 shrink-0">
                   {clarify.options.map(opt => (
-                    <button key={opt} onClick={() => send(opt)}
+                    <button key={opt} onClick={() => { cancelMic(); send(opt, 'chip') }}
                       className="text-[12px] text-zinc-200 px-3 py-1.5 rounded-full"
                       style={{ background: 'rgba(74,222,128,0.10)', border: '1px solid rgba(74,222,128,0.3)' }}>
                       {opt}
                     </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Follow-up suggestion chips — regenerated after every response */}
+              {followUps && (
+                <div className="px-4 pb-2 flex flex-wrap gap-2 shrink-0">
+                  {followUps.map(s => (
+                    <motion.button
+                      key={s}
+                      initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+                      onClick={() => { cancelMic(); send(s, 'chip') }}
+                      className="text-[12px] text-zinc-300 px-3 py-1.5 rounded-full text-left"
+                      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)' }}
+                    >
+                      {s}
+                    </motion.button>
                   ))}
                 </div>
               )}

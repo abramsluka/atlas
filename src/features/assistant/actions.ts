@@ -111,6 +111,7 @@ export type AssistantStreamEvent =
   | { t: 'text'; v: string }
   | { t: 'action'; action: AssistantAction }
   | { t: 'clarify'; question: string; options: string[] }
+  | { t: 'suggestions'; options: string[] } // tap-to-send follow-up chips (Orb; Mentor ignores)
   | { t: 'error'; v: string }
 
 export type ActionStatus = 'pending' | 'done' | 'dismissed' | 'error'
