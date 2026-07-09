@@ -1,14 +1,12 @@
 'use client'
 
 // Maps a confirmed AssistantAction to the same TanStack mutation the manual UI
-// uses — no new write paths. Day keys follow each host page's convention:
-// rolledDate() (6am rollover) for supplements/water, local calendar date for
-// caffeine, weight, journal, and check-ins.
+// uses — no new write paths. Every daily log shares the app-wide day key:
+// rolledDate(), the 3 AM rollover.
 
 import { useCallback } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { rolledDate } from '@/features/food/date'
-import { toLocalDate } from '@/lib/date'
 import { useGymConfig, useGymExercises } from '@/features/gym/queries'
 import {
   useLogSet, useCreateExercise, useUpdateExercise, useDeleteExercise, useSaveGymConfig, useLogBodyWeight,
@@ -25,8 +23,6 @@ import type { GeneratorPrefill } from '@/app/gym/ProgramGenerator'
 export const GENERATOR_PREFILL_KEY = 'atlas-generator-prefill'
 export const GENERATOR_PREFILL_EVENT = 'atlas:generate-program'
 
-const browserTz = () => Intl.DateTimeFormat().resolvedOptions().timeZone
-
 export function useAssistantActions() {
   const router = useRouter()
   const pathname = usePathname()
@@ -35,8 +31,7 @@ export function useAssistantActions() {
   const { data: exercises = [] } = useGymExercises()
   const units = config?.units ?? 'lbs'
 
-  const rolledToday = rolledDate()
-  const localToday = toLocalDate(browserTz())
+  const today = rolledDate()
 
   const logSet = useLogSet()
   const createEx = useCreateExercise()
@@ -44,13 +39,13 @@ export function useAssistantActions() {
   const deleteEx = useDeleteExercise()
   const saveConfig = useSaveGymConfig()
   const logWeight = useLogBodyWeight()
-  const logDose = useLogSupplementDose(rolledToday)
-  const logWater = useLogWater(rolledToday)
-  const logCaffeine = useLogCaffeine(localToday)
+  const logDose = useLogSupplementDose(today)
+  const logWater = useLogWater(today)
+  const logCaffeine = useLogCaffeine(today)
   const logFood = useLogManualFood()
   const createEntry = useCreateEntry()
-  const saveMorning = useSaveMorningCheckin(localToday)
-  const saveEvening = useSaveEveningCheckin(localToday)
+  const saveMorning = useSaveMorningCheckin(today)
+  const saveEvening = useSaveEveningCheckin(today)
   const toggleHabit = useToggleHabit()
   const logAllHabits = useLogAll()
   const planItemOp = usePlanItemOp()
@@ -70,7 +65,7 @@ export function useAssistantActions() {
         await logDose.mutateAsync({ supplement_id: a.supplement_id, time_slot: a.time_slot })
         return
       case 'log_weight':
-        await logWeight.mutateAsync({ date_key: localToday, weight: a.weight })
+        await logWeight.mutateAsync({ date_key: today, weight: a.weight })
         return
       case 'log_water':
         await logWater.mutateAsync(a.amount_oz)
@@ -95,17 +90,17 @@ export function useAssistantActions() {
         })
         return
       case 'add_journal_note':
-        await createEntry.mutateAsync({ date: localToday, body: a.body, mood: a.mood ?? undefined })
+        await createEntry.mutateAsync({ date: today, body: a.body, mood: a.mood ?? undefined })
         return
       case 'checkin_note':
         if (a.slot === 'morning') await saveMorning.mutateAsync({ planned: a.trained, intent: a.text ?? undefined })
         else await saveEvening.mutateAsync({ trained: a.trained, reflection: a.text ?? undefined })
         return
       case 'log_habit':
-        await toggleHabit.mutateAsync({ id: a.habit_id, date: localToday, completed: true })
+        await toggleHabit.mutateAsync({ id: a.habit_id, date: today, completed: true })
         return
       case 'log_all_habits':
-        await logAllHabits.mutateAsync({ date: localToday, completed: true })
+        await logAllHabits.mutateAsync({ date: today, completed: true })
         return
       case 'check_plan_item':
         await planItemOp.mutateAsync({ entryId: a.entry_id, op: 'check', item_id: a.item_id, done: a.done })
@@ -172,7 +167,7 @@ export function useAssistantActions() {
         return
       }
     }
-  }, [logSet, logDose, logWeight, logWater, logCaffeine, logFood, createEntry, saveMorning, saveEvening, toggleHabit, logAllHabits, planItemOp, updateEx, createEx, deleteEx, saveConfig, config, nextOrder, localToday, pathname, router])
+  }, [logSet, logDose, logWeight, logWater, logCaffeine, logFood, createEntry, saveMorning, saveEvening, toggleHabit, logAllHabits, planItemOp, updateEx, createEx, deleteEx, saveConfig, config, nextOrder, today, pathname, router])
 
   return { executeAction, units }
 }

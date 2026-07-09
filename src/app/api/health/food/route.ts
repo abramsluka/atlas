@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getOpenAI } from '@/lib/openai'
-import { rolledDate } from '@/features/food/date'
+import { toLocalDate } from '@/lib/date'
+import { getUserTimezone } from '@/lib/getUserTimezone'
 import { PORTION_STYLE_RULES } from '@/features/food/portionStyle'
 import type { FoodEstimate, PhotoRefineQuestion } from '@/features/food/types'
 
@@ -11,7 +12,7 @@ export async function GET(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const db = createServiceClient()
-  const dateParam = request.nextUrl.searchParams.get('date') ?? rolledDate(new Date())
+  const dateParam = request.nextUrl.searchParams.get('date') ?? toLocalDate(await getUserTimezone(user.id))
 
   const { data: logs, error } = await db
     .from('food_logs')
@@ -149,7 +150,7 @@ Set refine_question to null only when confidence is already "high" and the porti
     }
 
     const now = new Date()
-    const date = clientDate ?? rolledDate(now)
+    const date = clientDate ?? toLocalDate(await getUserTimezone(user.id))
     const primaryPhoto = photoData[0]
     const ext = primaryPhoto.mimeType.split('/')[1] ?? 'jpg'
     const storagePath = `${user.id}/${date}_${now.getTime()}.${ext}`

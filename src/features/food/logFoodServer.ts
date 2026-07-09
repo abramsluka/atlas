@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { rolledDate } from '@/features/food/date'
+import { toLocalDate } from '@/lib/date'
+import { getUserTimezone } from '@/lib/getUserTimezone'
 
 export interface LogFoodInput {
   item_name: string
@@ -23,16 +24,17 @@ export interface LogFoodResult {
 }
 
 // Core manual food insert, shared by the /api/health/food/log route and the MCP
-// log_food tool: rolledDate day boundary, hydrating-drink → water_logs side
-// effect (non-fatal), food_items frequents upsert (non-fatal). Callers validate
-// and coerce inputs; this only writes.
+// log_food tool: 3 AM day boundary in the user's timezone (never the server
+// clock — Vercel runs UTC), hydrating-drink → water_logs side effect
+// (non-fatal), food_items frequents upsert (non-fatal). Callers validate and
+// coerce inputs; this only writes.
 export async function logFoodServer(
   db: SupabaseClient,
   userId: string,
   input: LogFoodInput
 ): Promise<LogFoodResult> {
   const now = new Date()
-  const date = rolledDate(now)
+  const date = toLocalDate(await getUserTimezone(userId))
 
   const { data: inserted, error: insertError } = await db
     .from('food_logs')

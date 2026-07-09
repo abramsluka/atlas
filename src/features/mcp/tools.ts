@@ -4,6 +4,7 @@ import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js'
 import { fromZonedTime } from 'date-fns-tz'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getUserTimezone } from '@/lib/getUserTimezone'
+import { toLocalDate, DAY_ROLLOVER_HOUR } from '@/lib/date'
 import { logFoodServer } from '@/features/food/logFoodServer'
 import type { OuraData, WhoopData } from '@/features/health/types'
 
@@ -39,24 +40,17 @@ const dateSchema = z
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD')
   .describe("YYYY-MM-DD. Defaults to today in the user's timezone.")
 
-function todayIn(tz: string): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date())
-}
-
 async function todayFor(userId: string): Promise<string> {
-  return todayIn(await getUserTimezone(userId))
+  return toLocalDate(await getUserTimezone(userId))
 }
 
-// UTC instants bounding a calendar date in the user's timezone (for
-// timestamptz columns like gym_logs.logged_at, which have no date column).
+// UTC instants bounding an app day in the user's timezone (for timestamptz
+// columns like gym_logs.logged_at, which have no date column). Runs
+// [date 3am, date+1 3am) local — the shared DAY_ROLLOVER_HOUR boundary.
 async function dayWindow(userId: string, date: string): Promise<{ start: string; end: string }> {
   const tz = await getUserTimezone(userId)
-  const start = fromZonedTime(`${date}T00:00:00`, tz)
+  const hh = `${String(DAY_ROLLOVER_HOUR).padStart(2, '0')}:00:00`
+  const start = fromZonedTime(`${date}T${hh}`, tz)
   const end = new Date(start.getTime() + 24 * 60 * 60 * 1000)
   return { start: start.toISOString(), end: end.toISOString() }
 }
@@ -452,12 +446,8 @@ export function registerAtlasTools(server: McpServer) {
         const userId = userIdOf(extra)
         const db = createServiceClient()
         const tz = await getUserTimezone(userId)
-        const date = args.date ?? todayIn(tz)
-        const dayStart = fromZonedTime(`${date}T00:00:00`, tz)
-        const window = {
-          start: dayStart.toISOString(),
-          end: new Date(dayStart.getTime() + 24 * 60 * 60 * 1000).toISOString(),
-        }
+        const date = args.date ?? toLocalDate(tz)
+        const window = await dayWindow(userId, date)
 
         const [wearables, food, water, caffeine, weight, suppLogs, suppList, checkin, gym, apple] =
           await Promise.all([

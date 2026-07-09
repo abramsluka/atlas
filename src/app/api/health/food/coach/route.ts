@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
-import { rolledDate } from '@/features/food/date'
+import { toLocalDate } from '@/lib/date'
+import { getUserTimezone } from '@/lib/getUserTimezone'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -15,7 +16,7 @@ export async function GET(request: NextRequest) {
   const { data: { user } } = await authClient.auth.getUser()
   if (!user) return new Response('Unauthorized', { status: 401 })
 
-  const date = request.nextUrl.searchParams.get('date') ?? rolledDate(new Date())
+  const date = request.nextUrl.searchParams.get('date') ?? toLocalDate(await getUserTimezone(user.id))
   const db = createServiceClient()
 
   const { data: messages, error } = await db
@@ -35,7 +36,7 @@ export async function POST(request: NextRequest) {
   if (!user) return new Response('Unauthorized', { status: 401 })
 
   const body = await request.json()
-  const date: string = body.date ?? rolledDate(new Date())
+  const date: string = body.date ?? toLocalDate(await getUserTimezone(user.id))
   const question: string | undefined = body.question ? String(body.question).trim() : undefined
   const chipLabel: string | null = body.chip_label ? String(body.chip_label) : null
   // Client's IANA timezone — without it the server formats taken_at in UTC,

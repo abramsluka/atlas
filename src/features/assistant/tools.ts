@@ -186,7 +186,7 @@ export async function loadAssistantContext(db: DB, userId: string): Promise<Assi
   check-in: ${checkinLine}
 — WATER CONTAINERS: his bottle = ${bottleOz} oz, his glass = ${glassOz} oz`
 
-  const catalogBlock = `— NOW: ${localTime} (${today}, timezone ${tz})
+  const catalogBlock = `— NOW: ${localTime} (app day ${today}, timezone ${tz}. The day flips at 3 AM, not midnight — before 3 AM you are still on the previous day. Everything in TODAY SO FAR and the ALREADY LOGGED flags is for ${today} only; earlier days are done and gone, so never assume something was logged today because it came up in an older conversation.)
 — LATEST BODY WEIGHT: ${lastWeight ? `${lastWeight.weight} ${units} on ${lastWeight.date_key}` : 'none logged'}
 ${todayBlock}
 
