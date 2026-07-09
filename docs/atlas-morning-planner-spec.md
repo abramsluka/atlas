@@ -101,8 +101,11 @@ A small pill rendered next to the date header on **both** `/journal/new` and `/j
 
 New-entry default by time of day:
 ```ts
-const MORNING_CUTOFF_HOUR = 12 // before noon → morning
-const defaultKind = new Date().getHours() < MORNING_CUTOFF_HOUR ? 'morning' : 'night'
+// 4am–6pm → day journal (morning); 6pm–4am → night journal (changed from noon, 2026-07-09)
+const MORNING_START_HOUR = 4
+const MORNING_END_HOUR = 18
+const h = new Date().getHours()
+const defaultKind = h >= MORNING_START_HOUR && h < MORNING_END_HOUR ? 'morning' : 'night'
 ```
 The toggle always overrides the default.
 
@@ -299,7 +302,7 @@ Card behavior:
 - **Tick from Home:** optimistic toggle → `PATCH /api/journal/{entryId}` with the full updated `plan`. Light strikethrough animates in; the ticked item drops out of the preview on next render (revealing the next unchecked one). Invalidate the relevant query keys.
 - **Tap the card body** (not a checkbox) → route to `/journal/{entryId}` for the full list.
 - If there are more than 3 unchecked, show a subtle “+N more →” affordance to the entry.
-- **Empty state** (no morning entry today): a soft “☀️ Plan your day” prompt linking to `/journal/new`. Since it’s morning by default before noon, the new entry opens in morning mode; after noon the user can flip the toggle.
+- **Empty state** (no morning entry today): a soft “☀️ Plan your day” prompt linking to `/journal/new`. Since it’s morning by default from 4am–6pm, the new entry opens in morning mode; in the night window the user can flip the toggle.
 - If the whole plan is checked: show a quiet “Day planned ✓” state, or collapse the card. (Pick the quieter option.)
 
 Keep the card visually consistent with `TodaysCallCard` / `DailyCheckinCard` (same rounded panel, border, muted labels).

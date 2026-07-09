@@ -17,7 +17,9 @@ const MOOD_EMOJIS: Record<number, string> = {
   5: '😄',
 }
 
-const MORNING_CUTOFF_HOUR = 12 // before noon → morning
+// 4am–6pm → day journal (☀️ morning); 6pm–4am → night journal (🌙)
+const MORNING_START_HOUR = 4
+const MORNING_END_HOUR = 18
 
 // Typed morning brain-dump → one plan item per non-empty line
 function linesToPlan(body: string): PlanItem[] {
@@ -49,7 +51,8 @@ export default function NewJournalEntryPage() {
     const now = new Date()
     setToday(format(now, 'yyyy-MM-dd'))
     setTodayDisplay(format(now, 'EEEE, MMMM do, yyyy'))
-    setKind(now.getHours() < MORNING_CUTOFF_HOUR ? 'morning' : 'night')
+    const h = now.getHours()
+    setKind(h >= MORNING_START_HOUR && h < MORNING_END_HOUR ? 'morning' : 'night')
   }, [])
 
   const isMorning = kind === 'morning'
