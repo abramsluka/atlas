@@ -124,13 +124,14 @@ interface Props {
   whoopData: WhoopData | null
   workouts: WorkoutPoint[]
   meals: MealPoint[]
+  typicalWakeHour: number | null
 }
 
-export default function CaffeineClient({ initialCaffeine, initialRatings, today, ouraData, whoopData, workouts, meals }: Props) {
+export default function CaffeineClient({ initialCaffeine, initialRatings, today, ouraData, whoopData, workouts, meals, typicalWakeHour }: Props) {
   const qc = useQueryClient()
   // ── Model inputs ──────────────────────────────────────────────────────────
   const sleepQuality = deriveSleepQuality(ouraData, whoopData)
-  const { hour: wakeHour, known: wakeKnown } = deriveWake(ouraData)
+  const { hour: wakeHour, known: wakeKnown } = deriveWake(ouraData, whoopData, typicalWakeHour)
 
   // ── Live clock — energy-day hours, so 12:30am reads as 24.5 not 0.5 ──────
   const [currentHour, setCurrentHour] = useState(() => {

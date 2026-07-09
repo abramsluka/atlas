@@ -132,5 +132,6 @@ export interface WhoopData {
   }
   sleep?: {
     duration_seconds: number | null
+    end?: string | null  // ISO 8601 — when the sleep ended, i.e. wake time
   }
 }

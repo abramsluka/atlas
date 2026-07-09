@@ -165,5 +165,44 @@ export async function syncOuraToday(
     { onConflict: 'user_id,provider,date' }
   )
 
+  // Backfill: a past day's row freezes with null sleep detail when all of that
+  // day's syncs ran before Oura published the sleep period. The fetch window
+  // already spans 3 days back, so repair those rows now — wake-hour history
+  // feeds the typical-wake fallback and stays useless if left frozen.
+  const pastDetails = ((sleepDetailJson?.data ?? []) as Array<Record<string, unknown>>)
+    .filter(r => typeof r.day === 'string' && r.day !== today && r.type === 'long_sleep')
+  if (pastDetails.length > 0) {
+    const { data: pastRows } = await db
+      .from('wearable_data')
+      .select('date, data')
+      .eq('user_id', userId)
+      .eq('provider', 'oura')
+      .in('date', pastDetails.map(r => r.day as string))
+    for (const row of pastRows ?? []) {
+      const stored = row.data as OuraData
+      if (stored?.sleep?.bedtime_end != null) continue
+      const detail = pastDetails.find(r => r.day === row.date)!
+      const patched: OuraData = {
+        ...stored,
+        sleep: {
+          score: stored.sleep?.score ?? null,
+          score_day: stored.sleep?.score_day ?? null,
+          detail_day: detail.day as string,
+          total_sleep_duration: num(detail.total_sleep_duration),
+          average_hrv: num(detail.average_hrv),
+          deep_sleep_duration: num(detail.deep_sleep_duration),
+          rem_sleep_duration: num(detail.rem_sleep_duration),
+          latency: num(detail.latency),
+          efficiency: num(detail.efficiency),
+          resting_heart_rate: num(detail.lowest_heart_rate ?? detail.average_heart_rate),
+          bedtime_end: typeof detail.bedtime_end === 'string' ? detail.bedtime_end : null,
+        },
+      }
+      await db.from('wearable_data')
+        .update({ data: patched })
+        .eq('user_id', userId).eq('provider', 'oura').eq('date', row.date)
+    }
+  }
+
   return ouraData
 }

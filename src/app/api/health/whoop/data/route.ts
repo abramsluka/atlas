@@ -105,6 +105,13 @@ export async function GET(req: NextRequest) {
     sleepJson?.records?.find((r: Record<string, unknown>) => r.nap === false) ??
     sleepJson?.records?.[0]
 
+  // Wake time: only trust a sleep end from the last 24h — with a stale ring
+  // sync the latest record can be days old, and its morning hour would
+  // masquerade as today's wake in the energy model.
+  const sleepEnd = typeof sleepRecord?.end === 'string' ? sleepRecord.end : null
+  const sleepEndFresh =
+    sleepEnd != null && Date.now() - new Date(sleepEnd).getTime() < 24 * 3600 * 1000
+
   const rScore = recoveryRecord?.score as Record<string, unknown> | null | undefined
   const cScore = cycleRecord?.score as Record<string, unknown> | null | undefined
   const sScore = sleepRecord?.score as Record<string, unknown> | null | undefined
@@ -142,6 +149,7 @@ export async function GET(req: NextRequest) {
     sleep: sleepRecord
       ? {
           duration_seconds: asleepMs != null ? Math.round(asleepMs / 1000) : null,
+          end: sleepEndFresh ? sleepEnd : null,
         }
       : undefined,
   }

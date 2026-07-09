@@ -78,6 +78,7 @@ interface Props {
   today: string
   workouts: WorkoutPoint[]
   meals: MealPoint[]
+  typicalWakeHour: number | null
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -1012,8 +1013,8 @@ function StackTracker({
         </div>
         <div className="font-mono text-xs text-zinc-500 mt-1.5 tabular-nums">
           {totalSlots === 0
-            ? '— / — taken today · resets at 6 AM'
-            : `${takenCount} / ${totalSlots} taken today · resets at 6 AM`}
+            ? '— / — taken today · resets at 3 AM'
+            : `${takenCount} / ${totalSlots} taken today · resets at 3 AM`}
         </div>
       </div>
 
@@ -1259,7 +1260,7 @@ function WaterSection({
   const [caffeineMode, setCaffeineMode] = useState<'auto' | 'manual'>('auto')
   const [activityManualOverride, setActivityManualOverride] = useState(false)
 
-  // Use rolledDate() (6am rollover) so water resets on the same schedule as supplements
+  // Use rolledDate() (3am rollover) so water resets on the same schedule as supplements
   const [waterDate] = useState(() => rolledDate())
 
   const { data: waterLogs } = useWaterLogs(waterDate, initialWater)
@@ -1775,6 +1776,7 @@ function CaffeineSection({
   whoopData,
   workouts,
   meals,
+  typicalWakeHour,
 }: {
   initialCaffeine: CaffeineLog[]
   today: string
@@ -1782,6 +1784,7 @@ function CaffeineSection({
   whoopData: WhoopData | null
   workouts: WorkoutPoint[]
   meals: MealPoint[]
+  typicalWakeHour: number | null
 }) {
   const { data: caffeineLogs } = useCaffeineLogs(today, initialCaffeine)
 
@@ -1791,8 +1794,8 @@ function CaffeineSection({
   const computeNow = useCallback(() => {
     const now = new Date()
     const h = toEnergyDayHour(now.getHours() + now.getMinutes() / 60)
-    return currentEnergyFromLogs(h, caffeineLogs ?? initialCaffeine, ouraData, whoopData, workouts, meals)
-  }, [caffeineLogs, initialCaffeine, ouraData, whoopData, workouts, meals])
+    return currentEnergyFromLogs(h, caffeineLogs ?? initialCaffeine, ouraData, whoopData, workouts, meals, typicalWakeHour)
+  }, [caffeineLogs, initialCaffeine, ouraData, whoopData, workouts, meals, typicalWakeHour])
 
   const [energy, setEnergy] = useState(computeNow)
   useEffect(() => {
@@ -2840,6 +2843,7 @@ export default function HealthClient({
   today,
   workouts,
   meals,
+  typicalWakeHour,
 }: Props) {
   const { data: profileData } = useHealthProfile(profile)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -2896,6 +2900,7 @@ export default function HealthClient({
         whoopData={whoopData}
         workouts={workouts}
         meals={meals}
+        typicalWakeHour={typicalWakeHour}
       />
       <DebloatSection today={today} />
     </main>

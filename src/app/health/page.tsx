@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import HealthClient from './HealthClient'
 import type { OuraData, WhoopData } from '@/features/health/types'
 import { toEnergyDate, nextCalendarDate, isoToEnergyDayHour, energyDayUtcWindow, type WorkoutPoint, type MealPoint } from '@/features/health/energyModel'
+import { getTypicalWakeHour } from '@/features/health/typicalWake'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { sessionLabel, sessionVolumeLbs, type GymActivityLog } from '@/lib/gymActivity'
 
@@ -15,7 +16,7 @@ export default async function HealthPage() {
 
   const db = createServiceClient()
   const tz = await getUserTimezone(user.id)
-  // Energy day (6am rollover, same boundary as rolledDate): before 6am the
+  // Energy day (3am rollover, same boundary as rolledDate): before 3am the
   // whole page still shows the day being lived — water/supplement totals
   // don't reset at midnight while you're up, and now match the client-side
   // rolledDate() the water/supplement sections already use.
@@ -32,6 +33,7 @@ export default async function HealthPage() {
     whoopTokenResult,
     workoutsResult,
     foodResult,
+    typicalWakeHour,
   ] = await Promise.all([
     db.from('supplements').select('*').eq('user_id', user.id).eq('active', true).order('created_at', { ascending: true }),
     db.from('supplement_logs').select('*').eq('user_id', user.id).eq('date', today),
@@ -54,6 +56,7 @@ export default async function HealthPage() {
       .gte('taken_at', dayStart)
       .lt('taken_at', dayEnd)
       .order('taken_at', { ascending: true }),
+    getTypicalWakeHour(db, user.id, tz),
   ])
 
   const hasOura = !!ouraTokenResult.data
@@ -114,6 +117,7 @@ export default async function HealthPage() {
       hasOura={hasOura}
       hasWhoop={hasWhoop}
       today={today}
+      typicalWakeHour={typicalWakeHour}
     />
   )
 }

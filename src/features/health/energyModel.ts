@@ -3,19 +3,19 @@
 // card so the two always read the same number. Do not fork this math.
 
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
+import { DAY_ROLLOVER_HOUR } from '@/lib/date'
 import type { OuraData, WhoopData } from './types'
 
 // ── Energy day ────────────────────────────────────────────────────────────────
-// The energy day runs from wake until 6am the next calendar day — the same
-// boundary as rolledDate() in src/features/food/date.ts, so food, supplements,
-// water, and energy all flip days together. Between midnight and 6am you are
-// still living the previous day's curve, so the model keeps counting hours
-// past 24 (12:30am → 24.5) instead of resetting to a fresh empty day, which
-// would hard-zero the score and redraw the chart as a forecast for a day that
-// has not started.
-export const ENERGY_DAY_END_HOUR = 6
+// The energy day runs from wake until 3am the next calendar day — the shared
+// DAY_ROLLOVER_HOUR boundary, so food, supplements, water, and energy all flip
+// days together. Between midnight and 3am you are still living the previous
+// day's curve, so the model keeps counting hours past 24 (12:30am → 24.5)
+// instead of resetting to a fresh empty day, which would hard-zero the score
+// and redraw the chart as a forecast for a day that has not started.
+export const ENERGY_DAY_END_HOUR = DAY_ROLLOVER_HOUR
 
-// Map a local clock hour (0–24) into energy-day hours (6–30).
+// Map a local clock hour (0–24) into energy-day hours (3–27).
 export function toEnergyDayHour(h: number): number {
   return h < ENERGY_DAY_END_HOUR ? h + 24 : h
 }
@@ -34,7 +34,7 @@ export function nextCalendarDate(dateStr: string): string {
   return d.toISOString().slice(0, 10)
 }
 
-// UTC instants bounding an energy day: [date 6am, date+1 6am) local time.
+// UTC instants bounding an energy day: [date 3am, date+1 3am) local time.
 // Use these for timestamp-window queries so post-midnight rows stay on the day.
 export function energyDayUtcWindow(dateStr: string, timezone: string): { start: string; end: string } {
   const hh = `${String(ENERGY_DAY_END_HOUR).padStart(2, '0')}:00:00`
@@ -184,27 +184,52 @@ export function deriveSleepQuality(
 
 export const DEFAULT_WAKE_HOUR = 7
 
-// known=false means we had no usable Oura bedtime_end (e.g. Whoop-only day)
-// and fell back to the default — surfaces should present it as an estimate.
-export function deriveWake(ouraData: OuraData | null): { hour: number; known: boolean } {
-  const be = ouraData?.sleep?.bedtime_end
-  if (be) {
-    const d = new Date(be)
-    if (!isNaN(d.getTime())) {
-      const h = d.getHours() + d.getMinutes() / 60
-      // A genuine wake time lands in the morning. Oura sometimes stores a stale
-      // or mismatched session (e.g. a bedtime, or a record from a different
-      // night) whose bedtime_end is an evening time. Trusting that would push
-      // wakeHour into the night and zero out the entire energy curve, so reject
-      // anything outside a plausible wake window and fall back to the default.
-      if (h >= 3 && h < 12) return { hour: h, known: true }
-    }
+// A genuine wake time lands in the morning. Wearables sometimes store a stale
+// or mismatched session (e.g. a bedtime, or a record from a different night)
+// whose end is an evening time. Trusting that would push wakeHour into the
+// night and zero out the entire energy curve, so reject anything outside a
+// plausible wake window. Pass timezone when calling from the server (Vercel
+// runs in UTC); client code can omit it — the device clock is the user's.
+export function plausibleWakeHour(iso: string | null | undefined, timezone?: string): number | null {
+  if (!iso) return null
+  let h: number | null = null
+  if (/[+-]\d{2}:?\d{2}$/.test(iso)) {
+    // Oura embeds the wearer's local offset — the naive part IS the wall clock
+    // where they woke. Converting through the profile timezone would misread
+    // nights recorded while traveling, so read it directly.
+    const m = iso.match(/T(\d{2}):(\d{2})/)
+    if (m) h = Number(m[1]) + Number(m[2]) / 60
+  } else {
+    // UTC instants (Whoop) need a real conversion
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return null
+    h = timezone
+      ? Number(formatInTimeZone(d, timezone, 'H')) + Number(formatInTimeZone(d, timezone, 'm')) / 60
+      : d.getHours() + d.getMinutes() / 60
   }
-  return { hour: DEFAULT_WAKE_HOUR, known: false }
+  return h != null && h >= 3 && h < 12 ? h : null
 }
 
-export function deriveWakeHour(ouraData: OuraData | null): number {
-  return deriveWake(ouraData).hour
+// Wake time for the energy day: today's Oura session end, else today's Whoop
+// sleep end, else the user's typical wake (median of recent wearable history,
+// passed in by the server), else 7am. known=false means we had no measurement
+// from this actual night — surfaces should present the hour as an estimate.
+export function deriveWake(
+  ouraData: OuraData | null,
+  whoopData: WhoopData | null = null,
+  typicalWakeHour: number | null = null,
+): { hour: number; known: boolean } {
+  const measured = plausibleWakeHour(ouraData?.sleep?.bedtime_end) ?? plausibleWakeHour(whoopData?.sleep?.end)
+  if (measured != null) return { hour: measured, known: true }
+  return { hour: typicalWakeHour ?? DEFAULT_WAKE_HOUR, known: false }
+}
+
+export function deriveWakeHour(
+  ouraData: OuraData | null,
+  whoopData: WhoopData | null = null,
+  typicalWakeHour: number | null = null,
+): number {
+  return deriveWake(ouraData, whoopData, typicalWakeHour).hour
 }
 
 // ── Dose mapping ──────────────────────────────────────────────────────────────
@@ -230,10 +255,11 @@ export function currentEnergyFromLogs(
   whoopData: WhoopData | null,
   workouts: WorkoutPoint[] = [],
   meals: MealPoint[] = [],
+  typicalWakeHour: number | null = null,
 ): number {
   return computeEnergy(
     hour,
-    deriveWakeHour(ouraData),
+    deriveWakeHour(ouraData, whoopData, typicalWakeHour),
     deriveSleepQuality(ouraData, whoopData),
     logsToDoses(logs),
     workouts,

@@ -2,6 +2,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toEnergyDate, nextCalendarDate, isoToEnergyDayHour, energyDayUtcWindow } from '@/features/health/energyModel'
+import { getTypicalWakeHour } from '@/features/health/typicalWake'
 import type { OuraData, WhoopData } from '@/features/health/types'
 import type { FoodLog } from '@/features/food/types'
 import { sessionLabel, sessionVolumeLbs, type GymActivityLog } from '@/lib/gymActivity'
@@ -30,15 +31,15 @@ export default async function CaffeinePage() {
 
   const db = createServiceClient()
   const tz = await getUserTimezone(user.id)
-  // Energy day: before 6am you are still living yesterday's curve
+  // Energy day: before 3am you are still living yesterday's curve
   const today = toEnergyDate(tz)
   const tomorrow = nextCalendarDate(today)
 
-  // The energy day spans [today 6am, tomorrow 6am) local — resolve to real UTC
+  // The energy day spans [today 3am, tomorrow 3am) local — resolve to real UTC
   // instants so timestamp windows catch post-midnight sets and meals.
   const { start: dayStart, end: dayEnd } = energyDayUtcWindow(today, tz)
 
-  const [caffeineResult, ouraTokenResult, whoopTokenResult, workoutsResult, foodResult, ratingsResult] = await Promise.all([
+  const [caffeineResult, ouraTokenResult, whoopTokenResult, workoutsResult, foodResult, ratingsResult, typicalWakeHour] = await Promise.all([
     // Post-midnight doses can carry either date tag depending on where they
     // were logged from; the hour mapping folds both onto this energy day.
     db.from('caffeine_logs')
@@ -72,6 +73,10 @@ export default async function CaffeinePage() {
       .eq('user_id', user.id)
       .eq('date_key', today)
       .order('logged_at', { ascending: true }),
+
+    // Median wake hour from recent wearable history — fallback for mornings
+    // where neither ring has synced yet
+    getTypicalWakeHour(db, user.id, tz),
   ])
 
   const hasOura = !!ouraTokenResult.data
@@ -124,6 +129,7 @@ export default async function CaffeinePage() {
       whoopData={whoopData}
       workouts={workoutPoints}
       meals={mealPoints}
+      typicalWakeHour={typicalWakeHour}
     />
   )
 }
