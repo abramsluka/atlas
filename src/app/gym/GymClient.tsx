@@ -113,12 +113,11 @@ function compute1RM(weight: number, reps: number): number {
   return weight * (1 + reps / 30)
 }
 
-function getRx(logs: GymLog[], ex: GymExercise, upgradeAtReps: number, units: string): Prescription | null {
+function getRx(logs: GymLog[], ex: GymExercise, units: string): Prescription | null {
   if (!logs.length) return null
   const last = logs[logs.length - 1]
   const { reps, weight } = last
   const { rep_min: repMin, rep_max: repMax, step, bodyweight: bw } = ex
-  const upgradeAt = Math.min(upgradeAtReps, repMax)
 
   // Stuck: consecutive sets at same weight with reps below repMin
   let stuck = 0
@@ -128,7 +127,7 @@ function getRx(logs: GymLog[], ex: GymExercise, upgradeAtReps: number, units: st
   }
 
   if (bw) {
-    if (reps >= upgradeAt) return { action: 'INCREASE', reason: `${reps} reps — strong. Push for ${reps + 1} next time.` }
+    if (reps >= repMax) return { action: 'INCREASE', reason: `${reps} reps — strong. Push for ${reps + 1} next time.` }
     if (reps >= repMin) return { action: 'HOLD', reason: `${reps} reps. Push for ${reps + 1} next session.` }
     return { action: 'REPEAT', reason: `${reps} reps fell short. Repeat until you hit ${repMin}+.` }
   }
@@ -140,7 +139,7 @@ function getRx(logs: GymLog[], ex: GymExercise, upgradeAtReps: number, units: st
       nextWeight: Math.round((weight * 0.9) / step) * step,
     }
   }
-  if (reps >= upgradeAt) return {
+  if (reps >= repMax) return {
     action: 'INCREASE',
     reason: `You hit ${reps} reps — time to add ${step}${units}. Expect ${repMin}–${repMin + 1} next session.`,
   }
@@ -158,7 +157,7 @@ function getRx(logs: GymLog[], ex: GymExercise, upgradeAtReps: number, units: st
   }
   return {
     action: 'REPEAT',
-    reason: `${reps} reps short of ${repMin}–${upgradeAt}. Repeat ${weight}${units} until you hit ${repMin}+ clean.`,
+    reason: `${reps} reps short of ${repMin}–${repMax}. Repeat ${weight}${units} until you hit ${repMin}+ clean.`,
   }
 }
 
@@ -664,9 +663,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   // Settings local state
   const [settingsGyms, setSettingsGyms] = useState(config.gyms)
   const [settingsUnits, setSettingsUnits] = useState(config.units)
-  const [settingsUpgradeAt, setSettingsUpgradeAt] = useState(config.upgrade_at_reps)
-  const [coachRepRec, setCoachRepRec] = useState<{ reps: number; reason: string } | null>(null)
-  const [coachRepLoading, setCoachRepLoading] = useState(false)
   const [coachStepRec, setCoachStepRec] = useState<{ step: number; reason: string } | null>(null)
   const [coachStepLoading, setCoachStepLoading] = useState(false)
   const importRef = useRef<HTMLInputElement>(null)
@@ -766,8 +762,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
 
   const rx = useMemo(() => {
     if (!currentEx) return null
-    return getRx(exLogs, currentEx, config.upgrade_at_reps, config.units)
-  }, [exLogs, currentEx, config.upgrade_at_reps, config.units])
+    return getRx(exLogs, currentEx, config.units)
+  }, [exLogs, currentEx, config.units])
 
   const bestSet = useMemo(() => {
     if (!exLogs.length) return null
@@ -888,7 +884,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
       ...config,
       gyms: settingsGyms,
       units: settingsUnits,
-      upgrade_at_reps: settingsUpgradeAt,
     })
     setShowSettings(false)
   }
@@ -896,8 +891,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   function openSettings() {
     setSettingsGyms(config.gyms.map(g => ({ ...g })))
     setSettingsUnits(config.units)
-    setSettingsUpgradeAt(config.upgrade_at_reps)
-    setCoachRepRec(null)
     setShowSettings(true)
   }
 
@@ -917,22 +910,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
       setCoachStepRec({ step: 2.5, reason: 'Could not reach coach — using default.' })
     } finally {
       setCoachStepLoading(false)
-    }
-  }
-
-  async function fetchCoachReps() {
-    setCoachRepRec(null)
-    setCoachRepLoading(true)
-    try {
-      const res = await fetch('/api/gym/coach-reps', { method: 'POST' })
-      const json = await res.json()
-      setCoachRepRec(json)
-      setSettingsUpgradeAt(json.reps)
-    } catch {
-      setCoachRepRec({ reps: 12, reason: 'Could not reach coach — using default.' })
-      setSettingsUpgradeAt(12)
-    } finally {
-      setCoachRepLoading(false)
     }
   }
 
@@ -2538,30 +2515,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     </button>
                   ))}
                 </div>
-              </div>
-
-              {/* Upgrade at reps */}
-              <div>
-                <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Upgrade at reps</label>
-                <input
-                  type="number" inputMode="numeric" placeholder="12" value={settingsUpgradeAt === 0 ? '' : settingsUpgradeAt}
-                  onFocus={e => e.target.select()} onChange={e => { const raw = e.target.value; setSettingsUpgradeAt(raw === '' ? 0 : (parseInt(raw) ?? 0)) }}
-                  className="w-full rounded-xl bg-white/8 border border-white/10 px-4 py-3 text-sm text-white focus:outline-none"
-                />
-                <p className="text-xs text-white/30 mt-1">Hit this rep count 2 sessions in a row → increase weight</p>
-
-                <button
-                  onClick={fetchCoachReps}
-                  disabled={coachRepLoading}
-                  className="mt-2 w-full rounded-xl py-2.5 text-sm font-semibold text-black disabled:opacity-50 active:scale-[0.98] transition-transform"
-                  style={{ background: 'linear-gradient(180deg,#ffffff 0%,#e8e5dd 100%)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.55),0 2px 8px rgba(0,0,0,0.35)' }}
-                >
-                  {coachRepLoading ? 'Asking coach…' : 'Let coach decide'}
-                </button>
-
-                {coachRepRec && (
-                  <p className="text-xs text-white/30 mt-1 leading-relaxed">{coachRepRec.reason}</p>
-                )}
               </div>
 
               {/* Gyms */}
