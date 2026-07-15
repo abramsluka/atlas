@@ -1836,6 +1836,11 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   <p className="text-xs text-white/40 uppercase tracking-widest font-semibold mb-0.5">
                     Today's Workout — {todayDateLabel()}
                   </p>
+                  {todayDone && sessionByDate[today] && (
+                    <p className="text-[11px] text-white/30 tabular-nums mb-0.5">
+                      {fmtTimeRangePST(sessionByDate[today].started_at, sessionByDate[today].ended_at)}
+                    </p>
+                  )}
                   <div className="flex items-baseline gap-2">
                     <span className="text-2xl font-bold tabular-nums">{todayAllLogs.length}</span>
                     <span className="text-sm text-white/40">sets</span>
