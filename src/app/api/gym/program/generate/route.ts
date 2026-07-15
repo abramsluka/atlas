@@ -3,7 +3,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { subDays } from 'date-fns'
 import { getUserTimezone } from '@/lib/getUserTimezone'
-import type { OuraData, WhoopData } from '@/features/health/types'
+import type { OuraData } from '@/features/health/types'
 import type { GymConfig, GymExercise } from '@/features/gym/types'
 import type {
   GeneratedProgram, GenerateProgramRequest, ProgramGoal, ProgramStructure, ProgramSession, ProgramPhase,
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     db.from('gym_config').select('*').eq('user_id', user.id).maybeSingle(),
     db.from('gym_exercises').select('*').eq('user_id', user.id).order('order_index'),
     db.from('gym_logs').select('exercise_id, weight, reps').eq('user_id', user.id).gte('logged_at', ninetyAgo),
-    db.from('wearable_data').select('data, provider, date').eq('user_id', user.id).gte('date', fourteenAgoDate).in('provider', ['oura', 'whoop']),
+    db.from('wearable_data').select('data, provider, date').eq('user_id', user.id).gte('date', fourteenAgoDate).eq('provider', 'oura'),
     db.from('health_profile').select('age, weight_lbs, fitness_goal, target_weight_lbs').eq('user_id', user.id).maybeSingle(),
   ])
 
@@ -73,9 +73,6 @@ export async function POST(req: NextRequest) {
     if (row.provider === 'oura') {
       const o = row.data as OuraData
       if (o.readiness?.score != null) readinessVals.push(o.readiness.score)
-    } else if (row.provider === 'whoop') {
-      const w = row.data as unknown as { recovery?: { score?: number } }
-      if (w.recovery?.score != null) readinessVals.push(w.recovery.score)
     }
   }
   const avgReadiness = readinessVals.length ? Math.round(readinessVals.reduce((a, b) => a + b, 0) / readinessVals.length) : null

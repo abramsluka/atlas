@@ -3,7 +3,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
-import type { OuraData, WhoopData } from '@/features/health/types'
+import type { OuraData } from '@/features/health/types'
 
 export async function POST(_request: NextRequest) {
   const authClient = await createClient()
@@ -28,7 +28,6 @@ export async function POST(_request: NextRequest) {
     debloatHistoryRes,
     bodyweightRes,
     ouraWearableRes,
-    whoopWearableRes,
   ] = await Promise.all([
     db.from('daily_checkins')
       .select('*')
@@ -95,7 +94,6 @@ export async function POST(_request: NextRequest) {
       .limit(14),
 
     db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'oura').eq('date', today).maybeSingle(),
-    db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'whoop').eq('date', today).maybeSingle(),
   ])
 
   const checkin = checkinRes.data
@@ -155,7 +153,6 @@ export async function POST(_request: NextRequest) {
     : null
 
   const ouraToday = ouraWearableRes.data?.data as OuraData | null
-  const whoopToday = whoopWearableRes.data?.data as WhoopData | null
 
   const wearableLines: string[] = []
   if (ouraToday) {
@@ -166,17 +163,6 @@ export async function POST(_request: NextRequest) {
       const h = Math.floor(ouraToday.sleep.total_sleep_duration / 3600)
       const m = Math.floor((ouraToday.sleep.total_sleep_duration % 3600) / 60)
       wearableLines.push(`  Oura sleep duration: ${h}h${m}m`)
-    }
-  }
-  if (whoopToday) {
-    if (whoopToday.recovery?.score != null) wearableLines.push(`  Whoop recovery: ${whoopToday.recovery.score}%`)
-    if (whoopToday.recovery?.hrv_rmssd_milli != null) wearableLines.push(`  Whoop HRV: ${Math.round(whoopToday.recovery.hrv_rmssd_milli)}ms`)
-    if (whoopToday.cycle?.strain != null) wearableLines.push(`  Whoop strain: ${whoopToday.cycle.strain.toFixed(1)}`)
-    if (whoopToday.cycle?.kilojoule != null) wearableLines.push(`  Whoop calories: ${Math.round(whoopToday.cycle.kilojoule * 0.239)} kcal`)
-    if (whoopToday.sleep?.duration_seconds != null) {
-      const h = Math.floor(whoopToday.sleep.duration_seconds / 3600)
-      const m = Math.floor((whoopToday.sleep.duration_seconds % 3600) / 60)
-      wearableLines.push(`  Whoop sleep: ${h}h${m}m`)
     }
   }
 

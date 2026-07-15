@@ -1,6 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { subDays } from 'date-fns'
-import type { OuraData, WhoopData } from '@/features/health/types'
+import type { OuraData } from '@/features/health/types'
 import { fetchGymLogs, sessionLabel, groupByDay } from '@/lib/gymActivity'
 
 type DB = ReturnType<typeof createServiceClient>
@@ -12,7 +12,7 @@ export interface BentoStats {
   recentTrainingCheckin: { date: string; activity: string } | null
   todayCalories: number
   todayProtein: number
-  recoveryScore: number | null   // oura readiness or whoop recovery
+  recoveryScore: number | null   // oura readiness
   sleepScore: number | null      // oura sleep score
   lastJournal: { snippet: string; createdAt: string; mood: number | null } | null
 }
@@ -36,7 +36,7 @@ export async function computeBentoStats(db: DB, userId: string, today: string): 
       .select('data, provider')
       .eq('user_id', userId)
       .eq('date', today)
-      .in('provider', ['oura', 'whoop']),
+      .eq('provider', 'oura'),
 
     db.from('journal_entries')
       .select('body, audio_transcript, created_at, mood')
@@ -88,26 +88,18 @@ export async function computeBentoStats(db: DB, userId: string, today: string): 
   const todayCalories = Math.round(logs.reduce((s, l) => s + (l.calories ?? 0), 0))
   const todayProtein = Math.round(logs.reduce((s, l) => s + (l.protein_g ?? 0), 0))
 
-  // Recovery + sleep from wearable. Scan ALL rows (don't break early — both an
-  // Oura and a Whoop row can exist for the same day). Prefer Whoop recovery for
-  // the recovery score, fall back to Oura readiness; sleep score from Oura.
+  // Recovery + sleep from Oura: readiness drives the recovery score, sleep score
+  // from the sleep summary.
   let sleepScore: number | null = null
-  let ouraReadiness: number | null = null
-  let whoopRecovery: number | null = null
+  let recoveryScore: number | null = null
   const rows = (wearableRes.data ?? []) as Array<{ provider: string; data: Record<string, unknown> }>
   for (const row of rows) {
-    const d = row.data
     if (row.provider === 'oura') {
-      const oura = d as OuraData
-      if (oura.readiness?.score != null) ouraReadiness = oura.readiness.score
+      const oura = row.data as OuraData
+      if (oura.readiness?.score != null) recoveryScore = oura.readiness.score
       if (oura.sleep?.score != null) sleepScore = oura.sleep.score
-    } else if (row.provider === 'whoop') {
-      const whoop = d as WhoopData
-      const rec = (whoop as unknown as { recovery?: { score?: number } }).recovery?.score
-      if (rec != null) whoopRecovery = rec
     }
   }
-  const recoveryScore: number | null = whoopRecovery ?? ouraReadiness
 
   // Last journal entry snippet
   const je = journalRes.data as { body: string; audio_transcript: string | null; created_at: string; mood: number | null } | null

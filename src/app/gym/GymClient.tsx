@@ -576,8 +576,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   }
   const [todayExpanded, setTodayExpanded] = useState(true)
   const [pastExpanded, setPastExpanded] = useState(false)
-  const [whoopWorkoutStrain, setWhoopWorkoutStrain] = useState<number | null>(null)
-  const whoopStrainFetched = useRef(false)
 
   // Coach (devil / angel)
   const [coachText, setCoachText] = useState('')
@@ -1084,37 +1082,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const todayAllLogs = allLogs.filter(l => logDatePST(l.logged_at) === today)
   const todayExIds = [...new Set(todayAllLogs.map(l => l.exercise_id))]
   const todayVolume = todayAllLogs.reduce((s, l) => s + l.weight * l.reps, 0)
-
-  // Fetch matching Whoop workout strain. Tries on load (logs present) and again when
-  // the user finishes — Whoop may not have synced until then. Expands window ±30 min
-  // to catch Whoop sessions that started before the first logged set.
-  function fetchWhoopStrain() {
-    if (todayAllLogs.length === 0) return
-    const sorted = todayAllLogs.slice().sort((a, b) => a.logged_at.localeCompare(b.logged_at))
-    const startMs = new Date(sorted[0].logged_at).getTime() - 30 * 60 * 1000
-    const endMs = new Date(sorted[sorted.length - 1].logged_at).getTime() + 30 * 60 * 1000
-    const start = encodeURIComponent(new Date(startMs).toISOString())
-    const end = encodeURIComponent(new Date(endMs).toISOString())
-    fetch(`/api/health/whoop/workout?start=${start}&end=${end}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data?.strain != null) setWhoopWorkoutStrain(data.strain) })
-      .catch(() => {})
-  }
-
-  useEffect(() => {
-    if (whoopStrainFetched.current) return
-    if (todayAllLogs.length === 0) return
-    whoopStrainFetched.current = true
-    fetchWhoopStrain()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [todayAllLogs])
-
-  useEffect(() => {
-    if (!todayDone) return
-    // Retry when finishing — Whoop likely synced by now
-    fetchWhoopStrain()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [todayDone])
 
   // Past workouts (for history)
   const pastDates = [...new Set(
@@ -1841,14 +1808,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     <span className="text-sm text-white/40">sets</span>
                     <span className="text-white/20">·</span>
                     <span className="text-sm text-white/60">{Math.round(todayVolume).toLocaleString()} {config.units}</span>
-                    {whoopWorkoutStrain != null && (
-                      <>
-                        <span className="text-white/20">·</span>
-                        <span className="text-sm font-semibold" style={{ color: whoopWorkoutStrain >= 16 ? '#f87171' : whoopWorkoutStrain >= 10 ? '#fb923c' : '#4ade80' }}>
-                          {whoopWorkoutStrain.toFixed(1)} strain
-                        </span>
-                      </>
-                    )}
                   </div>
                 </div>
                 <span className="text-white/30 text-xs ml-4 shrink-0">{todayExpanded ? '▲' : '▼'}</span>

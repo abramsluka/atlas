@@ -6,7 +6,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate, DAY_ROLLOVER_HOUR } from '@/lib/date'
 import { logFoodServer } from '@/features/food/logFoodServer'
-import type { OuraData, WhoopData } from '@/features/health/types'
+import type { OuraData } from '@/features/health/types'
 
 export const ATLAS_INSTRUCTIONS =
   "Atlas is Luka's personal life-OS (fitness, nutrition, sleep, journaling). Dates are YYYY-MM-DD in the user's timezone. Weights lbs, water oz, caffeine mg. Atlas tracks calories/protein/carbs only (no fat)."
@@ -436,7 +436,7 @@ export function registerAtlasTools(server: McpServer) {
     'get_daily_summary',
     {
       description:
-        "Get the user's full day snapshot: sleep and recovery (Oura/Whoop), food and macros, water, caffeine, weight, supplements taken, gym sets, steps and check-ins. Call for questions like 'how am I doing today' or before giving any health/coaching commentary.",
+        "Get the user's full day snapshot: sleep and recovery (Oura), food and macros, water, caffeine, weight, supplements taken, gym sets, steps and check-ins. Call for questions like 'how am I doing today' or before giving any health/coaching commentary.",
       inputSchema: {
         date: dateSchema.optional(),
       },
@@ -478,20 +478,6 @@ export function registerAtlasTools(server: McpServer) {
             readiness_score: ouraRaw.readiness?.score,
           })
           if (oura) summary.oura = oura
-        }
-
-        const whoopRaw = wearables.data?.find((r) => r.provider === 'whoop')?.data as WhoopData | undefined
-        if (whoopRaw) {
-          const whoop = compact({
-            recovery_score: whoopRaw.recovery?.score,
-            hrv_ms: whoopRaw.recovery?.hrv_rmssd_milli,
-            strain: whoopRaw.cycle?.strain != null ? r1(whoopRaw.cycle.strain) : undefined,
-            sleep_hours:
-              whoopRaw.sleep?.duration_seconds != null
-                ? r1(whoopRaw.sleep.duration_seconds / 3600)
-                : undefined,
-          })
-          if (whoop) summary.whoop = whoop
         }
 
         if (food.data?.length) {

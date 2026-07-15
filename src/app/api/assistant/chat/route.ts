@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
-import type { OuraData, WhoopData } from '@/features/health/types'
+import type { OuraData } from '@/features/health/types'
 import { describeAction, type AssistantStreamEvent } from '@/features/assistant/actions'
 import { loadAssistantContext, buildAssistantTools, resolveToolCall, ACTION_RULES } from '@/features/assistant/tools'
 
@@ -30,26 +30,21 @@ export async function POST(req: NextRequest) {
   const db = createServiceClient()
   const [ctx, wearableRes, profileRes] = await Promise.all([
     loadAssistantContext(db, user.id),
-    createServiceClient().from('wearable_data').select('data, provider').eq('user_id', user.id).in('provider', ['oura', 'whoop']).order('date', { ascending: false }).limit(2),
+    createServiceClient().from('wearable_data').select('data, provider').eq('user_id', user.id).eq('provider', 'oura').order('date', { ascending: false }).limit(2),
     createServiceClient().from('health_profile').select('age, weight_lbs, fitness_goal, target_weight_lbs').eq('user_id', user.id).maybeSingle(),
   ])
 
-  // ── Recovery today (same signals the gym coach used) ──
+  // ── Recovery today (from Oura) ──
   let readiness: number | null = null
   let sleepScore: number | null = null
-  let recovery: number | null = null
   for (const row of (wearableRes.data ?? []) as Array<{ provider: string; data: Record<string, unknown> }>) {
     if (row.provider === 'oura') {
       const o = row.data as OuraData
       if (o.readiness?.score != null) readiness = o.readiness.score
       if (o.sleep?.score != null) sleepScore = o.sleep.score
-    } else if (row.provider === 'whoop') {
-      const w = row.data as unknown as { recovery?: { score?: number } }
-      if (w.recovery?.score != null) recovery = w.recovery.score
     }
   }
   const recoveryParts: string[] = []
-  if (recovery != null) recoveryParts.push(`Whoop recovery ${recovery}%`)
   if (readiness != null) recoveryParts.push(`Oura readiness ${readiness}`)
   if (sleepScore != null) recoveryParts.push(`sleep score ${sleepScore}`)
   const recoveryLine = recoveryParts.length ? recoveryParts.join(', ') : 'no wearable data synced today'
@@ -203,7 +198,7 @@ RULES
 - Every suggestion must be something Atlas can actually act on. Atlas can: log sets, supplements,
   body weight, water, caffeine, food, journal notes, check-in notes; adjust/add/remove/swap
   exercises; propose a workout; generate a program; answer questions from his gym history,
-  recovery (Whoop/Oura), and food/water/weight logs. Atlas CANNOT: show charts, set reminders,
+  recovery (Oura), and food/water/weight logs. Atlas CANNOT: show charts, set reminders,
   control other apps, or answer general trivia.
 - Ground them in the conversation. Aim for a spread: (1) continue the current task, (2) a related
   next action, (3) an insight question about his data. Collapse the spread when the context

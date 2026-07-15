@@ -4,7 +4,6 @@ import Anthropic from '@anthropic-ai/sdk'
 import { subDays } from 'date-fns'
 import { formatInTimeZone } from 'date-fns-tz'
 import { getUserTimezone } from '@/lib/getUserTimezone'
-import type { WhoopData } from '@/features/health/types'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -26,7 +25,7 @@ export async function POST(request: NextRequest) {
   const fourteenDaysAgo = formatInTimeZone(subDays(now, 14), TZ, 'yyyy-MM-dd')
   const fiftySevenDaysAgo = formatInTimeZone(subDays(now, 57), TZ, 'yyyy-MM-dd')
 
-  const [gymLogsResult, checkinsResult, whoopWearableRes, bodyWeightsResult, volumeLogsResult] = await Promise.all([
+  const [gymLogsResult, checkinsResult, bodyWeightsResult, volumeLogsResult] = await Promise.all([
     db
       .from('gym_logs')
       .select('logged_at')
@@ -39,14 +38,12 @@ export async function POST(request: NextRequest) {
       .eq('user_id', user.id)
       .gte('date', fourteenDaysAgo)
       .order('date', { ascending: false }),
-    db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'whoop').eq('date', today).maybeSingle(),
     db.from('body_weights').select('date_key, weight').eq('user_id', user.id).gte('date_key', fiftySevenDaysAgo).order('date_key', { ascending: true }),
     db.from('gym_logs').select('logged_at, weight, reps').eq('user_id', user.id).gte('logged_at', new Date(Date.now() - 57 * 86400000).toISOString()).order('logged_at', { ascending: true }),
   ])
 
   const gymLogs = gymLogsResult.data ?? []
   const checkins = checkinsResult.data ?? []
-  const whoopToday = whoopWearableRes.data?.data as WhoopData | null
   const bodyWeights = bodyWeightsResult.data ?? []
   const volumeLogs = volumeLogsResult.data ?? []
 
@@ -118,14 +115,6 @@ export async function POST(request: NextRequest) {
 
   if (todayCheckin?.morning_intent) {
     lines.push(`What they said they wanted to do today: "${todayCheckin.morning_intent}".`)
-  }
-
-  if (whoopToday) {
-    const whoopLines: string[] = []
-    if (whoopToday.recovery?.score != null) whoopLines.push(`Recovery: ${whoopToday.recovery.score}%`)
-    if (whoopToday.cycle?.strain != null) whoopLines.push(`Strain: ${whoopToday.cycle.strain.toFixed(1)}/21`)
-    if (whoopToday.cycle?.kilojoule != null) whoopLines.push(`Calories burned: ${Math.round(whoopToday.cycle.kilojoule * 0.239)} kcal`)
-    if (whoopLines.length > 0) lines.push(`Whoop today — ${whoopLines.join(', ')}.`)
   }
 
   // Body composition context — gate on 4+ weight logs and 4+ training sessions

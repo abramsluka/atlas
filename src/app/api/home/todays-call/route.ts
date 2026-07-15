@@ -4,7 +4,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
 import { syncOuraToday } from '@/features/health/ouraSync'
-import type { OuraData, WhoopData } from '@/features/health/types'
+import type { OuraData } from '@/features/health/types'
 
 type Verdict = 'GREEN' | 'YELLOW' | 'RED'
 
@@ -20,23 +20,14 @@ function verdictFromOura(score: number): Verdict {
   return 'RED'
 }
 
-function verdictFromWhoop(recoveryScore: number): Verdict {
-  if (recoveryScore >= 67) return 'GREEN'
-  if (recoveryScore >= 34) return 'YELLOW'
-  return 'RED'
-}
-
-// Oura readiness is the primary signal; Whoop recovery is the fallback.
-function verdictFor(oura: OuraData | null, whoop: WhoopData | null): Verdict | null {
+function verdictFor(oura: OuraData | null): Verdict | null {
   if (oura?.readiness?.score != null) return verdictFromOura(oura.readiness.score)
-  if (whoop?.recovery?.score != null) return verdictFromWhoop(whoop.recovery.score)
   return null
 }
 
 async function generateCall(
   verdict: Verdict,
   oura: OuraData | null,
-  whoop: WhoopData | null,
 ): Promise<{ headline: string; bullets: string[] }> {
   const lines: string[] = [`Readiness verdict: ${verdict}`]
 
@@ -47,9 +38,6 @@ async function generateCall(
   if (oura?.sleep?.resting_heart_rate != null) lines.push(`Oura RHR: ${Math.round(oura.sleep.resting_heart_rate)}bpm`)
   if (oura?.activity?.steps != null) lines.push(`Oura steps yesterday: ${oura.activity.steps.toLocaleString()}`)
   if (oura?.activity?.active_calories != null) lines.push(`Oura active calories yesterday: ${oura.activity.active_calories}`)
-  if (whoop?.recovery?.score != null) lines.push(`Whoop recovery: ${whoop.recovery.score}%`)
-  if (whoop?.recovery?.hrv_rmssd_milli != null) lines.push(`Whoop HRV: ${Math.round(whoop.recovery.hrv_rmssd_milli)}ms`)
-  if (whoop?.cycle?.strain != null) lines.push(`Whoop strain yesterday: ${whoop.cycle.strain.toFixed(1)}`)
 
   const prompt = `${lines.join('\n')}
 
@@ -107,34 +95,30 @@ export async function POST(req: Request) {
   // cheap when already fresh).
   await syncOuraToday(db, user.id, today).catch(() => null)
 
-  // Fetch wearable data for today
-  const [ouraRes, whoopRes] = await Promise.all([
-    db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'oura').eq('date', today).maybeSingle(),
-    db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'whoop').eq('date', today).maybeSingle(),
-  ])
+  // Fetch Oura data for today
+  const ouraRes = await db
+    .from('wearable_data').select('data')
+    .eq('user_id', user.id).eq('provider', 'oura').eq('date', today).maybeSingle()
 
   let oura = ouraRes.data?.data as OuraData | null
-  let whoop = whoopRes.data?.data as WhoopData | null
-  let verdict = verdictFor(oura, whoop)
+  let verdict = verdictFor(oura)
 
   // Fallback: if today still has no usable signal (provider lag, sync just
-  // failed), use the most recent wearable rows from the last few days so the
+  // failed), use the most recent Oura row from the last few days so the
   // card renders instead of disappearing entirely.
   let usedFallback = false
   if (!verdict) {
-    const [ouraRecent, whoopRecent] = await Promise.all([
-      db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'oura').lt('date', today).order('date', { ascending: false }).limit(1).maybeSingle(),
-      db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'whoop').lt('date', today).order('date', { ascending: false }).limit(1).maybeSingle(),
-    ])
+    const ouraRecent = await db
+      .from('wearable_data').select('data')
+      .eq('user_id', user.id).eq('provider', 'oura').lt('date', today).order('date', { ascending: false }).limit(1).maybeSingle()
     oura = oura ?? (ouraRecent.data?.data as OuraData | null)
-    whoop = whoop ?? (whoopRecent.data?.data as WhoopData | null)
-    verdict = verdictFor(oura, whoop)
+    verdict = verdictFor(oura)
     usedFallback = true
   }
 
   if (!verdict) return NextResponse.json({ noData: true })
 
-  const { headline, bullets } = await generateCall(verdict, oura, whoop)
+  const { headline, bullets } = await generateCall(verdict, oura)
 
   // Only cache as "today's" call when it was built from today's data. A
   // fallback-derived call is left uncached so it self-heals once today's data

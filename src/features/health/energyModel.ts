@@ -4,7 +4,7 @@
 
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { DAY_ROLLOVER_HOUR } from '@/lib/date'
-import type { OuraData, WhoopData } from './types'
+import type { OuraData } from './types'
 
 // ── Energy day ────────────────────────────────────────────────────────────────
 // The energy day runs from wake until 3am the next calendar day — the shared
@@ -168,7 +168,6 @@ function normalizeHrv(hrv: number | null | undefined): number | null {
 
 export function deriveSleepQuality(
   ouraData: OuraData | null,
-  whoopData: WhoopData | null,
 ): number {
   // Oura readiness already integrates sleep + HRV + recovery — best single signal
   const ouraReadiness = ouraData?.readiness?.score
@@ -176,9 +175,6 @@ export function deriveSleepQuality(
   const ouraScore = ouraData?.sleep?.score
   const ouraHrv = normalizeHrv(ouraData?.sleep?.average_hrv)
   if (ouraScore != null) return ouraHrv != null ? ouraScore * 0.7 + ouraHrv * 0.3 : ouraScore
-  const whoopScore = whoopData?.recovery?.score
-  const whoopHrv = normalizeHrv(whoopData?.recovery?.hrv_rmssd_milli)
-  if (whoopScore != null) return whoopHrv != null ? whoopScore * 0.7 + whoopHrv * 0.3 : whoopScore
   return 75
 }
 
@@ -200,7 +196,7 @@ export function plausibleWakeHour(iso: string | null | undefined, timezone?: str
     const m = iso.match(/T(\d{2}):(\d{2})/)
     if (m) h = Number(m[1]) + Number(m[2]) / 60
   } else {
-    // UTC instants (Whoop) need a real conversion
+    // A bare UTC instant (no offset) needs a real conversion
     const d = new Date(iso)
     if (isNaN(d.getTime())) return null
     h = timezone
@@ -210,26 +206,24 @@ export function plausibleWakeHour(iso: string | null | undefined, timezone?: str
   return h != null && h >= 3 && h < 12 ? h : null
 }
 
-// Wake time for the energy day: today's Oura session end, else today's Whoop
-// sleep end, else the user's typical wake (median of recent wearable history,
-// passed in by the server), else 7am. known=false means we had no measurement
-// from this actual night — surfaces should present the hour as an estimate.
+// Wake time for the energy day: today's Oura session end, else the user's
+// typical wake (median of recent Oura history, passed in by the server), else
+// 7am. known=false means we had no measurement from this actual night —
+// surfaces should present the hour as an estimate.
 export function deriveWake(
   ouraData: OuraData | null,
-  whoopData: WhoopData | null = null,
   typicalWakeHour: number | null = null,
 ): { hour: number; known: boolean } {
-  const measured = plausibleWakeHour(ouraData?.sleep?.bedtime_end) ?? plausibleWakeHour(whoopData?.sleep?.end)
+  const measured = plausibleWakeHour(ouraData?.sleep?.bedtime_end)
   if (measured != null) return { hour: measured, known: true }
   return { hour: typicalWakeHour ?? DEFAULT_WAKE_HOUR, known: false }
 }
 
 export function deriveWakeHour(
   ouraData: OuraData | null,
-  whoopData: WhoopData | null = null,
   typicalWakeHour: number | null = null,
 ): number {
-  return deriveWake(ouraData, whoopData, typicalWakeHour).hour
+  return deriveWake(ouraData, typicalWakeHour).hour
 }
 
 // ── Dose mapping ──────────────────────────────────────────────────────────────
@@ -252,15 +246,14 @@ export function currentEnergyFromLogs(
   hour: number,
   logs: { id: string; logged_at: string; amount_mg: number; source: string }[],
   ouraData: OuraData | null,
-  whoopData: WhoopData | null,
   workouts: WorkoutPoint[] = [],
   meals: MealPoint[] = [],
   typicalWakeHour: number | null = null,
 ): number {
   return computeEnergy(
     hour,
-    deriveWakeHour(ouraData, whoopData, typicalWakeHour),
-    deriveSleepQuality(ouraData, whoopData),
+    deriveWakeHour(ouraData, typicalWakeHour),
+    deriveSleepQuality(ouraData),
     logsToDoses(logs),
     workouts,
     meals,

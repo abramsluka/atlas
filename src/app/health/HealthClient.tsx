@@ -12,7 +12,6 @@ import {
   useHealthProfile,
   useWaterHistory,
   useOuraData,
-  useWhoopData,
 } from '@/features/health/queries'
 import { useQueryClient } from '@tanstack/react-query'
 import {
@@ -43,7 +42,6 @@ import type {
   HealthProfile,
   SubstanceEntry,
   OuraData,
-  WhoopData,
   TimeSlot,
 } from '@/features/health/types'
 import {
@@ -72,9 +70,7 @@ interface Props {
   todayCaffeine: CaffeineLog[]
   profile: HealthProfile | null
   ouraData: OuraData | null
-  whoopData: WhoopData | null
   hasOura: boolean
-  hasWhoop: boolean
   today: string
   workouts: WorkoutPoint[]
   meals: MealPoint[]
@@ -87,14 +83,6 @@ function scoreColor(score: number | null | undefined): string {
   if (score == null) return 'text-zinc-400'
   if (score >= 70) return 'text-green-400'
   if (score >= 50) return 'text-yellow-400'
-  return 'text-red-400'
-}
-
-// Whoop recovery bands: green 67–99, yellow 34–66, red 1–33
-function recoveryColor(score: number | null | undefined): string {
-  if (score == null) return 'text-zinc-400'
-  if (score >= 67) return 'text-green-400'
-  if (score >= 34) return 'text-yellow-400'
   return 'text-red-400'
 }
 
@@ -117,52 +105,37 @@ function getStackDate(): string {
 
 function WearablesSection({
   hasOura,
-  hasWhoop,
   initialOura,
-  initialWhoop,
   today,
 }: {
   hasOura: boolean
-  hasWhoop: boolean
   initialOura: OuraData | null
-  initialWhoop: WhoopData | null
   today: string
 }) {
-  const { data: oura, isPending: ouraPending, refetch: refetchOura } = useOuraData(today, hasOura, initialOura)
-  const { data: whoop, isPending: whoopPending, error: whoopError, refetch: refetchWhoop } = useWhoopData(today, hasWhoop, initialWhoop)
+  const { data: oura, isPending: ouraPending } = useOuraData(today, hasOura, initialOura)
   const qc = useQueryClient()
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
-    if (!ouraPending && !whoopPending) {
+    if (!ouraPending) {
       setLastUpdated(new Date())
     }
-  }, [oura, whoop, ouraPending, whoopPending])
-
-  useEffect(() => {
-    const id = setInterval(async () => {
-      if (hasOura) refetchOura()
-      if (hasWhoop) refetchWhoop()
-    }, 15 * 60 * 1000)
-    return () => clearInterval(id)
-  }, [hasOura, hasWhoop, refetchOura, refetchWhoop])
+  }, [oura, ouraPending])
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true)
-    await Promise.allSettled([
-      // Force a fresh Oura pull (bypass the 15-min cache) so the button actually
-      // re-fetches Oura's latest cloud value rather than serving cached data.
-      hasOura
-        ? fetch('/api/health/oura/data?force=1')
-            .then(r => (r.ok ? r.json() : null))
-            .then(d => qc.setQueryData(['health', 'oura', today], d))
-        : Promise.resolve(),
-      hasWhoop ? refetchWhoop() : Promise.resolve(),
-    ])
+    // Force a fresh Oura pull (bypass the 15-min cache) so the button actually
+    // re-fetches Oura's latest cloud value rather than serving cached data.
+    if (hasOura) {
+      await fetch('/api/health/oura/data?force=1')
+        .then(r => (r.ok ? r.json() : null))
+        .then(d => qc.setQueryData(['health', 'oura', today], d))
+        .catch(() => {})
+    }
     setLastUpdated(new Date())
     setRefreshing(false)
-  }, [hasOura, hasWhoop, refetchWhoop, qc, today])
+  }, [hasOura, qc, today])
 
   return (
     <section>
@@ -208,65 +181,15 @@ function WearablesSection({
             </div>
           )}
         </div>
-
-        <div className="bg-[#111113] border border-white/[0.06] rounded-[18px] p-4">
-          <p className="mb-3 text-xs font-medium text-zinc-500">Whoop</p>
-          {!hasWhoop ? (
-            <a
-              href="/api/health/whoop/connect"
-              className="block rounded-lg bg-white px-3 py-2 text-center text-xs font-semibold text-black"
-            >
-              Connect
-            </a>
-          ) : whoopError?.message === 'auth' ? (
-            <a
-              href="/api/health/whoop/connect"
-              className="block rounded-lg bg-white px-3 py-2 text-center text-xs font-semibold text-black"
-            >
-              Reconnect
-            </a>
-          ) : whoopPending ? (
-            <p className="text-xs text-zinc-500">Syncing...</p>
-          ) : !whoop ? (
-            <p className="text-xs text-zinc-500">No data yet</p>
-          ) : (
-            <div className="space-y-4">
-              {whoop.recovery?.score != null && (
-                <div>
-                  <p className="text-[10px] uppercase tracking-wide text-zinc-500">Recovery</p>
-                  <p className={`text-3xl font-bold ${recoveryColor(whoop.recovery.score)}`}>
-                    {whoop.recovery.score}%
-                  </p>
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-3">
-                {whoop.cycle?.strain != null && (
-                  <div>
-                    <p className="text-[10px] uppercase tracking-wide text-zinc-500">Strain</p>
-                    <p className="text-sm font-semibold text-white">{whoop.cycle.strain.toFixed(1)}</p>
-                  </div>
-                )}
-                {whoop.sleep?.duration_seconds != null && (
-                  <div>
-                    <p className="text-[10px] uppercase tracking-wide text-zinc-500">Sleep</p>
-                    <p className="text-sm font-semibold text-white">
-                      {formatDuration(whoop.sleep.duration_seconds)}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Freshness footer */}
-      {(hasOura || hasWhoop) && (
+      {hasOura && (
         <div className="flex items-center justify-between mt-2 px-1">
           <span className="text-[11px] text-zinc-600">
             {lastUpdated
               ? `Updated ${lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-              : ouraPending || whoopPending ? 'Syncing...' : ''}
+              : ouraPending ? 'Syncing...' : ''}
           </span>
           <button
             onClick={handleRefresh}
@@ -1111,23 +1034,20 @@ function subExtraMl(s: SubstanceEntry): number {
   return Math.max(0, dose * (s.mlPerUnit ?? 0))
 }
 
-function computeTarget(p: WaterProfile, whoopKcalToday?: number | null, todayCaffeineMg?: number | null) {
+function computeTarget(p: WaterProfile, todayCaffeineMg?: number | null) {
   const wKg = p.weight_lbs != null
     ? (p.weight_unit === 'kg' ? p.weight_lbs : p.weight_lbs / 2.20462)
     : 0
   const base = wKg * 35
-  // If Whoop data is present, derive exercise water directly from calories burned.
-  // ~1.5 ml per kcal above a 2000 kcal sedentary baseline.
-  const exercise = whoopKcalToday != null
-    ? Math.max(0, (whoopKcalToday - 2000) * 1.5)
-    : (p.activity_hrs_per_week || 0) / 7 * 500
+  // Exercise water from the manual training-hours baseline (~500 ml per daily hour).
+  const exercise = (p.activity_hrs_per_week || 0) / 7 * 500
   const caffeineMg = todayCaffeineMg ?? p.caffeine_mg_per_day ?? 0
   const caffeine = Math.max(0, caffeineMg - 200) * 1.5
   const subs = (p.substances || []).reduce((acc, x) => acc + subExtraMl(x), 0)
   let adjust = 0
   if (p.sex === 'm') adjust += 200
   if ((p.age || 0) >= 50) adjust += 100
-  return { base, exercise, caffeine, subs, adjust, total: base + exercise + caffeine + subs + adjust, whoopDriven: whoopKcalToday != null }
+  return { base, exercise, caffeine, subs, adjust, total: base + exercise + caffeine + subs + adjust }
 }
 
 function unitVolOz(p: WaterProfile): number {
@@ -1238,16 +1158,12 @@ function WaterSection({
   initialWater,
   initialCaffeine,
   initialProfile,
-  today,
-  hasWhoop,
   settingsOpen,
   setSettingsOpen,
 }: {
   initialWater: WaterLog[]
   initialCaffeine: CaffeineLog[]
   initialProfile: HealthProfile | null
-  today: string
-  hasWhoop?: boolean
   settingsOpen: boolean
   setSettingsOpen: (open: boolean) => void
 }) {
@@ -1258,7 +1174,6 @@ function WaterSection({
   const [localProfile, setLocalProfile] = useState<WaterProfile>(() => mergeProfile(initialProfile))
   const [savingSettings, setSavingSettings] = useState(false)
   const [caffeineMode, setCaffeineMode] = useState<'auto' | 'manual'>('auto')
-  const [activityManualOverride, setActivityManualOverride] = useState(false)
 
   // Use rolledDate() (3am rollover) so water resets on the same schedule as supplements
   const [waterDate] = useState(() => rolledDate())
@@ -1266,14 +1181,10 @@ function WaterSection({
   const { data: waterLogs } = useWaterLogs(waterDate, initialWater)
   const { data: profileData } = useHealthProfile(initialProfile)
   const { data: history } = useWaterHistory()
-  const { data: whoopForWater } = useWhoopData(waterDate, hasWhoop ?? false, undefined)
   const { data: caffeineLogs } = useCaffeineLogs(waterDate, initialCaffeine)
   const logWater = useLogWater(waterDate)
   const deleteWater = useDeleteWaterLog(waterDate)
   const updateProfile = useUpdateHealthProfile()
-  const whoopKcal = whoopForWater?.cycle?.kilojoule != null
-    ? Math.round(whoopForWater.cycle.kilojoule * 0.239)
-    : null
   const todayCaffeineMg = caffeineLogs?.reduce((sum, l) => sum + l.amount_mg, 0) ?? 0
 
   useEffect(() => {
@@ -1284,7 +1195,6 @@ function WaterSection({
   const unitVol = unitVolOz(localProfile)
   const calc = computeTarget(
     localProfile,
-    activityManualOverride ? null : whoopKcal,
     caffeineMode === 'auto' ? todayCaffeineMg : null,
   )
   const targetOz = localProfile.daily_water_target_oz ?? calc.total / ML_PER_OZ
@@ -1437,7 +1347,7 @@ function WaterSection({
               return (
                 <>
                   <WhyRow label={`Base (${wDisp} ${localProfile.weight_unit} × 35 ml)`} val={fmtMl(calc.base)} />
-                  {calc.exercise > 0 && <WhyRow label={calc.whoopDriven ? `+ Activity (Whoop: ${whoopKcal?.toLocaleString()} kcal)` : `+ Exercise (${localProfile.activity_hrs_per_week} h/wk)`} val={`+ ${fmtMl(calc.exercise)}`} />}
+                  {calc.exercise > 0 && <WhyRow label={`+ Exercise (${localProfile.activity_hrs_per_week} h/wk)`} val={`+ ${fmtMl(calc.exercise)}`} />}
                   {calc.caffeine > 0 && <WhyRow label={caffeineMode === 'auto' ? `+ Caffeine (${todayCaffeineMg}mg today, auto)` : `+ Caffeine (${localProfile.caffeine_mg_per_day}mg/day, manual)`} val={`+ ${fmtMl(calc.caffeine)}`} />}
                   {localProfile.substances.map(s => (
                     <WhyRow key={s.id} label={`+ ${s.name} (${s.dose ?? s.defaultDose} ${s.unit})`} val={`+ ${fmtMl(subExtraMl(s))}`} />
@@ -1568,29 +1478,12 @@ function WaterSection({
                     className={INPUT_CLS} />
                 </WSettingField>
               </div>
-              {whoopKcal != null && (
-                <WSettingField label="Activity source">
-                  <WSegControl
-                    value={activityManualOverride ? 'manual' : 'auto'}
-                    options={[{ label: `Auto (Whoop: ${whoopKcal} kcal)`, value: 'auto' }, { label: 'Manual', value: 'manual' }]}
-                    onChange={v => setActivityManualOverride(v === 'manual')}
-                  />
-                </WSettingField>
-              )}
-              {whoopKcal != null && !activityManualOverride ? (
-                <WSettingField label="Activity">
-                  <span className={`${INPUT_CLS} flex items-center opacity-50 cursor-not-allowed select-none`}>
-                    Auto from Whoop
-                  </span>
-                </WSettingField>
-              ) : (
-                <WSettingField label="Activity (training hours per week)">
-                  <input type="number" inputMode="decimal" min="0" max="40" step="0.5"
-                    value={localProfile.activity_hrs_per_week}
-                    onChange={e => updateLocal({ activity_hrs_per_week: parseFloat(e.target.value) || 0 })}
-                    className={INPUT_CLS} />
-                </WSettingField>
-              )}
+              <WSettingField label="Activity (training hours per week)">
+                <input type="number" inputMode="decimal" min="0" max="40" step="0.5"
+                  value={localProfile.activity_hrs_per_week}
+                  onChange={e => updateLocal({ activity_hrs_per_week: parseFloat(e.target.value) || 0 })}
+                  className={INPUT_CLS} />
+              </WSettingField>
             </WSettingSection>
 
             <WSettingSection title="Display">
@@ -1727,21 +1620,6 @@ function WaterSection({
               </div>
             </WSettingSection>
 
-            {hasWhoop && (
-              <WSettingSection title="Whoop">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await fetch('/api/health/whoop/disconnect', { method: 'DELETE' })
-                    window.location.href = '/api/health/whoop/connect'
-                  }}
-                  className="text-xs text-white/40 hover:text-white/60 underline"
-                >
-                  Reconnect Whoop (fixes sync issues)
-                </button>
-              </WSettingSection>
-            )}
-
             <WSettingSection title="Apple Health">
               <AppleHealthCard />
             </WSettingSection>
@@ -1773,7 +1651,6 @@ function CaffeineSection({
   initialCaffeine,
   today,
   ouraData,
-  whoopData,
   workouts,
   meals,
   typicalWakeHour,
@@ -1781,7 +1658,6 @@ function CaffeineSection({
   initialCaffeine: CaffeineLog[]
   today: string
   ouraData: OuraData | null
-  whoopData: WhoopData | null
   workouts: WorkoutPoint[]
   meals: MealPoint[]
   typicalWakeHour: number | null
@@ -1794,8 +1670,8 @@ function CaffeineSection({
   const computeNow = useCallback(() => {
     const now = new Date()
     const h = toEnergyDayHour(now.getHours() + now.getMinutes() / 60)
-    return currentEnergyFromLogs(h, caffeineLogs ?? initialCaffeine, ouraData, whoopData, workouts, meals, typicalWakeHour)
-  }, [caffeineLogs, initialCaffeine, ouraData, whoopData, workouts, meals, typicalWakeHour])
+    return currentEnergyFromLogs(h, caffeineLogs ?? initialCaffeine, ouraData, workouts, meals, typicalWakeHour)
+  }, [caffeineLogs, initialCaffeine, ouraData, workouts, meals, typicalWakeHour])
 
   const [energy, setEnergy] = useState(computeNow)
   useEffect(() => {
@@ -2126,7 +2002,7 @@ function CalorieTargetSheet({
           </div>
         </div>
 
-        {/* Activity level — read-only, pulled from profile/Whoop */}
+        {/* Activity level — read-only, pulled from profile settings */}
         <div className="flex items-center justify-between rounded-[10px] border border-white/[0.08] bg-white/[0.02] px-3 py-2.5">
           <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Activity level</span>
           <span className="text-xs text-zinc-400">
@@ -2288,59 +2164,6 @@ function CalorieTargetSheet({
         </div>
       </div>
     </div>
-  )
-}
-
-function NetCaloriesCard({
-  eaten,
-  burned,
-}: {
-  eaten: number
-  burned: number | null
-}) {
-  const net = burned != null ? eaten - burned : null
-
-  function netColor(n: number): string {
-    if (n < -100) return 'text-green-400'
-    if (n > 100) return 'text-red-400'
-    return 'text-white'
-  }
-
-  return (
-    <section>
-      <div className="flex items-center gap-4 mb-3.5">
-        <div className="flex-1 h-px bg-white/[0.10]" />
-        <span className="text-[11px] font-semibold tracking-[0.22em] text-white/85">CALORIES</span>
-        <div className="flex-1 h-px bg-white/[0.10]" />
-      </div>
-
-      <div className="bg-[#111113] border border-white/[0.06] rounded-[18px] px-5 py-5 mb-3.5">
-        <div className="grid grid-cols-3 gap-4 text-center">
-          <div>
-            <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/40 mb-1">Eaten</p>
-            <p className="text-2xl font-bold tabular-nums">{eaten.toLocaleString()}</p>
-            <p className="text-[11px] text-white/30 mt-0.5">kcal</p>
-          </div>
-          <div>
-            <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/40 mb-1">Burned</p>
-            <p className="text-2xl font-bold tabular-nums text-white/70">
-              {burned != null ? burned.toLocaleString() : '--'}
-            </p>
-            <p className="text-[11px] text-white/30 mt-0.5">kcal</p>
-          </div>
-          <div>
-            <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/40 mb-1">Net</p>
-            <p className={`text-2xl font-bold tabular-nums ${net != null ? netColor(net) : 'text-white/30'}`}>
-              {net != null
-                ? (net > 0 ? '+' : '') + net.toLocaleString()
-                : '--'}
-            </p>
-            <p className="text-[11px] text-white/30 mt-0.5">kcal</p>
-          </div>
-        </div>
-
-      </div>
-    </section>
   )
 }
 
@@ -2837,9 +2660,7 @@ export default function HealthClient({
   todayCaffeine,
   profile,
   ouraData,
-  whoopData,
   hasOura,
-  hasWhoop,
   today,
   workouts,
   meals,
@@ -2847,12 +2668,6 @@ export default function HealthClient({
 }: Props) {
   const { data: profileData } = useHealthProfile(profile)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const { data: foodLogs } = useFoodLogs()
-  const todayFoodCalories = (foodLogs ?? []).reduce((sum, m) => sum + (m.calories ?? 0), 0)
-  const { data: whoopTop } = useWhoopData(today, hasWhoop, whoopData)
-  const whoopKcalBurned = whoopTop?.cycle?.kilojoule != null
-    ? Math.round(whoopTop.cycle.kilojoule * 0.239)
-    : null
 
   return (
     <main className="nebula-health min-h-screen space-y-5 px-4 pb-24 pt-14">
@@ -2873,14 +2688,8 @@ export default function HealthClient({
       <HealthCoach />
       <WearablesSection
         hasOura={hasOura}
-        hasWhoop={hasWhoop}
         initialOura={ouraData}
-        initialWhoop={whoopData}
         today={today}
-      />
-      <NetCaloriesCard
-        eaten={todayFoodCalories}
-        burned={whoopKcalBurned}
       />
       <FoodSection profile={profileData} />
       <StackTracker initialSupplements={supplements} initialLogs={todayLogs} today={today} />
@@ -2888,8 +2697,6 @@ export default function HealthClient({
         initialWater={todayWater}
         initialCaffeine={todayCaffeine}
         initialProfile={profile}
-        today={today}
-        hasWhoop={hasWhoop}
         settingsOpen={settingsOpen}
         setSettingsOpen={setSettingsOpen}
       />
@@ -2897,7 +2704,6 @@ export default function HealthClient({
         initialCaffeine={todayCaffeine}
         today={today}
         ouraData={ouraData}
-        whoopData={whoopData}
         workouts={workouts}
         meals={meals}
         typicalWakeHour={typicalWakeHour}
