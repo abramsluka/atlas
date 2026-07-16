@@ -17,7 +17,9 @@ export interface LogFoodInput {
   brand: string | null
   confidence: 'low' | 'medium' | 'high'
   notes: string | null
-  source: 'text' | 'drink' | 'barcode'
+  source: 'text' | 'drink' | 'barcode' | 'meal'
+  // Composed-meal ingredient snapshot (source 'meal' only)
+  ingredients?: unknown
 }
 
 export interface LogFoodResult {
@@ -55,6 +57,7 @@ export async function logFoodServer(
       source: input.source,
       barcode: input.barcode,
       volume_oz: input.volume_oz,
+      ingredients: input.ingredients ?? null,
       taken_at: now.toISOString(),
     })
     .select()
@@ -88,6 +91,12 @@ export async function logFoodServer(
       })
     if (caffeineError) console.error('[food/log] caffeine insert failed:', caffeineError.message)
     else caffeineLogged = true
+  }
+
+  // Composed meals live in saved_meals, not the frequents library — the
+  // food_items source check would reject 'meal' anyway.
+  if (input.source === 'meal') {
+    return { entry: inserted as Record<string, unknown>, waterLogged, caffeineLogged, error: null }
   }
 
   // Upsert frequents library: bump use_count + last_used_at on repeat logs

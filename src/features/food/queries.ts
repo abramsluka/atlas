@@ -1,5 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
-import type { FoodLog, FoodItem, DailyFoodSummary, FoodCoachMessage } from './types'
+import type {
+  FoodLog,
+  FoodItem,
+  DailyFoodSummary,
+  FoodCoachMessage,
+  SavedMeal,
+  UserIngredient,
+} from './types'
 import { rolledDate } from './date'
 
 export function useFoodLogs(date?: string) {
@@ -20,6 +27,30 @@ export function useFoodItems() {
     queryFn: async () => {
       const res = await fetch('/api/health/food/items')
       if (!res.ok) throw new Error('Failed to fetch food items')
+      return res.json()
+    },
+    staleTime: 60_000,
+  })
+}
+
+export function useUserIngredients() {
+  return useQuery<UserIngredient[]>({
+    queryKey: ['user-ingredients'],
+    queryFn: async () => {
+      const res = await fetch('/api/health/food/ingredients')
+      if (!res.ok) throw new Error('Failed to fetch ingredients')
+      return res.json()
+    },
+    staleTime: 60_000,
+  })
+}
+
+export function useSavedMeals() {
+  return useQuery<SavedMeal[]>({
+    queryKey: ['saved-meals'],
+    queryFn: async () => {
+      const res = await fetch('/api/health/food/meals')
+      if (!res.ok) throw new Error('Failed to fetch saved meals')
       return res.json()
     },
     staleTime: 60_000,

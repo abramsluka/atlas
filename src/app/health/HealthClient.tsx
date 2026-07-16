@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, type ReactNode, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { Reorder, useDragControls } from 'framer-motion'
+import { AnimatePresence, Reorder, useDragControls } from 'framer-motion'
 import Link from 'next/link'
 import {
   useSupplements,
@@ -31,6 +31,7 @@ import { useFoodLogs } from '@/features/food/queries'
 import { useLogFood, useUpdateFoodLog, useDeleteFoodLog, useCalculateCalorieTarget } from '@/features/food/mutations'
 import { resizeImage } from '@/features/food/resize'
 import { FoodWizardSheet, BarcodeFlow, FrequentsRow } from './FoodEntry'
+import { MealBuilderSheet } from './MealBuilder'
 import { PhotoMealCard } from './PhotoMealCard'
 import { FoodCoachSection } from './FoodCoachSection'
 import type { FoodLog } from '@/features/food/types'
@@ -2184,6 +2185,8 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
   const [pendingPreviews, setPendingPreviews] = useState<string[]>([])
   const [description, setDescription] = useState('')
   const [wizardKind, setWizardKind] = useState<'food' | 'drink' | null>(null)
+  const [wizardDescription, setWizardDescription] = useState<string | undefined>(undefined)
+  const [builderOpen, setBuilderOpen] = useState(false)
   const [scanOpen, setScanOpen] = useState(false)
   const [waterNote, setWaterNote] = useState<number | null>(null)
   const [caffeineNote, setCaffeineNote] = useState<number | null>(null)
@@ -2384,18 +2387,13 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
               <span className="text-xs font-semibold text-zinc-300">{uploading ? 'Estimating…' : 'Library'}</span>
             </button>
           </div>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-[2fr_1fr] gap-2">
             <button
-              onClick={() => setWizardKind('food')}
-              className="rounded-xl bg-white/[0.04] border border-white/[0.08] py-2 text-xs font-semibold text-zinc-300 hover:bg-white/[0.07] transition-colors"
+              onClick={() => setBuilderOpen(true)}
+              className="rounded-xl py-2 text-xs font-bold text-black active:opacity-80"
+              style={{ background: 'linear-gradient(180deg,#ffffff 0%,#e8e5dd 100%)' }}
             >
-              Add food
-            </button>
-            <button
-              onClick={() => setWizardKind('drink')}
-              className="rounded-xl bg-white/[0.04] border border-white/[0.08] py-2 text-xs font-semibold text-zinc-300 hover:bg-white/[0.07] transition-colors"
-            >
-              Quick drink
+              ＋ Add food
             </button>
             <button
               onClick={() => setScanOpen(true)}
@@ -2452,7 +2450,7 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
                       onClick={() => setEditingMeal(meal)}
                     >
                       <div className="h-10 w-10 shrink-0 rounded-lg bg-white/[0.05] flex items-center justify-center text-sm text-zinc-500">
-                        {meal.source === 'drink' ? '🥤' : meal.source === 'barcode' ? '▮▮' : '⌨'}
+                        {meal.source === 'drink' ? '🥤' : meal.source === 'barcode' ? '▮▮' : meal.source === 'meal' ? '🍲' : '⌨'}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="truncate text-sm font-semibold text-white">{meal.item_name}</p>
@@ -2524,10 +2522,28 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
         />
       )}
 
+      <AnimatePresence>
+        {builderOpen && (
+          <MealBuilderSheet
+            onClose={() => setBuilderOpen(false)}
+            onSaved={handleManualSaved}
+            onDescribeWithAI={desc => {
+              setBuilderOpen(false)
+              setWizardDescription(desc)
+              setWizardKind('food')
+            }}
+          />
+        )}
+      </AnimatePresence>
+
       {wizardKind && (
         <FoodWizardSheet
           kind={wizardKind}
-          onClose={() => setWizardKind(null)}
+          initialDescription={wizardDescription}
+          onClose={() => {
+            setWizardKind(null)
+            setWizardDescription(undefined)
+          }}
           onSaved={handleManualSaved}
         />
       )}

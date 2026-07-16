@@ -309,7 +309,7 @@ export function FoodWizardSheet({
 
 // ─── Barcode scanner + serving picker flow ───────────────────────────────────
 
-function BarcodeScannerOverlay({
+export function BarcodeScannerOverlay({
   onClose,
   onCode,
 }: {
