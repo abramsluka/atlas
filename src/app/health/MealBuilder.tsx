@@ -34,7 +34,10 @@ import { BarcodeScannerOverlay } from './FoodEntry'
 // One spring for structure, one for numbers — everything in the builder speaks
 // the same physics so the whole sheet feels like a single object.
 
-const SPRING = { type: 'spring', stiffness: 420, damping: 34, mass: 0.9 } as const
+// Structure spring: eased down from 420 so rows settle a touch slower and calmer,
+// but still snappy — the tray add/remove feel Luka liked stays intact.
+const SPRING = { type: 'spring', stiffness: 360, damping: 34, mass: 1 } as const
+// Sheet entrance — left as-is; the drawer glide is the one Luka loved.
 const SHEET_SPRING = { type: 'spring', stiffness: 300, damping: 32 } as const
 
 export type MealSavedResult = {
@@ -103,9 +106,9 @@ function TotalsBar({ rows }: { rows: TrayRow[] }) {
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: -12 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -12 }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
       transition={SPRING}
       className="rounded-2xl border border-white/[0.10] bg-white/[0.045] px-4 py-3"
     >
@@ -941,20 +944,87 @@ export function MealBuilderSheet({
           <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/15" />
           <div className="flex items-center justify-between">
             <p className="text-base font-bold text-white">Add food</p>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => {
-                  setCreatePrefill({ name: query.trim() || undefined })
-                  setView('create')
-                }}
-                className="text-[11px] text-zinc-500 active:opacity-60"
-              >
-                ＋ New ingredient
-              </button>
-              <button onClick={onClose} className="text-sm text-zinc-500 active:opacity-60">✕</button>
-            </div>
+            <button onClick={onClose} className="text-sm text-zinc-500 active:opacity-60">✕</button>
           </div>
         </div>
+
+        {/* Fixed search bar — stays put; results drop over the tray instead of
+            shoving it. The whole point of the redesign: the top never jumps. */}
+        {view === 'build' && (
+          <div className="relative z-30 px-5 pt-3">
+            <div className="flex gap-2">
+              <input
+                ref={searchRef}
+                type="text"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && hits[0]) pickHit(hits[0])
+                }}
+                placeholder={rows.length === 0 ? 'Search ingredients, drinks, meals…' : 'Add another ingredient…'}
+                className="min-w-0 flex-1 rounded-xl border border-white/[0.12] bg-black/30 px-3 py-3 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-white/30"
+              />
+              <motion.button
+                whileTap={{ scale: 0.92 }}
+                onClick={() => setView('scan')}
+                disabled={scanBusy}
+                className="flex w-12 shrink-0 items-center justify-center rounded-xl border border-white/[0.12] bg-white/[0.04] text-zinc-300 disabled:opacity-50"
+                aria-label="Scan barcode"
+              >
+                {scanBusy ? (
+                  <motion.span
+                    animate={{ rotate: 360 }}
+                    transition={{ repeat: Infinity, duration: 0.9, ease: 'linear' }}
+                    className="h-4 w-4 rounded-full border-2 border-zinc-500 border-t-white"
+                  />
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round">
+                    <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M11 8v8M15 8v8M18 8v8" />
+                  </svg>
+                )}
+              </motion.button>
+            </div>
+
+            {/* Floating results dropdown — absolute, scrollable, overlays the
+                tray below rather than reflowing the sheet. */}
+            <AnimatePresence>
+              {query.trim() !== '' && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={SPRING}
+                  className="absolute left-5 right-5 top-full z-30 mt-2 overflow-hidden rounded-2xl border border-white/[0.12] bg-[#161619] shadow-2xl shadow-black/60"
+                >
+                  <div className="max-h-[42vh] overflow-y-auto p-2">
+                    {hits.length > 0 ? (
+                      <SearchResults hits={hits} onPick={pickHit} />
+                    ) : (
+                      <p className="py-3 text-center text-xs text-zinc-600">Nothing in the library for “{query}”</p>
+                    )}
+                  </div>
+                  <div className="space-y-1 border-t border-white/[0.07] p-2">
+                    <button
+                      onClick={() => {
+                        setCreatePrefill({ name: query.trim() || undefined })
+                        setView('create')
+                      }}
+                      className="w-full rounded-xl border border-white/[0.10] bg-white/[0.03] px-3 py-2.5 text-left text-xs text-zinc-300 active:bg-white/[0.06]"
+                    >
+                      ⌨ Type exact macros for “{query.trim().slice(0, 24)}”
+                    </button>
+                    <button
+                      onClick={() => onDescribeWithAI(query.trim())}
+                      className="w-full rounded-xl border border-dashed border-white/[0.12] px-3 py-2.5 text-left text-xs text-zinc-400 active:bg-white/[0.04]"
+                    >
+                      ✨ Estimate it with AI instead
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
 
         <div className="flex-1 space-y-3 overflow-y-auto px-5 pb-4 pt-3">
           {error && <p className="text-xs text-red-400">{error}</p>}
@@ -970,9 +1040,6 @@ export function MealBuilderSheet({
             />
           ) : (
             <>
-              {/* Totals — materializes once the meal has ingredients */}
-              <AnimatePresence>{rows.length > 0 && <TotalsBar rows={rows} />}</AnimatePresence>
-
               {/* Portion scaling for a loaded saved meal */}
               {loadedMeal && rows.length > 0 && (
                 <motion.div layout className="flex items-center gap-1.5" transition={SPRING}>
@@ -993,7 +1060,7 @@ export function MealBuilderSheet({
                 </motion.div>
               )}
 
-              {/* Tray */}
+              {/* Tray — the meal builds up here, below the fixed search */}
               {rows.length > 0 && (
                 <motion.div layout className="space-y-1.5" transition={SPRING}>
                   <AnimatePresence initial={false}>
@@ -1009,57 +1076,6 @@ export function MealBuilderSheet({
                     ))}
                   </AnimatePresence>
                 </motion.div>
-              )}
-
-              {/* Search */}
-              <motion.div layout transition={SPRING} className="flex gap-2">
-                <input
-                  ref={searchRef}
-                  type="text"
-                  value={query}
-                  onChange={e => setQuery(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && hits[0]) pickHit(hits[0])
-                  }}
-                  placeholder={rows.length === 0 ? 'Search ingredients, drinks, meals…' : 'Add another ingredient…'}
-                  className="min-w-0 flex-1 rounded-xl border border-white/[0.12] bg-black/30 px-3 py-3 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-white/30"
-                />
-                <motion.button
-                  whileTap={{ scale: 0.92 }}
-                  onClick={() => setView('scan')}
-                  disabled={scanBusy}
-                  className="flex w-12 shrink-0 items-center justify-center rounded-xl border border-white/[0.12] bg-white/[0.04] text-zinc-300 disabled:opacity-50"
-                  aria-label="Scan barcode"
-                >
-                  {scanBusy ? (
-                    <motion.span
-                      animate={{ rotate: 360 }}
-                      transition={{ repeat: Infinity, duration: 0.9, ease: 'linear' }}
-                      className="h-4 w-4 rounded-full border-2 border-zinc-500 border-t-white"
-                    />
-                  ) : (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round">
-                      <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M11 8v8M15 8v8M18 8v8" />
-                    </svg>
-                  )}
-                </motion.button>
-              </motion.div>
-
-              {/* Search results */}
-              {query.trim() !== '' && (
-                <div className="space-y-2">
-                  {hits.length > 0 ? (
-                    <SearchResults hits={hits} onPick={pickHit} />
-                  ) : (
-                    <p className="py-2 text-center text-xs text-zinc-600">Nothing in the library for “{query}”</p>
-                  )}
-                  <button
-                    onClick={() => onDescribeWithAI(query.trim())}
-                    className="w-full rounded-xl border border-dashed border-white/[0.12] px-3 py-2.5 text-xs text-zinc-400 active:bg-white/[0.04]"
-                  >
-                    ✨ Estimate “{query.trim().slice(0, 32)}” with AI instead
-                  </button>
-                </div>
               )}
 
               {/* Empty-state discovery */}
@@ -1109,6 +1125,9 @@ export function MealBuilderSheet({
             transition={SPRING}
             className="space-y-2.5 border-t border-white/[0.07] bg-[#111113] px-5 py-3"
           >
+            {/* Totals live in the footer now — the top of the sheet stays still
+                while you add ingredients. */}
+            <TotalsBar rows={rows} />
             <div className="flex items-center gap-2">
               <input
                 type="text"
