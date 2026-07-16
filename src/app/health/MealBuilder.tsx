@@ -920,7 +920,7 @@ export function MealBuilderSheet({
   const showEmptyState = query.trim() === '' && rows.length === 0 && view === 'build'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -929,29 +929,31 @@ export function MealBuilderSheet({
         style={{ backdropFilter: 'blur(6px)' }}
         onClick={onClose}
       />
+      {/* Centered modal (not a bottom sheet) — the search bar lands mid-screen
+          so the results dropdown has room to open below it instead of falling
+          off the bottom edge. */}
       <motion.div
-        initial={{ y: '100%' }}
-        animate={{ y: 0 }}
-        exit={{ y: '100%' }}
+        initial={{ opacity: 0, y: 20, scale: 0.96 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 20, scale: 0.96 }}
         transition={SHEET_SPRING}
-        className="relative flex max-h-[92dvh] w-full max-w-md flex-col rounded-t-3xl border border-b-0 border-white/[0.14] bg-[#111113]"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        className="relative flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-3xl border border-white/[0.14] bg-[#111113] shadow-2xl shadow-black/60"
       >
         <AnimatePresence>{success != null && <SuccessBurst calories={success} />}</AnimatePresence>
 
-        {/* Grabber + header */}
-        <div className="px-5 pt-3">
-          <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/15" />
+        {/* Header */}
+        <div className="px-5 pt-4">
           <div className="flex items-center justify-between">
             <p className="text-base font-bold text-white">Add food</p>
             <button onClick={onClose} className="text-sm text-zinc-500 active:opacity-60">✕</button>
           </div>
         </div>
 
-        {/* Fixed search bar — stays put; results drop over the tray instead of
-            shoving it. The whole point of the redesign: the top never jumps. */}
+        {/* Fixed search bar — pinned below the header, never scrolls. Results
+            render inline in the body below, so the top of the modal holds still
+            while you add and nothing can fall off-screen. */}
         {view === 'build' && (
-          <div className="relative z-30 px-5 pt-3">
+          <div className="px-5 pt-3">
             <div className="flex gap-2">
               <input
                 ref={searchRef}
@@ -984,45 +986,6 @@ export function MealBuilderSheet({
                 )}
               </motion.button>
             </div>
-
-            {/* Floating results dropdown — absolute, scrollable, overlays the
-                tray below rather than reflowing the sheet. */}
-            <AnimatePresence>
-              {query.trim() !== '' && (
-                <motion.div
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  transition={SPRING}
-                  className="absolute left-5 right-5 top-full z-30 mt-2 overflow-hidden rounded-2xl border border-white/[0.12] bg-[#161619] shadow-2xl shadow-black/60"
-                >
-                  <div className="max-h-[42vh] overflow-y-auto p-2">
-                    {hits.length > 0 ? (
-                      <SearchResults hits={hits} onPick={pickHit} />
-                    ) : (
-                      <p className="py-3 text-center text-xs text-zinc-600">Nothing in the library for “{query}”</p>
-                    )}
-                  </div>
-                  <div className="space-y-1 border-t border-white/[0.07] p-2">
-                    <button
-                      onClick={() => {
-                        setCreatePrefill({ name: query.trim() || undefined })
-                        setView('create')
-                      }}
-                      className="w-full rounded-xl border border-white/[0.10] bg-white/[0.03] px-3 py-2.5 text-left text-xs text-zinc-300 active:bg-white/[0.06]"
-                    >
-                      ⌨ Type exact macros for “{query.trim().slice(0, 24)}”
-                    </button>
-                    <button
-                      onClick={() => onDescribeWithAI(query.trim())}
-                      className="w-full rounded-xl border border-dashed border-white/[0.12] px-3 py-2.5 text-left text-xs text-zinc-400 active:bg-white/[0.04]"
-                    >
-                      ✨ Estimate it with AI instead
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
           </div>
         )}
 
@@ -1038,6 +1001,30 @@ export function MealBuilderSheet({
                 addIngredient(fromUserIngredient(ing, defaultGrams(ing)))
               }}
             />
+          ) : query.trim() !== '' ? (
+            /* Search results — inline in the body, scrolls with it */
+            <div className="space-y-2">
+              {hits.length > 0 ? (
+                <SearchResults hits={hits} onPick={pickHit} />
+              ) : (
+                <p className="py-3 text-center text-xs text-zinc-600">Nothing in the library for “{query}”</p>
+              )}
+              <button
+                onClick={() => {
+                  setCreatePrefill({ name: query.trim() || undefined })
+                  setView('create')
+                }}
+                className="w-full rounded-xl border border-white/[0.10] bg-white/[0.03] px-3 py-2.5 text-left text-xs text-zinc-300 active:bg-white/[0.06]"
+              >
+                ⌨ Type exact macros for “{query.trim().slice(0, 24)}”
+              </button>
+              <button
+                onClick={() => onDescribeWithAI(query.trim())}
+                className="w-full rounded-xl border border-dashed border-white/[0.12] px-3 py-2.5 text-left text-xs text-zinc-400 active:bg-white/[0.04]"
+              >
+                ✨ Estimate it with AI instead
+              </button>
+            </div>
           ) : (
             <>
               {/* Portion scaling for a loaded saved meal */}
