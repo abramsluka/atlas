@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import type { GymConfig, GymExercise, GymLog, GymSession, BodyWeight, BodyMeasurement, ProgressPhoto } from './types'
+import type { GymConfig, GymExercise, GymLog, GymSession, BodyWeight, BodyMeasurement, ProgressPhoto, ExerciseLibraryEntry, ExerciseLibraryDetail } from './types'
 
 export function useGymConfig(initial?: GymConfig | null) {
   return useQuery<GymConfig>({
@@ -24,6 +24,32 @@ export function useGymExercises(initial?: GymExercise[]) {
     },
     initialData: initial,
     staleTime: 60_000,
+  })
+}
+
+export function useExerciseLibrary() {
+  return useQuery<ExerciseLibraryEntry[]>({
+    queryKey: ['exercise-library'],
+    queryFn: async () => {
+      const res = await fetch('/api/gym/library')
+      if (!res.ok) throw new Error('Failed to fetch exercise library')
+      return res.json()
+    },
+    staleTime: Infinity,
+    gcTime: Infinity,
+  })
+}
+
+export function useExerciseDetail(id: string | null) {
+  return useQuery<ExerciseLibraryDetail>({
+    queryKey: ['exercise-library', id],
+    queryFn: async () => {
+      const res = await fetch(`/api/gym/library/${id}`)
+      if (!res.ok) throw new Error('Failed to fetch exercise detail')
+      return res.json()
+    },
+    enabled: !!id,
+    staleTime: Infinity,
   })
 }
 
