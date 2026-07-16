@@ -18,6 +18,7 @@ export async function POST(request: NextRequest) {
   const portion_desc = String(body.portion_desc ?? '').trim().slice(0, 120) || item_name
   const is_hydrating = Boolean(body.is_hydrating)
   const volume_oz = is_hydrating && body.volume_oz != null ? Number(body.volume_oz) : null
+  const caffeine_mg = body.caffeine_mg != null ? Math.max(0, Math.round(Number(body.caffeine_mg)) || 0) : 0
   const barcode = body.barcode ? String(body.barcode).slice(0, 32) : null
   const brand = body.brand ? String(body.brand).slice(0, 80) : null
   const confidence = ['low', 'medium', 'high'].includes(body.confidence) ? body.confidence : 'medium'
@@ -36,6 +37,7 @@ export async function POST(request: NextRequest) {
     portion_desc,
     is_hydrating,
     volume_oz,
+    caffeine_mg,
     barcode,
     brand,
     confidence,
@@ -47,5 +49,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: result.error ?? 'insert failed' }, { status: 500 })
   }
 
-  return NextResponse.json({ ...result.entry, photo_url: null, water_logged: result.waterLogged }, { status: 201 })
+  return NextResponse.json({ ...result.entry, photo_url: null, water_logged: result.waterLogged, caffeine_logged: result.caffeineLogged }, { status: 201 })
 }

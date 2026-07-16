@@ -39,15 +39,17 @@ export function useEstimateFood() {
   })
 }
 
-export type ManualLogInput = Omit<EstimateFinal, 'status'> & {
+export type ManualLogInput = Omit<EstimateFinal, 'status' | 'caffeine_mg'> & {
   source: 'text' | 'drink' | 'barcode'
   barcode?: string | null
   brand?: string | null
+  // Only the drink wizard supplies this; caffeinated drinks also log a dose.
+  caffeine_mg?: number
 }
 
 export function useLogManualFood() {
   const qc = useQueryClient()
-  return useMutation<FoodLog & { water_logged: boolean }, Error, ManualLogInput>({
+  return useMutation<FoodLog & { water_logged: boolean; caffeine_logged: boolean }, Error, ManualLogInput>({
     mutationFn: async (body) => {
       const res = await fetch('/api/health/food/log', {
         method: 'POST',
@@ -65,6 +67,9 @@ export function useLogManualFood() {
       qc.invalidateQueries({ queryKey: ['food-items'] })
       if (data.water_logged) {
         qc.invalidateQueries({ queryKey: ['health', 'water'] })
+      }
+      if (data.caffeine_logged) {
+        qc.invalidateQueries({ queryKey: ['health', 'caffeine'] })
       }
     },
   })

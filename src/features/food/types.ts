@@ -109,6 +109,7 @@ export interface EstimateFinal {
   portion_desc: string
   volume_oz: number | null
   is_hydrating: boolean
+  caffeine_mg: number
 }
 
 export interface EstimateQuestion {

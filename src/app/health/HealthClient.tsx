@@ -2186,6 +2186,7 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
   const [wizardKind, setWizardKind] = useState<'food' | 'drink' | null>(null)
   const [scanOpen, setScanOpen] = useState(false)
   const [waterNote, setWaterNote] = useState<number | null>(null)
+  const [caffeineNote, setCaffeineNote] = useState<number | null>(null)
   const labelHintRef = useRef(false)
   const updateProfile = useUpdateHealthProfile()
   // Overlays must portal to document.body — the health page has ancestors with
@@ -2243,10 +2244,14 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
     }
   }, [])
 
-  const handleManualSaved = useCallback((res: { water_logged: boolean; volume_oz: number | null; id?: string }) => {
+  const handleManualSaved = useCallback((res: { water_logged: boolean; volume_oz: number | null; caffeine_logged?: boolean; caffeine_mg?: number; id?: string }) => {
     if (res.water_logged && res.volume_oz) {
       setWaterNote(res.volume_oz)
       setTimeout(() => setWaterNote(null), 4000)
+    }
+    if (res.caffeine_logged && res.caffeine_mg) {
+      setCaffeineNote(res.caffeine_mg)
+      setTimeout(() => setCaffeineNote(null), 4000)
     }
     if (res.id) {
       streamNonPhotoFeedback(res.id)
@@ -2403,6 +2408,10 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
 
         {waterNote != null && (
           <p className="text-xs text-sky-300">+{waterNote} oz added to water tracker</p>
+        )}
+
+        {caffeineNote != null && (
+          <p className="text-xs text-amber-300">+{caffeineNote} mg added to caffeine tracker</p>
         )}
 
         {/* Frequents */}

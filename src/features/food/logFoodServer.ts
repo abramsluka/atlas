@@ -10,6 +10,9 @@ export interface LogFoodInput {
   portion_desc: string
   is_hydrating: boolean
   volume_oz: number | null
+  // Estimated caffeine dose in mg (0/absent for non-caffeinated). > 0 → also
+  // logs a caffeine_logs dose so the caffeine/energy page stays in sync.
+  caffeine_mg?: number | null
   barcode: string | null
   brand: string | null
   confidence: 'low' | 'medium' | 'high'
@@ -20,14 +23,15 @@ export interface LogFoodInput {
 export interface LogFoodResult {
   entry: Record<string, unknown> | null
   waterLogged: boolean
+  caffeineLogged: boolean
   error: string | null
 }
 
 // Core manual food insert, shared by the /api/health/food/log route and the MCP
 // log_food tool: 3 AM day boundary in the user's timezone (never the server
-// clock — Vercel runs UTC), hydrating-drink → water_logs side effect
-// (non-fatal), food_items frequents upsert (non-fatal). Callers validate and
-// coerce inputs; this only writes.
+// clock — Vercel runs UTC), hydrating-drink → water_logs side effect and
+// caffeinated-drink → caffeine_logs side effect (both non-fatal), food_items
+// frequents upsert (non-fatal). Callers validate and coerce inputs; this only writes.
 export async function logFoodServer(
   db: SupabaseClient,
   userId: string,
@@ -56,7 +60,7 @@ export async function logFoodServer(
     .select()
     .single()
 
-  if (insertError) return { entry: null, waterLogged: false, error: insertError.message }
+  if (insertError) return { entry: null, waterLogged: false, caffeineLogged: false, error: insertError.message }
 
   // Hydrating drink → also log water (non-fatal if it fails)
   let waterLogged = false
@@ -66,6 +70,24 @@ export async function logFoodServer(
       .insert({ user_id: userId, date, amount_oz: input.volume_oz })
     if (waterError) console.error('[food/log] water insert failed:', waterError.message)
     else waterLogged = true
+  }
+
+  // Caffeinated drink → also log a caffeine dose so the caffeine/energy page
+  // reflects it (non-fatal if it fails). logged_at mirrors the food's taken_at
+  // so it lands at the right hour on the energy curve.
+  let caffeineLogged = false
+  if (input.caffeine_mg != null && input.caffeine_mg > 0) {
+    const { error: caffeineError } = await db
+      .from('caffeine_logs')
+      .insert({
+        user_id: userId,
+        date,
+        source: input.item_name,
+        amount_mg: Math.round(input.caffeine_mg),
+        logged_at: now.toISOString(),
+      })
+    if (caffeineError) console.error('[food/log] caffeine insert failed:', caffeineError.message)
+    else caffeineLogged = true
   }
 
   // Upsert frequents library: bump use_count + last_used_at on repeat logs
@@ -107,5 +129,5 @@ export async function logFoodServer(
     if (itemError) console.error('[food/log] food_items insert failed:', itemError.message)
   }
 
-  return { entry: inserted as Record<string, unknown>, waterLogged, error: null }
+  return { entry: inserted as Record<string, unknown>, waterLogged, caffeineLogged, error: null }
 }
