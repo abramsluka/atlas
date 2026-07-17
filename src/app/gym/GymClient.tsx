@@ -21,7 +21,7 @@ import ProgramGenerator, { type GeneratorPrefill } from './ProgramGenerator'
 import { GENERATOR_PREFILL_KEY, GENERATOR_PREFILL_EVENT } from '@/features/assistant/useAssistantActions'
 import ProgramHistory from './ProgramHistory'
 import SetTimerRing, { fmtClock, type TimerPhase } from './SetTimerRing'
-import { SET_TIMER_KEY } from '@/features/gym/sessionSignal'
+import { SET_TIMER_KEY, isTimerLive } from '@/features/gym/sessionSignal'
 import ExerciseAutocomplete from './ExerciseAutocomplete'
 import ExerciseInfoSheet from './ExerciseInfoSheet'
 import { SPRING_POP } from './motion'
@@ -593,10 +593,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const [timer, setTimer] = useState<SetTimerState>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(SET_TIMER_KEY) || 'null')
-      // only restore a recent session (< 6h) so a stale next-day timer resets
-      if (saved?.phase && saved.phase !== 'idle' && saved.phaseStart && Date.now() - saved.phaseStart < 6 * 3600_000) {
-        return saved as SetTimerState
-      }
+      // an hour without a set means the workout is over — come back to a clean slate
+      if (isTimerLive(saved)) return saved as SetTimerState
     } catch {}
     return { phase: 'idle', phaseStart: null, sessionStart: null }
   })
@@ -614,6 +612,13 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     const id = setInterval(() => setNowTs(Date.now()), 250)
     return () => clearInterval(id)
   }, [timer.phase])
+
+  // Auto-finish the session once it goes an hour without a set, so a workout
+  // left running ends itself whether the app sat open or was reopened. Rides
+  // the tick above; a backgrounded tab catches up on its first tick back.
+  useEffect(() => {
+    if (timer.phase !== 'idle' && !isTimerLive(timer, nowTs)) endSession()
+  }, [timer, nowTs])
 
   const phaseMs = timer.phaseStart ? nowTs - timer.phaseStart : 0
   const sessionMs = timer.sessionStart ? nowTs - timer.sessionStart : 0

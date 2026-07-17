@@ -4,18 +4,28 @@
 
 export const SET_TIMER_KEY = 'atlas.gym.timer'
 
+// A session auto-finishes after this long with no set logged. Sets hit gym_logs
+// on the spot and gym_sessions.ended_at is derived from the last one, so
+// expiring the timer only retires a stale clock — it never drops data.
+export const SESSION_IDLE_MS = 60 * 60_000
+
 export interface GymTimerState {
   phase: 'idle' | 'active' | 'rest'
   phaseStart: number | null
   sessionStart: number | null
 }
 
-// Mirrors GymClient's restore rule: a timer only counts as an active session
-// when it's mid-phase and fresh (< 6h) — a stale next-day timer reads as idle.
+// phaseStart is re-stamped on every Start/End Set press, so it doubles as the
+// last-activity mark. Shared with GymClient's restore + live tick so the page
+// and the Orb can't disagree about whether a session is still running.
+export function isTimerLive(t: GymTimerState | null, now = Date.now()): t is GymTimerState {
+  return !!(t?.phase && t.phase !== 'idle' && t.phaseStart && now - t.phaseStart < SESSION_IDLE_MS)
+}
+
 export function readGymSession(): { active: boolean; minutes: number } {
   try {
     const saved = JSON.parse(localStorage.getItem(SET_TIMER_KEY) || 'null') as GymTimerState | null
-    if (saved?.phase && saved.phase !== 'idle' && saved.phaseStart && Date.now() - saved.phaseStart < 6 * 3600_000) {
+    if (isTimerLive(saved)) {
       const minutes = saved.sessionStart ? Math.max(0, Math.round((Date.now() - saved.sessionStart) / 60_000)) : 0
       return { active: true, minutes }
     }
