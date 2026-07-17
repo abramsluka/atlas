@@ -6,7 +6,7 @@ import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion
 
 const EASE_OUT = [0.16, 1, 0.3, 1] as const
 import { useQueryClient } from '@tanstack/react-query'
-import { useGymConfig, useGymExercises, useAllGymLogs, useGymSessions, useBodyWeights, useBodyMeasurements, useProgressPhotos } from '@/features/gym/queries'
+import { useGymConfig, useGymExercises, useAllGymLogs, useGymSessions, useBodyWeights, useBodyMeasurements, useProgressPhotos, useExerciseLibrary } from '@/features/gym/queries'
 import { useHealthProfile } from '@/features/health/queries'
 import {
   useSaveGymConfig,
@@ -21,7 +21,10 @@ import ProgramGenerator, { type GeneratorPrefill } from './ProgramGenerator'
 import { GENERATOR_PREFILL_KEY, GENERATOR_PREFILL_EVENT } from '@/features/assistant/useAssistantActions'
 import ProgramHistory from './ProgramHistory'
 import SetTimerRing, { fmtClock, type TimerPhase } from './SetTimerRing'
-import { SET_TIMER_KEY } from '@/features/gym/sessionSignal'
+import { SET_TIMER_KEY, isTimerLive } from '@/features/gym/sessionSignal'
+import ExerciseAutocomplete from './ExerciseAutocomplete'
+import ExerciseInfoSheet from './ExerciseInfoSheet'
+import { SPRING_POP } from './motion'
 
 type SetTimerState = { phase: TimerPhase; phaseStart: number | null; sessionStart: number | null }
 const GYM_LAST_KEY = 'atlas.gym.last' // last exercise + weight + reps, restored on app open
@@ -113,12 +116,11 @@ function compute1RM(weight: number, reps: number): number {
   return weight * (1 + reps / 30)
 }
 
-function getRx(logs: GymLog[], ex: GymExercise, upgradeAtReps: number, units: string): Prescription | null {
+function getRx(logs: GymLog[], ex: GymExercise, units: string): Prescription | null {
   if (!logs.length) return null
   const last = logs[logs.length - 1]
   const { reps, weight } = last
   const { rep_min: repMin, rep_max: repMax, step, bodyweight: bw } = ex
-  const upgradeAt = Math.min(upgradeAtReps, repMax)
 
   // Stuck: consecutive sets at same weight with reps below repMin
   let stuck = 0
@@ -128,7 +130,7 @@ function getRx(logs: GymLog[], ex: GymExercise, upgradeAtReps: number, units: st
   }
 
   if (bw) {
-    if (reps >= upgradeAt) return { action: 'INCREASE', reason: `${reps} reps — strong. Push for ${reps + 1} next time.` }
+    if (reps >= repMax) return { action: 'INCREASE', reason: `${reps} reps — strong. Push for ${reps + 1} next time.` }
     if (reps >= repMin) return { action: 'HOLD', reason: `${reps} reps. Push for ${reps + 1} next session.` }
     return { action: 'REPEAT', reason: `${reps} reps fell short. Repeat until you hit ${repMin}+.` }
   }
@@ -140,7 +142,7 @@ function getRx(logs: GymLog[], ex: GymExercise, upgradeAtReps: number, units: st
       nextWeight: Math.round((weight * 0.9) / step) * step,
     }
   }
-  if (reps >= upgradeAt) return {
+  if (reps >= repMax) return {
     action: 'INCREASE',
     reason: `You hit ${reps} reps — time to add ${step}${units}. Expect ${repMin}–${repMin + 1} next session.`,
   }
@@ -158,7 +160,7 @@ function getRx(logs: GymLog[], ex: GymExercise, upgradeAtReps: number, units: st
   }
   return {
     action: 'REPEAT',
-    reason: `${reps} reps short of ${repMin}–${upgradeAt}. Repeat ${weight}${units} until you hit ${repMin}+ clean.`,
+    reason: `${reps} reps short of ${repMin}–${repMax}. Repeat ${weight}${units} until you hit ${repMin}+ clean.`,
   }
 }
 
@@ -299,11 +301,12 @@ interface ExModalState {
   repMin: number
   repMax: number
   step: number
+  libraryId: string | null
 }
 
 const EMPTY_EX_MODAL: ExModalState = {
   open: false, mode: 'add', name: '', gymId: 'g_default', dayIds: [],
-  bodyweight: false, repMin: 8, repMax: 12, step: 2.5,
+  bodyweight: false, repMin: 8, repMax: 12, step: 2.5, libraryId: null,
 }
 
 // ─── main ────────────────────────────────────────────────────────────────────
@@ -535,6 +538,9 @@ export default function GymClient({ today, initialConfig, initialExercises, init
 
   // Modals
   const [exModal, setExModal] = useState<ExModalState>(EMPTY_EX_MODAL)
+  const [infoId, setInfoId] = useState<string | null>(null)
+  const [pickFlash, setPickFlash] = useState(0)  // bumps on library pick to pulse the prefilled fields
+  const { data: libraryIndex = [] } = useExerciseLibrary()
   const [mounted, setMounted] = useState(false)
   useEffect(() => { setMounted(true) }, [])
 
@@ -576,8 +582,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   }
   const [todayExpanded, setTodayExpanded] = useState(true)
   const [pastExpanded, setPastExpanded] = useState(false)
-  const [whoopWorkoutStrain, setWhoopWorkoutStrain] = useState<number | null>(null)
-  const whoopStrainFetched = useRef(false)
 
   // Coach (devil / angel)
   const [coachText, setCoachText] = useState('')
@@ -589,10 +593,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const [timer, setTimer] = useState<SetTimerState>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(SET_TIMER_KEY) || 'null')
-      // only restore a recent session (< 6h) so a stale next-day timer resets
-      if (saved?.phase && saved.phase !== 'idle' && saved.phaseStart && Date.now() - saved.phaseStart < 6 * 3600_000) {
-        return saved as SetTimerState
-      }
+      // an hour without a set means the workout is over — come back to a clean slate
+      if (isTimerLive(saved)) return saved as SetTimerState
     } catch {}
     return { phase: 'idle', phaseStart: null, sessionStart: null }
   })
@@ -610,6 +612,13 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     const id = setInterval(() => setNowTs(Date.now()), 250)
     return () => clearInterval(id)
   }, [timer.phase])
+
+  // Auto-finish the session once it goes an hour without a set, so a workout
+  // left running ends itself whether the app sat open or was reopened. Rides
+  // the tick above; a backgrounded tab catches up on its first tick back.
+  useEffect(() => {
+    if (timer.phase !== 'idle' && !isTimerLive(timer, nowTs)) endSession()
+  }, [timer, nowTs])
 
   const phaseMs = timer.phaseStart ? nowTs - timer.phaseStart : 0
   const sessionMs = timer.sessionStart ? nowTs - timer.sessionStart : 0
@@ -666,9 +675,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   // Settings local state
   const [settingsGyms, setSettingsGyms] = useState(config.gyms)
   const [settingsUnits, setSettingsUnits] = useState(config.units)
-  const [settingsUpgradeAt, setSettingsUpgradeAt] = useState(config.upgrade_at_reps)
-  const [coachRepRec, setCoachRepRec] = useState<{ reps: number; reason: string } | null>(null)
-  const [coachRepLoading, setCoachRepLoading] = useState(false)
   const [coachStepRec, setCoachStepRec] = useState<{ step: number; reason: string } | null>(null)
   const [coachStepLoading, setCoachStepLoading] = useState(false)
   const importRef = useRef<HTMLInputElement>(null)
@@ -768,14 +774,28 @@ export default function GymClient({ today, initialConfig, initialExercises, init
 
   const rx = useMemo(() => {
     if (!currentEx) return null
-    return getRx(exLogs, currentEx, config.upgrade_at_reps, config.units)
-  }, [exLogs, currentEx, config.upgrade_at_reps, config.units])
+    return getRx(exLogs, currentEx, config.units)
+  }, [exLogs, currentEx, config.units])
 
   const bestSet = useMemo(() => {
     if (!exLogs.length) return null
     if (currentEx?.bodyweight) return exLogs.reduce((b, l) => l.reps > b.reps ? l : b)
     return exLogs.reduce((b, l) => compute1RM(l.weight, l.reps) > compute1RM(b.weight, b.reps) ? l : b)
   }, [exLogs, currentEx])
+
+  // Suggested first-set weight from the library's bodyweight-ratio heuristic,
+  // shown until the first set is logged. bodyWeights is ascending by date_key.
+  const startHint = useMemo(() => {
+    if (!currentEx?.library_id || currentEx.bodyweight || exLogs.length > 0) return null
+    const lib = libraryIndex.find(l => l.id === currentEx.library_id)
+    if (!lib?.start_weight_ratio) return null
+    const bw = bodyWeights[bodyWeights.length - 1]?.weight ?? healthProfile?.weight_lbs
+    if (!bw) return null
+    const factor = healthProfile?.sex === 'f' ? (lib.female_factor ?? 1) : 1
+    const step = currentEx.step || 2.5
+    const raw = bw * lib.start_weight_ratio * factor
+    return Math.max(step, Math.round(raw / step) * step)
+  }, [currentEx, exLogs.length, libraryIndex, bodyWeights, healthProfile])
 
   // Last set info (for banner)
   const lastLog = exLogs[exLogs.length - 1] ?? null
@@ -831,17 +851,18 @@ export default function GymClient({ today, initialConfig, initialExercises, init
       repMin: currentEx.rep_min,
       repMax: currentEx.rep_max,
       step: currentEx.step,
+      libraryId: currentEx.library_id ?? null,
     })
   }
 
   function saveEx() {
-    const { mode, id, name, gymId, dayIds, bodyweight, repMin, repMax, step } = exModal
+    const { mode, id, name, gymId, dayIds, bodyweight, repMin, repMax, step, libraryId } = exModal
     if (!name.trim() || !gymId || !dayIds.length) return
     if (mode === 'edit' && id) {
-      updateEx.mutate({ id, name: name.trim(), gym_id: gymId, day_ids: dayIds, bodyweight, start_weight: 0, rep_min: repMin, rep_max: repMax, step })
+      updateEx.mutate({ id, name: name.trim(), gym_id: gymId, day_ids: dayIds, bodyweight, start_weight: 0, rep_min: repMin, rep_max: repMax, step, library_id: libraryId })
     } else {
       createEx.mutate(
-        { name: name.trim(), gym_id: gymId, day_ids: dayIds, bodyweight, start_weight: 0, rep_min: repMin, rep_max: repMax, step, order_index: exercises.length },
+        { name: name.trim(), gym_id: gymId, day_ids: dayIds, bodyweight, start_weight: 0, rep_min: repMin, rep_max: repMax, step, library_id: libraryId, order_index: exercises.length },
         { onSuccess: (ex) => { setCurrentExId(ex.id); setWeightInput('0') } }
       )
     }
@@ -890,7 +911,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
       ...config,
       gyms: settingsGyms,
       units: settingsUnits,
-      upgrade_at_reps: settingsUpgradeAt,
     })
     setShowSettings(false)
   }
@@ -898,8 +918,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   function openSettings() {
     setSettingsGyms(config.gyms.map(g => ({ ...g })))
     setSettingsUnits(config.units)
-    setSettingsUpgradeAt(config.upgrade_at_reps)
-    setCoachRepRec(null)
     setShowSettings(true)
   }
 
@@ -919,22 +937,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
       setCoachStepRec({ step: 2.5, reason: 'Could not reach coach — using default.' })
     } finally {
       setCoachStepLoading(false)
-    }
-  }
-
-  async function fetchCoachReps() {
-    setCoachRepRec(null)
-    setCoachRepLoading(true)
-    try {
-      const res = await fetch('/api/gym/coach-reps', { method: 'POST' })
-      const json = await res.json()
-      setCoachRepRec(json)
-      setSettingsUpgradeAt(json.reps)
-    } catch {
-      setCoachRepRec({ reps: 12, reason: 'Could not reach coach — using default.' })
-      setSettingsUpgradeAt(12)
-    } finally {
-      setCoachRepLoading(false)
     }
   }
 
@@ -1084,37 +1086,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const todayAllLogs = allLogs.filter(l => logDatePST(l.logged_at) === today)
   const todayExIds = [...new Set(todayAllLogs.map(l => l.exercise_id))]
   const todayVolume = todayAllLogs.reduce((s, l) => s + l.weight * l.reps, 0)
-
-  // Fetch matching Whoop workout strain. Tries on load (logs present) and again when
-  // the user finishes — Whoop may not have synced until then. Expands window ±30 min
-  // to catch Whoop sessions that started before the first logged set.
-  function fetchWhoopStrain() {
-    if (todayAllLogs.length === 0) return
-    const sorted = todayAllLogs.slice().sort((a, b) => a.logged_at.localeCompare(b.logged_at))
-    const startMs = new Date(sorted[0].logged_at).getTime() - 30 * 60 * 1000
-    const endMs = new Date(sorted[sorted.length - 1].logged_at).getTime() + 30 * 60 * 1000
-    const start = encodeURIComponent(new Date(startMs).toISOString())
-    const end = encodeURIComponent(new Date(endMs).toISOString())
-    fetch(`/api/health/whoop/workout?start=${start}&end=${end}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data?.strain != null) setWhoopWorkoutStrain(data.strain) })
-      .catch(() => {})
-  }
-
-  useEffect(() => {
-    if (whoopStrainFetched.current) return
-    if (todayAllLogs.length === 0) return
-    whoopStrainFetched.current = true
-    fetchWhoopStrain()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [todayAllLogs])
-
-  useEffect(() => {
-    if (!todayDone) return
-    // Retry when finishing — Whoop likely synced by now
-    fetchWhoopStrain()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [todayDone])
 
   // Past workouts (for history)
   const pastDates = [...new Set(
@@ -1565,10 +1536,24 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                       initial={{ opacity: 0, x: -8 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ duration: 0.3, ease: EASE_OUT }}
-                      className="text-2xl font-bold text-white leading-tight"
+                      className="flex-1 text-2xl font-bold text-white leading-tight"
                     >
                       {currentEx.name}
                     </motion.h2>
+                    {currentEx.library_id && (
+                      <motion.button
+                        key={`info-${currentEx.id}`}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.5, delay: 0.15 }}
+                        onClick={() => setInfoId(currentEx.library_id!)}
+                        className="shrink-0 w-7 h-7 mt-1 rounded-full flex items-center justify-center text-xs text-white/40 active:text-white"
+                        style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
+                        aria-label="Exercise info"
+                      >
+                        i
+                      </motion.button>
+                    )}
                     {rx && (
                       <motion.span
                         key={rx.action}
@@ -1639,6 +1624,26 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                         style={{ background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.2)', color: '#4ade80' }}
                       >+</motion.button>
                     </div>
+                    <AnimatePresence>
+                      {startHint !== null && (
+                        <motion.button
+                          initial={{ opacity: 0, y: 4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                          transition={{ duration: 0.3, ease: EASE_OUT }}
+                          onClick={() => setWeightInput(String(startHint))}
+                          className="mt-2.5 w-full text-center text-[11px] font-mono active:opacity-60"
+                        >
+                          <motion.span
+                            animate={{ opacity: [0.65, 1, 0.65] }}
+                            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+                            style={{ color: '#4ade80' }}
+                          >
+                            Suggested start: ~{startHint} {config.units} — tap to use
+                          </motion.span>
+                        </motion.button>
+                      )}
+                    </AnimatePresence>
                   </div>
                 )}
 
@@ -1846,14 +1851,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     <span className="text-sm text-white/40">sets</span>
                     <span className="text-white/20">·</span>
                     <span className="text-sm text-white/60">{Math.round(todayVolume).toLocaleString()} {config.units}</span>
-                    {whoopWorkoutStrain != null && (
-                      <>
-                        <span className="text-white/20">·</span>
-                        <span className="text-sm font-semibold" style={{ color: whoopWorkoutStrain >= 16 ? '#f87171' : whoopWorkoutStrain >= 10 ? '#fb923c' : '#4ade80' }}>
-                          {whoopWorkoutStrain.toFixed(1)} strain
-                        </span>
-                      </>
-                    )}
                   </div>
                 </div>
                 <span className="text-white/30 text-xs ml-4 shrink-0">{todayExpanded ? '▲' : '▼'}</span>
@@ -2310,12 +2307,21 @@ export default function GymClient({ today, initialConfig, initialExercises, init
             <div className="space-y-4">
               <div>
                 <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Name</label>
-                <input
-                  autoFocus
+                <ExerciseAutocomplete
                   value={exModal.name}
-                  onChange={e => setExModal(m => ({ ...m, name: e.target.value }))}
-                  placeholder="e.g. Bench Press"
-                  className="w-full rounded-xl bg-white/8 border border-white/10 px-4 py-3 text-sm text-white placeholder:text-white/20 focus:outline-none"
+                  entries={libraryIndex}
+                  linked={!!exModal.libraryId}
+                  onChange={name => setExModal(m => ({ ...m, name, libraryId: null }))}
+                  onPick={entry => {
+                    // Prefill from library. Name edits unlink (different exercise);
+                    // later edits to reps/step/bodyweight are personal overrides and keep the link.
+                    setExModal(m => ({
+                      ...m, name: entry.name, libraryId: entry.id,
+                      bodyweight: entry.bodyweight, repMin: entry.rep_min, repMax: entry.rep_max, step: entry.step,
+                    }))
+                    setPickFlash(f => f + 1)
+                  }}
+                  onInfo={setInfoId}
                 />
               </div>
 
@@ -2371,19 +2377,30 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Step ({config.units})</label>
-                    <input type="number" inputMode="decimal" step="1.25" placeholder="0" value={exModal.step === 0 ? '' : exModal.step}
-                      onFocus={e => e.target.select()} onChange={e => { const v = parseFloat(e.target.value); setExModal(m => ({ ...m, step: isNaN(v) ? 0 : v })) }}
-                      className="w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white focus:outline-none" />
-                    <button
-                      onClick={() => fetchCoachStep(exModal.name, exModal.bodyweight)}
-                      disabled={coachStepLoading}
-                      className="mt-2 w-full rounded-xl py-2.5 text-sm font-semibold text-black disabled:opacity-50 active:scale-[0.98] transition-transform"
-                      style={{ background: 'linear-gradient(180deg,#ffffff 0%,#e8e5dd 100%)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.55),0 2px 8px rgba(0,0,0,0.35)' }}
+                    <motion.div
+                      key={`step-flash-${pickFlash}`}
+                      className="rounded-xl"
+                      animate={pickFlash > 0 ? { boxShadow: ['0 0 0px rgba(74,222,128,0)', '0 0 18px rgba(74,222,128,0.35)', '0 0 0px rgba(74,222,128,0)'] } : undefined}
+                      transition={{ duration: 0.9, ease: 'easeInOut' }}
                     >
-                      {coachStepLoading ? 'Asking coach…' : 'Let coach decide'}
-                    </button>
-                    {coachStepRec && (
-                      <p className="text-[10px] text-white/30 mt-1 leading-relaxed">{coachStepRec.reason}</p>
+                      <input type="number" inputMode="decimal" step="1.25" placeholder="0" value={exModal.step === 0 ? '' : exModal.step}
+                        onFocus={e => e.target.select()} onChange={e => { const v = parseFloat(e.target.value); setExModal(m => ({ ...m, step: isNaN(v) ? 0 : v })) }}
+                        className="w-full rounded-xl bg-white/8 border border-white/10 px-3 py-3 text-sm text-white focus:outline-none" />
+                    </motion.div>
+                    {!exModal.libraryId && (
+                      <>
+                        <button
+                          onClick={() => fetchCoachStep(exModal.name, exModal.bodyweight)}
+                          disabled={coachStepLoading}
+                          className="mt-2 w-full rounded-xl py-2.5 text-sm font-semibold text-black disabled:opacity-50 active:scale-[0.98] transition-transform"
+                          style={{ background: 'linear-gradient(180deg,#ffffff 0%,#e8e5dd 100%)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.55),0 2px 8px rgba(0,0,0,0.35)' }}
+                        >
+                          {coachStepLoading ? 'Asking coach…' : 'Let coach decide'}
+                        </button>
+                        {coachStepRec && (
+                          <p className="text-[10px] text-white/30 mt-1 leading-relaxed">{coachStepRec.reason}</p>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
@@ -2391,7 +2408,13 @@ export default function GymClient({ today, initialConfig, initialExercises, init
 
               <div>
                 <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Training goal</label>
-                <div className="flex gap-2 mb-3">
+                <motion.div
+                  key={`goal-flash-${pickFlash}`}
+                  initial={pickFlash > 0 ? { scale: 0.96 } : false}
+                  animate={{ scale: 1 }}
+                  transition={SPRING_POP}
+                  className="flex gap-2 mb-3"
+                >
                   {([
                     { label: 'Strength', min: 3, max: 5 },
                     { label: 'Hypertrophy', min: 8, max: 12 },
@@ -2410,7 +2433,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                       <span className="block text-[10px] opacity-60 mt-0.5">{g.min}–{g.max}</span>
                     </button>
                   ))}
-                </div>
+                </motion.div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs text-white/40 uppercase tracking-wider block mb-1.5">Rep min</label>
@@ -2586,30 +2609,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 </div>
               </div>
 
-              {/* Upgrade at reps */}
-              <div>
-                <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Upgrade at reps</label>
-                <input
-                  type="number" inputMode="numeric" placeholder="12" value={settingsUpgradeAt === 0 ? '' : settingsUpgradeAt}
-                  onFocus={e => e.target.select()} onChange={e => { const raw = e.target.value; setSettingsUpgradeAt(raw === '' ? 0 : (parseInt(raw) ?? 0)) }}
-                  className="w-full rounded-xl bg-white/8 border border-white/10 px-4 py-3 text-sm text-white focus:outline-none"
-                />
-                <p className="text-xs text-white/30 mt-1">Hit this rep count 2 sessions in a row → increase weight</p>
-
-                <button
-                  onClick={fetchCoachReps}
-                  disabled={coachRepLoading}
-                  className="mt-2 w-full rounded-xl py-2.5 text-sm font-semibold text-black disabled:opacity-50 active:scale-[0.98] transition-transform"
-                  style={{ background: 'linear-gradient(180deg,#ffffff 0%,#e8e5dd 100%)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.55),0 2px 8px rgba(0,0,0,0.35)' }}
-                >
-                  {coachRepLoading ? 'Asking coach…' : 'Let coach decide'}
-                </button>
-
-                {coachRepRec && (
-                  <p className="text-xs text-white/30 mt-1 leading-relaxed">{coachRepRec.reason}</p>
-                )}
-              </div>
-
               {/* Gyms */}
               <div>
                 <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Gyms</label>
@@ -2681,6 +2680,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     )}
     <ProgramGenerator open={programGenOpen} onClose={() => setProgramGenOpen(false)} prefill={programGenPrefill} />
     <ProgramHistory open={programHistoryOpen} onClose={() => setProgramHistoryOpen(false)} />
+    <ExerciseInfoSheet id={infoId} onClose={() => setInfoId(null)} />
     </>
   )
 }

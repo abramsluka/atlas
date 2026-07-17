@@ -1,13 +1,8 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { format, subHours } from 'date-fns'
+import { toLocalDate } from '@/lib/date'
+import { getUserTimezone } from '@/lib/getUserTimezone'
 import FoodHistoryClient from './FoodHistoryClient'
-
-function rolledDate(): string {
-  const now = new Date()
-  const adjusted = now.getHours() < 6 ? subHours(now, 6) : now
-  return format(adjusted, 'yyyy-MM-dd')
-}
 
 export default async function FoodHistoryPage() {
   const authClient = await createClient()
@@ -15,7 +10,7 @@ export default async function FoodHistoryPage() {
   if (!user) redirect('/login')
 
   const db = createServiceClient()
-  const today = rolledDate()
+  const today = toLocalDate(await getUserTimezone(user.id))
 
   const { data: logs } = await db
     .from('food_logs')

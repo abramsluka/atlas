@@ -19,9 +19,9 @@ Rules:
 - Do NOT invent tasks, times, or detail they didn't say. Do NOT add commentary, encouragement, headers, numbering, or bullet characters.
 - Keep their own wording where reasonable; you are tidying, not rewriting their day.
 
-Return ONLY a JSON array of strings, one string per plan item, in order.
-Example: ["Morning run","Gym — push day","Deep work: Atlas planner","Lunch with Alex"]
-If there is no actionable content, return [].`
+Return a JSON object shaped { "plan": [...] } — the value is an array of strings, one string per plan item, in order.
+Example: { "plan": ["Morning run","Gym — push day","Deep work: Atlas planner","Lunch with Alex"] }
+If there is no actionable content, return { "plan": [] }.`
 
 export async function POST(
   request: NextRequest,
@@ -126,20 +126,41 @@ ${instruction}
     max_tokens: 1000,
     system: PLANNER_SYSTEM,
     messages: [{ role: 'user', content: userMessage }],
+    // Constrain the model to a JSON object we can always parse, instead of
+    // hoping it returns a bare array we can regex out of prose. This is what
+    // eliminates the "Could not parse plan from AI response" failures.
+    output_config: {
+      format: {
+        type: 'json_schema',
+        schema: {
+          type: 'object',
+          properties: { plan: { type: 'array', items: { type: 'string' } } },
+          required: ['plan'],
+          additionalProperties: false,
+        },
+      },
+    },
   })
 
   const raw = msg.content[0].type === 'text' ? msg.content[0].text : ''
-  const jsonMatch = raw.match(/\[[\s\S]*\]/)
-  if (!jsonMatch) {
-    return NextResponse.json({ error: 'Could not parse plan from AI response' }, { status: 500 })
+
+  // Primary path: structured output is a { plan: [...] } object. Fallback: if the
+  // model ever returns a bare array (or the format is unavailable), pull it out.
+  let lines: string[] | null = null
+  const toLines = (value: unknown): string[] | null =>
+    Array.isArray(value) ? value.map(String).map(s => s.trim()).filter(Boolean) : null
+  try {
+    const parsed = JSON.parse(raw)
+    lines = toLines(Array.isArray(parsed) ? parsed : parsed?.plan)
+  } catch {
+    const jsonMatch = raw.match(/\[[\s\S]*\]/)
+    if (jsonMatch) {
+      try { lines = toLines(JSON.parse(jsonMatch[0])) } catch { /* fall through */ }
+    }
   }
 
-  let lines: string[]
-  try {
-    const parsed = JSON.parse(jsonMatch[0])
-    if (!Array.isArray(parsed)) throw new Error('not an array')
-    lines = parsed.map(String).map(s => s.trim()).filter(Boolean)
-  } catch {
+  if (!lines) {
+    console.error('[journal/plan] could not parse plan from AI response:', raw.slice(0, 500))
     return NextResponse.json({ error: 'Could not parse plan from AI response' }, { status: 500 })
   }
 

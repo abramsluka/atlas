@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useQueryClient, useQuery } from '@tanstack/react-query'
 import { useCaffeineLogs } from '@/features/health/queries'
 import { useLogCaffeine, useDeleteCaffeineLog } from '@/features/health/mutations'
-import type { CaffeineLog, OuraData, WhoopData } from '@/features/health/types'
+import type { CaffeineLog, OuraData } from '@/features/health/types'
 import type { WorkoutPoint, MealPoint } from './page'
 import {
   caffeineConc,
@@ -121,17 +121,16 @@ interface Props {
   initialRatings: EnergyRating[]
   today: string
   ouraData: OuraData | null
-  whoopData: WhoopData | null
   workouts: WorkoutPoint[]
   meals: MealPoint[]
   typicalWakeHour: number | null
 }
 
-export default function CaffeineClient({ initialCaffeine, initialRatings, today, ouraData, whoopData, workouts, meals, typicalWakeHour }: Props) {
+export default function CaffeineClient({ initialCaffeine, initialRatings, today, ouraData, workouts, meals, typicalWakeHour }: Props) {
   const qc = useQueryClient()
   // ── Model inputs ──────────────────────────────────────────────────────────
-  const sleepQuality = deriveSleepQuality(ouraData, whoopData)
-  const { hour: wakeHour, known: wakeKnown } = deriveWake(ouraData, whoopData, typicalWakeHour)
+  const sleepQuality = deriveSleepQuality(ouraData)
+  const { hour: wakeHour, known: wakeKnown } = deriveWake(ouraData, typicalWakeHour)
 
   // ── Live clock — energy-day hours, so 12:30am reads as 24.5 not 0.5 ──────
   const [currentHour, setCurrentHour] = useState(() => {
@@ -577,8 +576,6 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
               <p className="text-[9px] font-mono text-zinc-600 mt-1.5">
                 {ouraData?.sleep?.score != null
                   ? `Sleep ${ouraData.sleep.score} · ${wakeKnown ? 'wake' : 'est. wake'} ${formatHour(wakeHour)}`
-                  : whoopData?.recovery?.score != null
-                  ? `Recovery ${whoopData.recovery.score} · ${wakeKnown ? 'wake' : 'est. wake'} ${formatHour(wakeHour)}`
                   : `Baseline sleep · est. wake ${formatHour(wakeHour)}`}
               </p>
             </div>

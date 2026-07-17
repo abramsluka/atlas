@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getUserTimezone } from '@/lib/getUserTimezone'
-import { toLocalDate } from '@/lib/date'
 import { userIdFromSyncToken } from '@/lib/appleAuth'
 import { formatInTimeZone } from 'date-fns-tz'
 
@@ -35,7 +34,10 @@ export async function POST(req: NextRequest) {
 
   const db = createServiceClient()
   const tz = await getUserTimezone(userId)
-  const date = body.date && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : toLocalDate(tz)
+  // Calendar date on purpose, NOT toLocalDate's 3 AM rollover: Apple aggregates
+  // steps/calories by calendar midnight, so a post-midnight sync must not
+  // overwrite yesterday's completed totals with the new day's near-zero count.
+  const date = body.date && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : formatInTimeZone(new Date(), tz, 'yyyy-MM-dd')
 
   // ── Daily aggregate (partial merge — only overwrite fields that were sent) ──
   const daily: Record<string, unknown> = { user_id: userId, date, synced_at: new Date().toISOString() }

@@ -12,7 +12,7 @@ const SNAP = 'transform 0.3s cubic-bezier(0.16,1,0.3,1)'
 // App-wide pull-to-refresh: when the page is scrolled to the very top and you
 // drag down, this rubber-bands the content, shows a spinner, and on release past
 // the threshold re-fetches everything (router.refresh() for server data +
-// invalidateQueries() for all TanStack queries). Mirrors the native Oura/Whoop
+// invalidateQueries() for all TanStack queries). Mirrors the native Oura app
 // gesture, which iOS hides in standalone PWA mode.
 export default function PullToRefresh({ children }: { children: React.ReactNode }) {
   const router = useRouter()

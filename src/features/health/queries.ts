@@ -8,7 +8,6 @@ import type {
   CaffeineLog,
   HealthProfile,
   OuraData,
-  WhoopData,
 } from './types'
 
 export function useSupplements(initialData?: Supplement[]) {
@@ -136,21 +135,6 @@ export function useOuraHistory(days: number, enabled: boolean) {
       if (!res.ok) return []
       return res.json()
     },
-  })
-}
-
-export function useWhoopData(today: string, enabled: boolean, initialData?: WhoopData | null) {
-  return useQuery({
-    queryKey: ['health', 'whoop', today],
-    enabled,
-    initialData: initialData !== undefined ? initialData ?? undefined : undefined,
-    queryFn: async (): Promise<WhoopData | null> => {
-      const res = await fetch('/api/health/whoop/data')
-      if (res.status === 401) throw new Error('auth')
-      if (!res.ok) return null
-      return res.json()
-    },
-    retry: false,
   })
 }
 

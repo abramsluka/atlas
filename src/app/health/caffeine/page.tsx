@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toEnergyDate, nextCalendarDate, isoToEnergyDayHour, energyDayUtcWindow } from '@/features/health/energyModel'
 import { getTypicalWakeHour } from '@/features/health/typicalWake'
-import type { OuraData, WhoopData } from '@/features/health/types'
+import type { OuraData } from '@/features/health/types'
 import type { FoodLog } from '@/features/food/types'
 import { sessionLabel, sessionVolumeLbs, type GymActivityLog } from '@/lib/gymActivity'
 import CaffeineClient from './CaffeineClient'
@@ -39,7 +39,7 @@ export default async function CaffeinePage() {
   // instants so timestamp windows catch post-midnight sets and meals.
   const { start: dayStart, end: dayEnd } = energyDayUtcWindow(today, tz)
 
-  const [caffeineResult, ouraTokenResult, whoopTokenResult, workoutsResult, foodResult, ratingsResult, typicalWakeHour] = await Promise.all([
+  const [caffeineResult, ouraTokenResult, workoutsResult, foodResult, ratingsResult, typicalWakeHour] = await Promise.all([
     // Post-midnight doses can carry either date tag depending on where they
     // were logged from; the hour mapping folds both onto this energy day.
     db.from('caffeine_logs')
@@ -49,7 +49,6 @@ export default async function CaffeinePage() {
       .order('logged_at', { ascending: true }),
 
     db.from('wearable_tokens').select('provider').eq('user_id', user.id).eq('provider', 'oura').maybeSingle(),
-    db.from('wearable_tokens').select('provider').eq('user_id', user.id).eq('provider', 'whoop').maybeSingle(),
 
     // Fetch this energy day's gym_logs for volume calculation
     db.from('gym_logs')
@@ -74,28 +73,20 @@ export default async function CaffeinePage() {
       .eq('date_key', today)
       .order('logged_at', { ascending: true }),
 
-    // Median wake hour from recent wearable history — fallback for mornings
-    // where neither ring has synced yet
+    // Median wake hour from recent Oura history — fallback for mornings
+    // where the ring hasn't synced yet
     getTypicalWakeHour(db, user.id, tz),
   ])
 
   const hasOura = !!ouraTokenResult.data
-  const hasWhoop = !!whoopTokenResult.data
 
   let ouraData: OuraData | null = null
-  let whoopData: WhoopData | null = null
 
-  if (hasOura || hasWhoop) {
-    const [ouraCache, whoopCache] = await Promise.all([
-      hasOura
-        ? db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'oura').eq('date', today).maybeSingle()
-        : Promise.resolve({ data: null }),
-      hasWhoop
-        ? db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'whoop').eq('date', today).maybeSingle()
-        : Promise.resolve({ data: null }),
-    ])
+  if (hasOura) {
+    const ouraCache = await db
+      .from('wearable_data').select('data')
+      .eq('user_id', user.id).eq('provider', 'oura').eq('date', today).maybeSingle()
     ouraData = (ouraCache.data?.data as OuraData) ?? null
-    whoopData = (whoopCache.data?.data as WhoopData) ?? null
   }
 
   // Build WorkoutPoints — today's gym_logs collapse into a single session
@@ -126,7 +117,6 @@ export default async function CaffeinePage() {
       initialRatings={ratingsResult.data ?? []}
       today={today}
       ouraData={ouraData}
-      whoopData={whoopData}
       workouts={workoutPoints}
       meals={mealPoints}
       typicalWakeHour={typicalWakeHour}

@@ -1,4 +1,4 @@
-export type FoodSource = 'photo' | 'text' | 'drink' | 'barcode'
+export type FoodSource = 'photo' | 'text' | 'drink' | 'barcode' | 'meal'
 
 export interface FoodLog {
   id: string
@@ -78,7 +78,7 @@ export interface FoodItem {
   name: string
   brand: string | null
   barcode: string | null
-  source: Exclude<FoodSource, 'photo'>
+  source: Exclude<FoodSource, 'photo' | 'meal'>
   calories: number
   protein_g: number
   carbs_g: number
@@ -109,6 +109,7 @@ export interface EstimateFinal {
   portion_desc: string
   volume_oz: number | null
   is_hydrating: boolean
+  caffeine_mg: number
 }
 
 export interface EstimateQuestion {
@@ -140,6 +141,66 @@ export type BarcodeLookup =
       package_grams: number | null
     }
   | { found: false }
+
+// ── Meal builder ──
+
+/** One ingredient row inside a composed meal. Snapshot — never a live FK, so
+ *  library edits/deletes can't corrupt an already-saved meal or log. */
+export interface MealIngredient {
+  ref: string | null // bundled library slug or user_ingredients uuid
+  name: string
+  emoji: string | null
+  grams: number // ml for liquids (treated 1:1)
+  per100: { cal: number; protein: number; carbs: number }
+  unit_name: string | null
+  unit_grams: number | null
+  liquid: boolean
+  hydrating: boolean
+  caffeine_per_100: number | null
+}
+
+export interface MealTotals {
+  cal: number
+  protein: number
+  carbs: number
+  grams: number
+  volume_oz: number | null // hydrating liquid ml → fl oz
+  caffeine_mg: number
+}
+
+export interface UserIngredient {
+  id: string
+  user_id: string
+  name: string
+  brand: string | null
+  barcode: string | null
+  cal_per_100: number
+  protein_per_100: number
+  carbs_per_100: number
+  unit_name: string | null
+  unit_grams: number | null
+  liquid: boolean
+  hydrating: boolean
+  caffeine_per_100: number | null
+  use_count: number
+  last_used_at: string
+  created_at: string
+}
+
+export interface SavedMeal {
+  id: string
+  user_id: string
+  name: string
+  emoji: string | null
+  ingredients: MealIngredient[]
+  calories: number
+  protein_g: number
+  carbs_g: number
+  total_grams: number
+  use_count: number
+  last_used_at: string
+  created_at: string
+}
 
 export interface DailyTotals {
   calories: number

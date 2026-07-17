@@ -57,7 +57,7 @@ export function FoodWizardSheet({
   kind: 'food' | 'drink'
   initialDescription?: string
   onClose: () => void
-  onSaved: (res: { water_logged: boolean; volume_oz: number | null }) => void
+  onSaved: (res: { water_logged: boolean; volume_oz: number | null; caffeine_logged?: boolean; caffeine_mg?: number }) => void
 }) {
   const estimate = useEstimateFood()
   const logManual = useLogManualFood()
@@ -139,9 +139,15 @@ export function FoodWizardSheet({
         portion_desc: final.portion_desc,
         volume_oz: final.volume_oz,
         is_hydrating: final.is_hydrating,
+        caffeine_mg: final.caffeine_mg,
         source: kind === 'drink' ? 'drink' : 'text',
       })
-      onSaved({ water_logged: res.water_logged, volume_oz: final.volume_oz })
+      onSaved({
+        water_logged: res.water_logged,
+        volume_oz: final.volume_oz,
+        caffeine_logged: res.caffeine_logged,
+        caffeine_mg: final.caffeine_mg,
+      })
       onClose()
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err))
@@ -303,7 +309,7 @@ export function FoodWizardSheet({
 
 // ─── Barcode scanner + serving picker flow ───────────────────────────────────
 
-function BarcodeScannerOverlay({
+export function BarcodeScannerOverlay({
   onClose,
   onCode,
 }: {

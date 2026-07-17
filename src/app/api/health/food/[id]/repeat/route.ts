@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { rolledDate } from '@/features/food/date'
+import { toLocalDate } from '@/lib/date'
+import { getUserTimezone } from '@/lib/getUserTimezone'
 
 // Duplicate an existing food log onto today. Photo meals get their own copy of
 // the image so deleting either log never orphans the other's photo.
@@ -26,7 +27,7 @@ export async function POST(
   }
 
   const now = new Date()
-  const date = rolledDate(now)
+  const date = toLocalDate(await getUserTimezone(user.id))
 
   // Photo meals: copy the stored image to a fresh path so the two logs are independent.
   let storagePath: string | null = null

@@ -4,7 +4,8 @@
 // page (except /login and /mentor) that opens a bottom sheet: speak or type,
 // Claude proposes actions as confirm cards, confirmed cards execute through the
 // same TanStack mutations the manual UIs use. One thread, shared across pages
-// (single localStorage key). Generalized from the old GymChatbot.
+// (single localStorage key) but scoped to the app day (3 AM rollover) — a new
+// day starts a fresh chat. Generalized from the old GymChatbot.
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
@@ -12,6 +13,7 @@ import { usePathname } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import ChatText from '@/components/ChatText'
 import { usePersistentChat } from '@/lib/usePersistentChat'
+import { rolledDate } from '@/features/food/date'
 import { useVoiceRecorder, formatElapsed } from '@/features/journal/useVoiceRecorder'
 import { describeAction, type AssistantStreamEvent, type ProposedAction } from './actions'
 import { useAssistantActions } from './useAssistantActions'
@@ -37,7 +39,7 @@ export default function OrbAssistant() {
   const pathname = usePathname()
   const [mounted, setMounted] = useState(false)
   const [open, setOpen] = useState(false)
-  const [messages, setMessages] = usePersistentChat<OrbMsg>('atlas-orb-thread-v1', 40)
+  const [messages, setMessages, clearIfStale] = usePersistentChat<OrbMsg>('atlas-orb-thread-v1', 40, rolledDate)
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
@@ -183,6 +185,7 @@ export default function OrbAssistant() {
   // Tapping the FAB opens the sheet already recording (voice-first) — except on
   // /gym, where it opens idle (mid-workout you tap chips, not hold a monologue).
   const openSheet = () => {
+    clearIfStale() // crossed 3 AM since the thread was saved → fresh chat
     setOpen(true)
     if (!pathname.startsWith('/gym')) startMic()
   }

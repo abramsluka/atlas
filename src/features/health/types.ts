@@ -79,7 +79,7 @@ export interface CaffeineLog {
 
 export interface WearableToken {
   user_id: string
-  provider: 'oura' | 'whoop'
+  provider: 'oura'
   access_token: string
   refresh_token: string
   expires_at: string
@@ -120,18 +120,3 @@ export interface OuraHistoryPoint {
   hrv: number | null
 }
 
-export interface WhoopData {
-  recovery?: {
-    score: number | null
-    hrv_rmssd_milli: number | null
-    resting_heart_rate: number | null
-  }
-  cycle?: {
-    strain: number | null
-    kilojoule: number | null
-  }
-  sleep?: {
-    duration_seconds: number | null
-    end?: string | null  // ISO 8601 — when the sleep ended, i.e. wake time
-  }
-}

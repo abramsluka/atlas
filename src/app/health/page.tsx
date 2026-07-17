@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import HealthClient from './HealthClient'
-import type { OuraData, WhoopData } from '@/features/health/types'
+import type { OuraData } from '@/features/health/types'
 import { toEnergyDate, nextCalendarDate, isoToEnergyDayHour, energyDayUtcWindow, type WorkoutPoint, type MealPoint } from '@/features/health/energyModel'
 import { getTypicalWakeHour } from '@/features/health/typicalWake'
 import { getUserTimezone } from '@/lib/getUserTimezone'
@@ -30,7 +30,6 @@ export default async function HealthPage() {
     caffeineResult,
     profileResult,
     ouraTokenResult,
-    whoopTokenResult,
     workoutsResult,
     foodResult,
     typicalWakeHour,
@@ -41,7 +40,6 @@ export default async function HealthPage() {
     db.from('caffeine_logs').select('*').eq('user_id', user.id).in('date', [today, nextCalendarDate(today)]).order('logged_at', { ascending: true }),
     db.from('health_profile').select('*').eq('user_id', user.id).maybeSingle(),
     db.from('wearable_tokens').select('provider').eq('user_id', user.id).eq('provider', 'oura').maybeSingle(),
-    db.from('wearable_tokens').select('provider').eq('user_id', user.id).eq('provider', 'whoop').maybeSingle(),
     // Training + food feed the same energy model the caffeine page uses, so the
     // compact card reads identically to Today's Curve.
     db.from('gym_logs')
@@ -60,21 +58,14 @@ export default async function HealthPage() {
   ])
 
   const hasOura = !!ouraTokenResult.data
-  const hasWhoop = !!whoopTokenResult.data
 
-  // Load cached wearable data if tokens exist
+  // Load cached wearable data if a token exists
   let ouraData: OuraData | null = null
-  let whoopData: WhoopData | null = null
 
-  if (hasOura || hasWhoop) {
-    const [ouraCache, whoopCache] = await Promise.all([
-      hasOura
-        ? db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'oura').eq('date', today).maybeSingle()
-        : Promise.resolve({ data: null }),
-      hasWhoop
-        ? db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'whoop').eq('date', today).maybeSingle()
-        : Promise.resolve({ data: null }),
-    ])
+  if (hasOura) {
+    const ouraCache = await db
+      .from('wearable_data').select('data')
+      .eq('user_id', user.id).eq('provider', 'oura').eq('date', today).maybeSingle()
     const rawOura = (ouraCache.data?.data as OuraData) ?? null
     const ouraHasData =
       rawOura &&
@@ -83,7 +74,6 @@ export default async function HealthPage() {
         rawOura.sleep?.average_hrv != null ||
         rawOura.readiness?.score != null)
     ouraData = ouraHasData ? rawOura : null
-    whoopData = (whoopCache.data?.data as WhoopData) ?? null
   }
 
   // Today's gym_logs collapse into a single session point for the energy model
@@ -113,9 +103,7 @@ export default async function HealthPage() {
       todayCaffeine={caffeineResult.data ?? []}
       profile={profileResult.data ?? null}
       ouraData={ouraData}
-      whoopData={whoopData}
       hasOura={hasOura}
-      hasWhoop={hasWhoop}
       today={today}
       typicalWakeHour={typicalWakeHour}
     />

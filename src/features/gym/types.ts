@@ -37,6 +37,34 @@ export interface GymExercise {
   rep_max: number
   step: number
   order_index: number
+  library_id?: string | null
+}
+
+// Slim exercise_library index row — fetched once per session for autocomplete
+export interface ExerciseLibraryEntry {
+  id: string
+  name: string
+  aliases: string[]
+  primary_muscles: string[]
+  bodyweight: boolean
+  default_goal: 'strength' | 'hypertrophy' | 'endurance'
+  rep_min: number
+  rep_max: number
+  step: number
+  popularity: number
+  start_weight_ratio: number | null
+  female_factor: number | null
+}
+
+export interface ExerciseLibraryDetail extends ExerciseLibraryEntry {
+  category: string | null
+  equipment: string | null
+  level: string | null
+  mechanic: string | null
+  force: string | null
+  secondary_muscles: string[]
+  instructions: string[]
+  image_urls: string[]  // public bucket URLs, no signing
 }
 
 export interface GymLog {

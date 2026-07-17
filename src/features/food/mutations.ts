@@ -1,5 +1,14 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { FoodLog, EstimateResponse, EstimateFinal, WizardAnswer, PhotoRefineResponse } from './types'
+import type {
+  FoodLog,
+  EstimateResponse,
+  EstimateFinal,
+  WizardAnswer,
+  PhotoRefineResponse,
+  MealIngredient,
+  SavedMeal,
+  UserIngredient,
+} from './types'
 
 export function useLogFood() {
   const qc = useQueryClient()
@@ -39,15 +48,17 @@ export function useEstimateFood() {
   })
 }
 
-export type ManualLogInput = Omit<EstimateFinal, 'status'> & {
+export type ManualLogInput = Omit<EstimateFinal, 'status' | 'caffeine_mg'> & {
   source: 'text' | 'drink' | 'barcode'
   barcode?: string | null
   brand?: string | null
+  // Only the drink wizard supplies this; caffeinated drinks also log a dose.
+  caffeine_mg?: number
 }
 
 export function useLogManualFood() {
   const qc = useQueryClient()
-  return useMutation<FoodLog & { water_logged: boolean }, Error, ManualLogInput>({
+  return useMutation<FoodLog & { water_logged: boolean; caffeine_logged: boolean }, Error, ManualLogInput>({
     mutationFn: async (body) => {
       const res = await fetch('/api/health/food/log', {
         method: 'POST',
@@ -66,6 +77,99 @@ export function useLogManualFood() {
       if (data.water_logged) {
         qc.invalidateQueries({ queryKey: ['health', 'water'] })
       }
+      if (data.caffeine_logged) {
+        qc.invalidateQueries({ queryKey: ['health', 'caffeine'] })
+      }
+    },
+  })
+}
+
+// ── Meal builder ──
+
+export interface LogMealInput {
+  name: string
+  ingredients: MealIngredient[]
+  saved_meal_id?: string | null
+  save_as?: { name: string; emoji?: string | null } | null
+}
+
+export interface LogMealResult extends FoodLog {
+  water_logged: boolean
+  caffeine_logged: boolean
+  caffeine_mg: number
+  volume_oz: number | null
+  saved_meal: SavedMeal | null
+}
+
+export function useLogMeal() {
+  const qc = useQueryClient()
+  return useMutation<LogMealResult, Error, LogMealInput>({
+    mutationFn: async (body) => {
+      const res = await fetch('/api/health/food/meals/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(typeof err.error === 'string' ? err.error : 'Failed to log meal')
+      }
+      return res.json()
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['food-logs', data.date] })
+      qc.invalidateQueries({ queryKey: ['saved-meals'] })
+      qc.invalidateQueries({ queryKey: ['user-ingredients'] })
+      if (data.water_logged) qc.invalidateQueries({ queryKey: ['health', 'water'] })
+      if (data.caffeine_logged) qc.invalidateQueries({ queryKey: ['health', 'caffeine'] })
+    },
+  })
+}
+
+export interface CreateIngredientInput {
+  name: string
+  brand?: string | null
+  barcode?: string | null
+  cal_per_100: number
+  protein_per_100: number
+  carbs_per_100: number
+  unit_name?: string | null
+  unit_grams?: number | null
+  liquid?: boolean
+  hydrating?: boolean
+  caffeine_per_100?: number | null
+}
+
+export function useCreateIngredient() {
+  const qc = useQueryClient()
+  return useMutation<UserIngredient, Error, CreateIngredientInput>({
+    mutationFn: async (body) => {
+      const res = await fetch('/api/health/food/ingredients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(typeof err.error === 'string' ? err.error : 'Failed to save ingredient')
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['user-ingredients'] })
+    },
+  })
+}
+
+export function useDeleteSavedMeal() {
+  const qc = useQueryClient()
+  return useMutation<void, Error, { id: string }>({
+    mutationFn: async ({ id }) => {
+      const res = await fetch(`/api/health/food/meals/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to delete meal')
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['saved-meals'] })
     },
   })
 }

@@ -28,7 +28,7 @@ function CopyRow({ label, value }: { label: string; value: string }) {
 }
 
 // Setup-only panel (lives inside the Health settings sheet). No data display —
-// steps surface on the Whoop card; everything else feeds Atlas in the background.
+// synced steps and workouts feed Atlas in the background.
 export default function AppleHealthCard() {
   const qc = useQueryClient()
   const [showGuide, setShowGuide] = useState(false)
