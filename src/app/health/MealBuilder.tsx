@@ -28,6 +28,7 @@ import {
   useLogMeal,
 } from '@/features/food/mutations'
 import type { BarcodeLookup, MealIngredient, SavedMeal, UserIngredient } from '@/features/food/types'
+import { formatAmount, nextUnit, toGrams, type AmountUnit } from '@/features/food/units'
 import { BarcodeScannerOverlay } from './FoodEntry'
 
 // ─── Motion vocabulary ────────────────────────────────────────────────────────
@@ -179,9 +180,18 @@ function TrayRowView({
   const { ing } = row
   const m = macrosFor(ing)
   const [draft, setDraft] = useState('')
+  const [unit, setUnit] = useState<AmountUnit>(ing.liquid ? 'ml' : 'g')
   const reduced = useReducedMotion()
   const step = stepFor(ing)
-  const suffix = ing.liquid ? 'ml' : 'g'
+
+  function commitDraft() {
+    const g = toGrams(Number(draft), unit)
+    if (Number.isFinite(g) && g > 0) {
+      onChangeGrams(Math.min(10000, g))
+      setDraft('')
+      onEdit(false)
+    }
+  }
 
   const presets = ing.unit_grams && ing.unit_name
     ? [1, 2, 3, 4].map(n => ({ label: `${n} ${ing.unit_name}${n === 1 ? '' : 's'}`, grams: n * ing.unit_grams! }))
@@ -229,12 +239,13 @@ function TrayRowView({
             >
               −
             </button>
+            {/* Tap the amount to rotate the display unit: g → ml → oz → lb */}
             <button
-              onClick={() => onEdit(!editing)}
+              onClick={() => setUnit(nextUnit(unit))}
               className="min-w-[3.4rem] rounded-lg bg-white/[0.05] px-1.5 py-1.5 text-center text-xs font-bold text-white tabular-nums"
             >
-              {Math.round(ing.grams)}
-              <span className="font-normal text-zinc-500">{suffix}</span>
+              {formatAmount(ing.grams, unit)}
+              <span className="font-normal text-zinc-500">{unit}</span>
             </button>
             <button
               onClick={() => onChangeGrams(ing.grams + step)}
@@ -279,27 +290,19 @@ function TrayRowView({
                     value={draft}
                     onChange={e => setDraft(e.target.value)}
                     onKeyDown={e => {
-                      if (e.key === 'Enter') {
-                        const g = Number(draft)
-                        if (Number.isFinite(g) && g > 0) {
-                          onChangeGrams(Math.min(10000, g))
-                          setDraft('')
-                          onEdit(false)
-                        }
-                      }
+                      if (e.key === 'Enter') commitDraft()
                     }}
-                    placeholder={suffix}
-                    className="w-16 rounded-lg border border-white/[0.10] bg-black/30 px-2 py-1.5 text-[11px] text-white placeholder:text-zinc-600 outline-none focus:border-white/30"
+                    placeholder={unit}
+                    className="w-14 rounded-lg border border-white/[0.10] bg-black/30 px-2 py-1.5 text-[11px] text-white placeholder:text-zinc-600 outline-none focus:border-white/30"
                   />
                   <button
-                    onClick={() => {
-                      const g = Number(draft)
-                      if (Number.isFinite(g) && g > 0) {
-                        onChangeGrams(Math.min(10000, g))
-                        setDraft('')
-                        onEdit(false)
-                      }
-                    }}
+                    onClick={() => setUnit(nextUnit(unit))}
+                    className="rounded-lg border border-white/[0.10] bg-white/[0.03] px-2 py-1.5 text-[11px] text-zinc-300 tabular-nums"
+                  >
+                    {unit}
+                  </button>
+                  <button
+                    onClick={commitDraft}
                     className="rounded-lg bg-white/[0.07] px-2 py-1.5 text-[11px] text-zinc-300"
                   >
                     Set
@@ -666,7 +669,7 @@ function SuccessBurst({ calories }: { calories: number }) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-t-3xl bg-[#111113]/95"
+      className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 rounded-3xl bg-[#111113]/95"
       style={{ backdropFilter: 'blur(4px)' }}
     >
       <div className="relative">
@@ -917,10 +920,10 @@ export function MealBuilderSheet({
     return <BarcodeScannerOverlay onClose={() => setView('build')} onCode={handleBarcode} />
   }
 
-  const showEmptyState = query.trim() === '' && rows.length === 0 && view === 'build'
+  const showEmptyState = rows.length === 0 && view === 'build'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-[9vh]">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -929,15 +932,15 @@ export function MealBuilderSheet({
         style={{ backdropFilter: 'blur(6px)' }}
         onClick={onClose}
       />
-      {/* Centered modal (not a bottom sheet) — the search bar lands mid-screen
-          so the results dropdown has room to open below it instead of falling
-          off the bottom edge. */}
+      {/* Top-anchored modal — the top edge (and the search bar with it) is
+          locked in place no matter how the content below grows or shrinks.
+          Search results float over the body as a dropdown, so nothing shifts. */}
       <motion.div
         initial={{ opacity: 0, y: 20, scale: 0.96 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 20, scale: 0.96 }}
         transition={SHEET_SPRING}
-        className="relative flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-3xl border border-white/[0.14] bg-[#111113] shadow-2xl shadow-black/60"
+        className="relative flex max-h-[82vh] w-full max-w-md flex-col rounded-3xl border border-white/[0.14] bg-[#111113] shadow-2xl shadow-black/60"
       >
         <AnimatePresence>{success != null && <SuccessBurst calories={success} />}</AnimatePresence>
 
@@ -949,11 +952,11 @@ export function MealBuilderSheet({
           </div>
         </div>
 
-        {/* Fixed search bar — pinned below the header, never scrolls. Results
-            render inline in the body below, so the top of the modal holds still
-            while you add and nothing can fall off-screen. */}
+        {/* Fixed search bar — pinned below the header, never scrolls or moves.
+            Results float below it as an absolute dropdown over the body (same
+            pattern as the gym ExerciseAutocomplete), so typing shifts nothing. */}
         {view === 'build' && (
-          <div className="px-5 pt-3">
+          <div className="relative px-5 pt-3">
             <div className="flex gap-2">
               <input
                 ref={searchRef}
@@ -962,6 +965,7 @@ export function MealBuilderSheet({
                 onChange={e => setQuery(e.target.value)}
                 onKeyDown={e => {
                   if (e.key === 'Enter' && hits[0]) pickHit(hits[0])
+                  if (e.key === 'Escape') setQuery('')
                 }}
                 placeholder={rows.length === 0 ? 'Search ingredients, drinks, meals…' : 'Add another ingredient…'}
                 className="min-w-0 flex-1 rounded-xl border border-white/[0.12] bg-black/30 px-3 py-3 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-white/30"
@@ -986,6 +990,46 @@ export function MealBuilderSheet({
                 )}
               </motion.button>
             </div>
+
+            <AnimatePresence>
+              {query.trim() !== '' && (
+                <motion.div
+                  initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                  transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                  className="absolute left-5 right-5 top-full z-30 mt-2"
+                  style={{ transformOrigin: 'top' }}
+                >
+                  <div
+                    className="max-h-[45vh] space-y-1 overflow-y-auto overscroll-contain rounded-xl border border-white/10 p-1.5"
+                    style={{ background: '#191919', boxShadow: '0 12px 32px rgba(0,0,0,0.55), 0 0 0 1px rgba(0,0,0,0.4)' }}
+                  >
+                    {hits.length > 0 ? (
+                      <SearchResults hits={hits} onPick={pickHit} />
+                    ) : (
+                      <p className="py-3 text-center text-xs text-zinc-600">Nothing in the library for “{query}”</p>
+                    )}
+                    <button
+                      onClick={() => {
+                        setCreatePrefill({ name: query.trim() || undefined })
+                        setQuery('')
+                        setView('create')
+                      }}
+                      className="w-full rounded-lg px-3 py-2.5 text-left text-xs text-zinc-300 active:bg-white/[0.06]"
+                    >
+                      ⌨ Type exact macros for “{query.trim().slice(0, 24)}”
+                    </button>
+                    <button
+                      onClick={() => onDescribeWithAI(query.trim())}
+                      className="w-full rounded-lg px-3 py-2.5 text-left text-xs text-zinc-400 active:bg-white/[0.04]"
+                    >
+                      ✨ Estimate it with AI instead
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         )}
 
@@ -1001,30 +1045,6 @@ export function MealBuilderSheet({
                 addIngredient(fromUserIngredient(ing, defaultGrams(ing)))
               }}
             />
-          ) : query.trim() !== '' ? (
-            /* Search results — inline in the body, scrolls with it */
-            <div className="space-y-2">
-              {hits.length > 0 ? (
-                <SearchResults hits={hits} onPick={pickHit} />
-              ) : (
-                <p className="py-3 text-center text-xs text-zinc-600">Nothing in the library for “{query}”</p>
-              )}
-              <button
-                onClick={() => {
-                  setCreatePrefill({ name: query.trim() || undefined })
-                  setView('create')
-                }}
-                className="w-full rounded-xl border border-white/[0.10] bg-white/[0.03] px-3 py-2.5 text-left text-xs text-zinc-300 active:bg-white/[0.06]"
-              >
-                ⌨ Type exact macros for “{query.trim().slice(0, 24)}”
-              </button>
-              <button
-                onClick={() => onDescribeWithAI(query.trim())}
-                className="w-full rounded-xl border border-dashed border-white/[0.12] px-3 py-2.5 text-left text-xs text-zinc-400 active:bg-white/[0.04]"
-              >
-                ✨ Estimate it with AI instead
-              </button>
-            </div>
           ) : (
             <>
               {/* Portion scaling for a loaded saved meal */}
@@ -1110,7 +1130,7 @@ export function MealBuilderSheet({
             initial={{ y: 24, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={SPRING}
-            className="space-y-2.5 border-t border-white/[0.07] bg-[#111113] px-5 py-3"
+            className="space-y-2.5 rounded-b-3xl border-t border-white/[0.07] bg-[#111113] px-5 py-3"
           >
             {/* Totals live in the footer now — the top of the sheet stays still
                 while you add ingredients. */}

@@ -10,6 +10,7 @@ import type {
   WizardAnswer,
   FoodItem,
 } from '@/features/food/types'
+import { nextUnit, toGrams, type AmountUnit } from '@/features/food/units'
 
 // ─── Shared sheet chrome ──────────────────────────────────────────────────────
 
@@ -445,6 +446,7 @@ function ServingPickerSheet({
     lookup.per_serving || lookup.serving_grams ? { kind: 'serving' } : null
   )
   const [customGrams, setCustomGrams] = useState('')
+  const [customUnit, setCustomUnit] = useState<AmountUnit>('g')
   const [photoBusy, setPhotoBusy] = useState(false)
   const [photoReasoning, setPhotoReasoning] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -483,9 +485,11 @@ function ServingPickerSheet({
         if (!packageGrams) return null
         return { macros: macrosForGrams(packageGrams / 2), portion_desc: `Half package (${Math.round(packageGrams / 2)}g)` }
       case 'custom': {
-        const g = Number(customGrams)
+        const g = toGrams(Number(customGrams), customUnit)
         if (!Number.isFinite(g) || g <= 0) return null
-        return { macros: macrosForGrams(g), portion_desc: `${Math.round(g)}g` }
+        const desc =
+          customUnit === 'g' ? `${Math.round(g)}g` : `${customGrams}${customUnit} (${Math.round(g)}g)`
+        return { macros: macrosForGrams(g), portion_desc: desc }
       }
       case 'photo':
         return { macros: macrosForGrams(choice.grams), portion_desc: `~${choice.grams}g (photo est.)` }
@@ -572,7 +576,7 @@ function ServingPickerSheet({
           </>
         )}
         <button onClick={() => setChoice({ kind: 'custom', grams: null })} className={chipClass(choice?.kind === 'custom')}>
-          Custom grams
+          Custom amount
         </button>
         <button
           onClick={() => photoInputRef.current?.click()}
@@ -592,15 +596,24 @@ function ServingPickerSheet({
       </div>
 
       {choice?.kind === 'custom' && (
-        <input
-          type="number"
-          inputMode="numeric"
-          value={customGrams}
-          onChange={e => setCustomGrams(e.target.value)}
-          placeholder="grams"
-          autoFocus
-          className="w-full rounded-xl border border-white/[0.12] bg-black/30 px-3 py-2.5 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-white/30"
-        />
+        <div className="flex gap-2">
+          <input
+            type="number"
+            inputMode="decimal"
+            value={customGrams}
+            onChange={e => setCustomGrams(e.target.value)}
+            placeholder={customUnit}
+            autoFocus
+            className="min-w-0 flex-1 rounded-xl border border-white/[0.12] bg-black/30 px-3 py-2.5 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-white/30"
+          />
+          {/* Tap to rotate the unit: g → ml → oz → lb */}
+          <button
+            onClick={() => setCustomUnit(nextUnit(customUnit))}
+            className="w-14 shrink-0 rounded-xl border border-white/[0.12] bg-white/[0.04] text-sm text-zinc-300 tabular-nums active:opacity-70"
+          >
+            {customUnit}
+          </button>
+        </div>
       )}
 
       {choice?.kind === 'photo' && photoReasoning && (
