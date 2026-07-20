@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { HabitView, ToggleInput } from './types'
+import type { HabitView, HabitHistoryWeek, ToggleInput } from './types'
 
 // Edit a habit's weekly goal (X times/week). Optimistic on perWeek.
 export function useUpdateGoal() {
@@ -89,6 +89,7 @@ export function useToggleHabit() {
     onMutate: async ({ id, date, completed }) => {
       await qc.cancelQueries({ queryKey: ['habits'] })
       const prev = qc.getQueryData<HabitView[]>(['habits'])
+      const prevHistory = qc.getQueryData<HabitHistoryWeek[]>(['habits', 'history'])
       qc.setQueryData<HabitView[]>(['habits'], (old) =>
         old?.map((h) => {
           if (h.id !== id) return h
@@ -101,10 +102,28 @@ export function useToggleHabit() {
           }
         })
       )
-      return { prev }
+      // The Week view reads from the history cache — flip it here too so the dot
+      // updates instantly instead of waiting for the settle refetch.
+      qc.setQueryData<HabitHistoryWeek[]>(['habits', 'history'], (old) =>
+        old?.map((wk) => {
+          const di = wk.dates.indexOf(date)
+          if (di === -1) return wk
+          return {
+            ...wk,
+            habits: wk.habits.map((h) => {
+              if (h.id !== id || h.done[di] === completed) return h
+              const done = h.done.map((v, i) => (i === di ? completed : v))
+              const count = h.count + (completed ? 1 : -1)
+              return { ...h, done, count, hit: count >= h.perWeek }
+            }),
+          }
+        })
+      )
+      return { prev, prevHistory }
     },
     onError: (_e, _v, ctx) => {
       if (ctx?.prev) qc.setQueryData(['habits'], ctx.prev)
+      if (ctx?.prevHistory) qc.setQueryData(['habits', 'history'], ctx.prevHistory)
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['habits'] })
