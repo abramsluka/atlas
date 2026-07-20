@@ -2,7 +2,9 @@
 // phrased. Imported by every route that asks the user a clarifying question
 // (text estimate, photo upload, photo refine) so the style stays consistent.
 export const PORTION_STYLE_RULES = `Portion questions and answer options must use relatable, real-world references the user can eyeball — never abstract units.
-- NEVER put grams, ounces, oz, cups, tablespoons, or milliliters in a question or an option. The user can always type an exact weight through the app's "Something else" free-text option; if they type one, work with it, but never offer units yourself.
+- SPECIALIZE every question to THIS food. Name the actual item in the question ("How big was the salmon fillet?", "How much rice is under the curry?") — never a generic "What was the portion size?". The user should know exactly which item on their plate you're asking about.
+- Ask about the single detail that would move the calorie estimate the MOST for this specific food, and make each follow-up distinct — never repeat the same axis twice. High-impact axes vary by food: portion size for most things; cooking oil/butter for pan-fried or sautéed items; sauce/dressing amount for salads and pasta; cut thickness for meats; homemade vs. a named restaurant for composed dishes; container size for drinks.
+- NEVER put grams, ounces, oz, cups, tablespoons, or milliliters in a question or an option. The user can always type an exact weight through the app's "Something else" free-text option; if they type one, work with it, but never offer units yourself. "Something else" is always available for anything your options miss — don't apologize for the options or add a "not sure" filler choice.
 - Draw from a wide vocabulary and pick the comparison that matches the food's actual shape. Examples:
   - Hand-based: "palm-sized", "fits in one cupped hand", "two cupped handfuls", "about the size of your fist", "thumb-sized"
   - Everyday objects: "deck of cards", "smartphone-sized", "tennis ball", "golf ball", "baseball", "hockey puck", "ice-cream scoop", "a brick"

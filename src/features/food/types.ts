@@ -117,6 +117,10 @@ export interface EstimateQuestion {
   question: string
   options: string[]
   step: number
+  /** Why this detail matters — shown under the question, e.g. "Cooking oil could swing this ±120 kcal". */
+  reasoning?: string
+  /** Rough kcal range the answer could move the estimate. */
+  calorie_delta?: number
 }
 
 export type EstimateResponse = EstimateFinal | EstimateQuestion

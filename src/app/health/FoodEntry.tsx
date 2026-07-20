@@ -102,6 +102,18 @@ export function FoodWizardSheet({
     runEstimate(d, [])
   }
 
+  // Launched from the ingredient page's "Estimate it with AI" — run immediately
+  // so the follow-up questions appear without a second tap on "Estimate".
+  const autoRan = useRef(false)
+  useEffect(() => {
+    if (autoRan.current) return
+    if (initialDescription && initialDescription.trim()) {
+      autoRan.current = true
+      start(initialDescription)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   function submitAnswer(skipped: boolean) {
     if (!question) return
     const answer = skipped ? '' : (otherOpen && otherText.trim() ? otherText.trim() : selected ?? '')
@@ -204,6 +216,12 @@ export function FoodWizardSheet({
         <div className="space-y-3">
           <div>
             <p className="text-sm font-semibold text-white">{question.question}</p>
+            {question.reasoning && (
+              <p className="text-xs italic text-zinc-400 mt-1 leading-relaxed">
+                {question.reasoning}
+                {question.calorie_delta != null ? ` (±${question.calorie_delta} kcal)` : ''}
+              </p>
+            )}
             <p className="text-[10px] text-zinc-600 mt-0.5">Question {question.step} of up to 3</p>
           </div>
           <div className="flex flex-wrap gap-2">
