@@ -10,7 +10,7 @@ export async function GET() {
   const db = createServiceClient()
   const { data, error } = await db
     .from('exercise_library')
-    .select('id, name, aliases, primary_muscles, bodyweight, default_goal, rep_min, rep_max, step, popularity, start_weight_ratio, female_factor')
+    .select('id, name, short_name, aliases, primary_muscles, bodyweight, default_goal, rep_min, rep_max, step, popularity, start_weight_ratio, female_factor')
     .order('popularity', { ascending: false })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

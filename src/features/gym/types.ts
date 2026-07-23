@@ -44,6 +44,7 @@ export interface GymExercise {
 export interface ExerciseLibraryEntry {
   id: string
   name: string
+  short_name: string | null   // compact rail display name; full name stays in `name`
   aliases: string[]
   primary_muscles: string[]
   bodyweight: boolean

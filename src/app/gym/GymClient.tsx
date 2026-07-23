@@ -25,6 +25,7 @@ import { SET_TIMER_KEY, isTimerLive } from '@/features/gym/sessionSignal'
 import ExerciseAutocomplete from './ExerciseAutocomplete'
 import ExerciseInfoSheet from './ExerciseInfoSheet'
 import { SPRING_POP } from './motion'
+import ChatText from '@/components/ChatText'
 
 type SetTimerState = { phase: TimerPhase; phaseStart: number | null; sessionStart: number | null }
 const GYM_LAST_KEY = 'atlas.gym.last' // last exercise + weight + reps, restored on app open
@@ -1397,7 +1398,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 transition={{ duration: 0.3 }}
                 className={`px-5 py-4 border-t border-white/8 ${coachMode === 'devil' ? 'bg-red-950/30' : 'bg-emerald-950/30'}`}
               >
-                <p className="text-sm leading-relaxed text-white/90">{coachText}</p>
+                <ChatText text={coachText} className="text-sm leading-relaxed text-white/90" />
               </motion.div>
             )}
           </AnimatePresence>
@@ -2353,7 +2354,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     // Prefill from library. Name edits unlink (different exercise);
                     // later edits to reps/step/bodyweight are personal overrides and keep the link.
                     setExModal(m => ({
-                      ...m, name: entry.name, libraryId: entry.id,
+                      ...m, name: entry.short_name || entry.name, libraryId: entry.id,
                       bodyweight: entry.bodyweight, repMin: entry.rep_min, repMax: entry.rep_max, step: entry.step,
                     }))
                     setPickFlash(f => f + 1)

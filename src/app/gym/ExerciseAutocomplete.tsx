@@ -124,7 +124,7 @@ export default function ExerciseAutocomplete({ value, onChange, onPick, onInfo, 
                       />
                     )}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm truncate"><Highlight text={entry.name} q={value} /></p>
+                      <p className="text-sm truncate"><Highlight text={entry.short_name || entry.name} q={value} /></p>
                       <p className="text-[10px] text-white/35 capitalize truncate">
                         {entry.primary_muscles[0] ?? entry.default_goal}
                         {entry.bodyweight && <span className="text-white/25"> · bodyweight</span>}
