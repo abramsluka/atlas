@@ -23,6 +23,8 @@ export interface GymConfig {
   units: 'lbs' | 'kg'
   upgrade_at_reps: number
   upgrade_at_reps_auto?: boolean
+  celebrate_pr?: boolean       // full-screen New Best burst on PR (default true)
+  show_next_target?: boolean   // "beat your best" card in the history sheet (default true)
 }
 
 export interface GymExercise {
@@ -47,6 +49,7 @@ export interface ExerciseLibraryEntry {
   short_name: string | null   // compact rail display name; full name stays in `name`
   aliases: string[]
   primary_muscles: string[]
+  equipment: string | null    // in the slim index for SwapSheet's different-equipment ranking
   bodyweight: boolean
   default_goal: 'strength' | 'hypertrophy' | 'endurance'
   rep_min: number
@@ -75,6 +78,10 @@ export interface GymLog {
   weight: number
   reps: number
   logged_at: string  // ISO
+  // Today-only swap: the movement actually performed (travel-day substitute).
+  // NULL = the slot's own exercise. Swapped sets are excluded from progression math.
+  performed_exercise?: string | null
+  performed_library_id?: string | null
 }
 
 export interface GymSession {

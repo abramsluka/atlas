@@ -104,7 +104,11 @@ export function useDeleteExercise() {
 export function useLogSet() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (log: { exercise_id: string; weight: number; reps: number }) => {
+    mutationFn: async (log: {
+      exercise_id: string; weight: number; reps: number
+      // today-only swap metadata — set when the exercise is swapped for the day
+      performed_exercise?: string | null; performed_library_id?: string | null
+    }) => {
       const res = await fetch('/api/gym/logs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

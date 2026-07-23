@@ -13,6 +13,8 @@ const DEFAULT_CONFIG = {
   units: 'lbs',
   upgrade_at_reps: 12,
   upgrade_at_reps_auto: false,
+  celebrate_pr: true,
+  show_next_target: true,
 }
 
 export async function GET() {

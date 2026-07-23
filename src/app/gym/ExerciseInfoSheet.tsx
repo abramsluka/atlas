@@ -79,13 +79,101 @@ function DemoPlayer({ urls, name }: { urls: string[]; name: string }) {
   )
 }
 
-function SheetBody({ id, onClose }: { id: string; onClose: () => void }) {
+// The info body (photos demo + muscles + meta + numbered steps), shared by this
+// standalone sheet and the ExerciseDetailSheet's How-to tab.
+export function HowToContent({ id, onClose, showTitle = true }: { id: string; onClose?: () => void; showTitle?: boolean }) {
   const { data: detail, isLoading } = useExerciseDetail(id)
 
   const meta = detail
     ? [detail.equipment, detail.category, detail.level, detail.mechanic, detail.force].filter(Boolean) as string[]
     : []
 
+  if (isLoading || !detail) {
+    return (
+      <div className="space-y-4 py-2 animate-pulse">
+        <div className="h-6 w-2/3 rounded-lg bg-white/8" />
+        <div className="aspect-[4/3] w-full rounded-2xl bg-white/5" />
+        <div className="h-4 w-1/2 rounded bg-white/8" />
+        <div className="h-3 w-full rounded bg-white/5" />
+        <div className="h-3 w-5/6 rounded bg-white/5" />
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      {showTitle && (
+        <motion.div variants={cascade} custom={0} initial="hidden" animate="show"
+          className="flex items-start justify-between gap-3 mb-4">
+          <h2 className="text-xl font-bold text-white leading-tight">{detail.name}</h2>
+          {onClose && <button onClick={onClose} className="text-white/40 text-2xl leading-none shrink-0">×</button>}
+        </motion.div>
+      )}
+
+      <motion.div variants={cascade} custom={1} initial="hidden" animate="show" className="mb-5">
+        <DemoPlayer urls={detail.image_urls} name={detail.name} />
+      </motion.div>
+
+      <motion.div variants={cascade} custom={2} initial="hidden" animate="show" className="mb-4">
+        <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30 mb-2">Muscles</p>
+        <div className="flex gap-1.5 flex-wrap">
+          {detail.primary_muscles.map((m, i) => (
+            <motion.span
+              key={m}
+              initial={{ boxShadow: '0 0 0px rgba(74,222,128,0)' }}
+              animate={{ boxShadow: ['0 0 0px rgba(74,222,128,0)', '0 0 14px rgba(74,222,128,0.35)', '0 0 0px rgba(74,222,128,0)'] }}
+              transition={{ duration: 1.4, delay: 0.3 + i * 0.1, ease: 'easeInOut' }}
+              className="text-xs px-2.5 py-1 rounded-full capitalize"
+              style={{ background: 'rgba(74,222,128,0.1)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.3)' }}
+            >
+              {m}
+            </motion.span>
+          ))}
+          {detail.secondary_muscles.map(m => (
+            <span key={m} className="text-xs px-2.5 py-1 rounded-full capitalize border border-white/15 text-white/50">
+              {m}
+            </span>
+          ))}
+        </div>
+      </motion.div>
+
+      {meta.length > 0 && (
+        <motion.div variants={cascade} custom={3} initial="hidden" animate="show" className="flex gap-1.5 flex-wrap mb-5">
+          {meta.map(m => (
+            <span key={m} className="text-[10px] uppercase tracking-wider px-2 py-1 rounded-md bg-white/[0.04] border border-white/10 text-white/40">
+              {m}
+            </span>
+          ))}
+        </motion.div>
+      )}
+
+      {detail.instructions.length > 0 && (
+        <motion.div variants={cascade} custom={4} initial="hidden" animate="show">
+          <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30 mb-3">How to do it</p>
+          <ol className="space-y-3">
+            {detail.instructions.map((step, i) => (
+              <motion.li
+                key={i}
+                variants={cascade}
+                custom={5 + i}
+                initial="hidden"
+                animate="show"
+                className="flex gap-3 text-sm text-white/70 leading-relaxed"
+              >
+                <span className="shrink-0 font-mono text-xs mt-0.5" style={{ color: 'rgba(74,222,128,0.5)' }}>
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                {step}
+              </motion.li>
+            ))}
+          </ol>
+        </motion.div>
+      )}
+    </div>
+  )
+}
+
+function SheetBody({ id, onClose }: { id: string; onClose: () => void }) {
   return (
     <>
       <motion.div
@@ -114,83 +202,7 @@ function SheetBody({ id, onClose }: { id: string; onClose: () => void }) {
         </div>
 
         <div className="overflow-y-auto overscroll-contain px-5 pb-10">
-          {isLoading || !detail ? (
-            <div className="space-y-4 py-2 animate-pulse">
-              <div className="h-6 w-2/3 rounded-lg bg-white/8" />
-              <div className="aspect-[4/3] w-full rounded-2xl bg-white/5" />
-              <div className="h-4 w-1/2 rounded bg-white/8" />
-              <div className="h-3 w-full rounded bg-white/5" />
-              <div className="h-3 w-5/6 rounded bg-white/5" />
-            </div>
-          ) : (
-            <div>
-              <motion.div variants={cascade} custom={0} initial="hidden" animate="show"
-                className="flex items-start justify-between gap-3 mb-4">
-                <h2 className="text-xl font-bold text-white leading-tight">{detail.name}</h2>
-                <button onClick={onClose} className="text-white/40 text-2xl leading-none shrink-0">×</button>
-              </motion.div>
-
-              <motion.div variants={cascade} custom={1} initial="hidden" animate="show" className="mb-5">
-                <DemoPlayer urls={detail.image_urls} name={detail.name} />
-              </motion.div>
-
-              <motion.div variants={cascade} custom={2} initial="hidden" animate="show" className="mb-4">
-                <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30 mb-2">Muscles</p>
-                <div className="flex gap-1.5 flex-wrap">
-                  {detail.primary_muscles.map((m, i) => (
-                    <motion.span
-                      key={m}
-                      initial={{ boxShadow: '0 0 0px rgba(74,222,128,0)' }}
-                      animate={{ boxShadow: ['0 0 0px rgba(74,222,128,0)', '0 0 14px rgba(74,222,128,0.35)', '0 0 0px rgba(74,222,128,0)'] }}
-                      transition={{ duration: 1.4, delay: 0.3 + i * 0.1, ease: 'easeInOut' }}
-                      className="text-xs px-2.5 py-1 rounded-full capitalize"
-                      style={{ background: 'rgba(74,222,128,0.1)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.3)' }}
-                    >
-                      {m}
-                    </motion.span>
-                  ))}
-                  {detail.secondary_muscles.map(m => (
-                    <span key={m} className="text-xs px-2.5 py-1 rounded-full capitalize border border-white/15 text-white/50">
-                      {m}
-                    </span>
-                  ))}
-                </div>
-              </motion.div>
-
-              {meta.length > 0 && (
-                <motion.div variants={cascade} custom={3} initial="hidden" animate="show" className="flex gap-1.5 flex-wrap mb-5">
-                  {meta.map(m => (
-                    <span key={m} className="text-[10px] uppercase tracking-wider px-2 py-1 rounded-md bg-white/[0.04] border border-white/10 text-white/40">
-                      {m}
-                    </span>
-                  ))}
-                </motion.div>
-              )}
-
-              {detail.instructions.length > 0 && (
-                <motion.div variants={cascade} custom={4} initial="hidden" animate="show">
-                  <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30 mb-3">How to do it</p>
-                  <ol className="space-y-3">
-                    {detail.instructions.map((step, i) => (
-                      <motion.li
-                        key={i}
-                        variants={cascade}
-                        custom={5 + i}
-                        initial="hidden"
-                        animate="show"
-                        className="flex gap-3 text-sm text-white/70 leading-relaxed"
-                      >
-                        <span className="shrink-0 font-mono text-xs mt-0.5" style={{ color: 'rgba(74,222,128,0.5)' }}>
-                          {String(i + 1).padStart(2, '0')}
-                        </span>
-                        {step}
-                      </motion.li>
-                    ))}
-                  </ol>
-                </motion.div>
-              )}
-            </div>
-          )}
+          <HowToContent id={id} onClose={onClose} />
         </div>
       </motion.div>
     </>

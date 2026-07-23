@@ -24,6 +24,10 @@ import SetTimerRing, { fmtClock, type TimerPhase } from './SetTimerRing'
 import { SET_TIMER_KEY, isTimerLive } from '@/features/gym/sessionSignal'
 import ExerciseAutocomplete from './ExerciseAutocomplete'
 import ExerciseInfoSheet from './ExerciseInfoSheet'
+import ExerciseDetailSheet, { type DetailTab } from './ExerciseDetailSheet'
+import SwapSheet, { type SwapChoice } from './SwapSheet'
+import NewBestBurst from './NewBestBurst'
+import { detectNewBest, type NewBest } from '@/features/gym/history'
 import { SPRING_POP } from './motion'
 import ChatText from '@/components/ChatText'
 
@@ -540,6 +544,12 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   // Modals
   const [exModal, setExModal] = useState<ExModalState>(EMPTY_EX_MODAL)
   const [infoId, setInfoId] = useState<string | null>(null)
+  // Exercise detail pop-up (History | How-to tabs) + today-only swap + PR burst
+  const [detail, setDetail] = useState<{ id: string; tab: DetailTab } | null>(null)
+  const [swapOpen, setSwapOpen] = useState(false)
+  const [burst, setBurst] = useState<NewBest | null>(null)
+  // Session-local swap picks; null = explicitly reverted (overrides log-derived state)
+  const [swapOverrides, setSwapOverrides] = useState<Record<string, SwapChoice | null>>({})
   const [pickFlash, setPickFlash] = useState(0)  // bumps on library pick to pulse the prefilled fields
   const { data: libraryIndex = [] } = useExerciseLibrary()
   const [mounted, setMounted] = useState(false)
@@ -676,6 +686,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   // Settings local state
   const [settingsGyms, setSettingsGyms] = useState(config.gyms)
   const [settingsUnits, setSettingsUnits] = useState(config.units)
+  const [settingsCelebrate, setSettingsCelebrate] = useState(config.celebrate_pr !== false)
+  const [settingsNextTarget, setSettingsNextTarget] = useState(config.show_next_target !== false)
   const [coachStepRec, setCoachStepRec] = useState<{ step: number; reason: string } | null>(null)
   const [coachStepLoading, setCoachStepLoading] = useState(false)
   const importRef = useRef<HTMLInputElement>(null)
@@ -770,6 +782,26 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     [allLogs, currentEx]
   )
 
+  // Today's swaps re-derived from logged sets (survives reload); session picks
+  // in swapOverrides win, `null` there = explicitly reverted.
+  const derivedSwaps = useMemo(() => {
+    const m: Record<string, SwapChoice> = {}
+    for (const l of allLogs) {
+      if (l.performed_exercise && logDatePST(l.logged_at) === today) {
+        m[l.exercise_id] = { name: l.performed_exercise, library_id: l.performed_library_id ?? null }
+      }
+    }
+    return m
+  }, [allLogs, today])
+
+  const activeSwap: SwapChoice | null = currentEx
+    ? (swapOverrides[currentEx.id] !== undefined ? swapOverrides[currentEx.id] : derivedSwaps[currentEx.id] ?? null)
+    : null
+
+  // Progression math ignores swapped sets — a travel-day substitute's numbers
+  // (e.g. dumbbell vs barbell) must never drive this lift's rx/best/trend.
+  const ownLogs = useMemo(() => exLogs.filter(l => !l.performed_exercise), [exLogs])
+
   const repMin = currentEx?.rep_min ?? 6
   const repMax = currentEx?.rep_max ?? 8
   // Slider fill %, clamped so out-of-range reps (e.g. high-rep bodyweight) don't glitch the track.
@@ -779,14 +811,14 @@ export default function GymClient({ today, initialConfig, initialExercises, init
 
   const rx = useMemo(() => {
     if (!currentEx) return null
-    return getRx(exLogs, currentEx, config.units)
-  }, [exLogs, currentEx, config.units])
+    return getRx(ownLogs, currentEx, config.units)
+  }, [ownLogs, currentEx, config.units])
 
   const bestSet = useMemo(() => {
-    if (!exLogs.length) return null
-    if (currentEx?.bodyweight) return exLogs.reduce((b, l) => l.reps > b.reps ? l : b)
-    return exLogs.reduce((b, l) => compute1RM(l.weight, l.reps) > compute1RM(b.weight, b.reps) ? l : b)
-  }, [exLogs, currentEx])
+    if (!ownLogs.length) return null
+    if (currentEx?.bodyweight) return ownLogs.reduce((b, l) => l.reps > b.reps ? l : b)
+    return ownLogs.reduce((b, l) => compute1RM(l.weight, l.reps) > compute1RM(b.weight, b.reps) ? l : b)
+  }, [ownLogs, currentEx])
 
   // Suggested first-set weight from the library's bodyweight-ratio heuristic,
   // shown until the first set is logged. bodyWeights is ascending by date_key.
@@ -823,13 +855,24 @@ export default function GymClient({ today, initialConfig, initialExercises, init
 
   function handleLogSet() {
     if (!currentEx) return
+    const ex = currentEx
     const reps = selectedReps
     if (reps < 1) return
-    const w = currentEx.bodyweight ? 0 : (parseFloat(weightInput) || 0)
-    logSet.mutate({ exercise_id: currentEx.id, weight: w, reps }, {
+    const w = ex.bodyweight ? 0 : (parseFloat(weightInput) || 0)
+    const prior = exLogs        // captured pre-insert — PR check runs against these
+    const swap = activeSwap
+    logSet.mutate({
+      exercise_id: ex.id, weight: w, reps,
+      ...(swap ? { performed_exercise: swap.name, performed_library_id: swap.library_id } : {}),
+    }, {
       onSuccess: () => {
         setLogSetFlash(true)
         setTimeout(() => setLogSetFlash(false), 400)
+        // New Best burst — never on a swapped set (different movement ≠ a record here)
+        if (!swap && config.celebrate_pr !== false) {
+          const pr = detectNewBest(prior, { weight: w, reps }, ex)
+          if (pr) setBurst(pr)
+        }
       },
     })
   }
@@ -917,6 +960,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
       ...config,
       gyms: settingsGyms,
       units: settingsUnits,
+      celebrate_pr: settingsCelebrate,
+      show_next_target: settingsNextTarget,
     })
     setShowSettings(false)
   }
@@ -924,6 +969,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   function openSettings() {
     setSettingsGyms(config.gyms.map(g => ({ ...g })))
     setSettingsUnits(config.units)
+    setSettingsCelebrate(config.celebrate_pr !== false)
+    setSettingsNextTarget(config.show_next_target !== false)
     setShowSettings(true)
   }
 
@@ -1544,24 +1591,39 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                       initial={{ opacity: 0, x: -8 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ duration: 0.3, ease: EASE_OUT }}
-                      className="flex-1 text-2xl font-bold text-white leading-tight"
+                      onClick={() => setDetail({ id: currentEx.id, tab: 'history' })}
+                      className="flex-1 text-2xl font-bold text-white leading-tight cursor-pointer active:opacity-70"
                     >
                       {currentEx.name}
                     </motion.h2>
-                    {currentEx.library_id && (
-                      <motion.button
-                        key={`info-${currentEx.id}`}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ duration: 0.5, delay: 0.15 }}
-                        onClick={() => setInfoId(currentEx.library_id!)}
-                        className="shrink-0 w-7 h-7 mt-1 rounded-full flex items-center justify-center text-xs text-white/40 active:text-white"
-                        style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
-                        aria-label="Exercise info"
-                      >
-                        i
-                      </motion.button>
-                    )}
+                    {/* Swap — today-only substitute (traveling / different gym) */}
+                    <motion.button
+                      key={`swap-${currentEx.id}`}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.5, delay: 0.1 }}
+                      onClick={() => setSwapOpen(true)}
+                      className="shrink-0 w-7 h-7 mt-1 rounded-full flex items-center justify-center text-xs text-white/40 active:text-white"
+                      style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
+                      aria-label="Swap exercise for today"
+                    >
+                      ⇄
+                    </motion.button>
+                    {/* Detail pop-up — History (default) | How-to */}
+                    <motion.button
+                      key={`detail-${currentEx.id}`}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.5, delay: 0.15 }}
+                      onClick={() => setDetail({ id: currentEx.id, tab: 'history' })}
+                      className="shrink-0 w-7 h-7 mt-1 rounded-full flex items-center justify-center text-white/40 active:text-white"
+                      style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
+                      aria-label="Exercise history & guide"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                        <path d="M1 9L4.2 5.4L6.8 7.2L11 2.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </motion.button>
                     {rx && (
                       <motion.span
                         key={rx.action}
@@ -1588,6 +1650,20 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                       </motion.span>
                     )}
                   </div>
+                  {activeSwap && (
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <span className="text-xs font-medium" style={{ color: '#4ade80' }}>
+                        → {activeSwap.name} · today only
+                      </span>
+                      <button
+                        onClick={() => setSwapOverrides(s => ({ ...s, [currentEx.id]: null }))}
+                        className="text-white/30 text-sm leading-none active:text-white"
+                        aria-label="Revert swap"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  )}
                   {lastLog && (
                     <p className="text-xs text-white/30 font-mono mt-1.5">
                       Last: {currentEx.bodyweight ? `${lastLog.reps} reps` : `${lastLog.weight}${config.units} × ${lastLog.reps}`}
@@ -1838,7 +1914,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                       >
                         <p className="text-[10px] text-white/30 uppercase tracking-widest px-3 pt-3 pb-1 shrink-0">Trend</p>
                         <div className="flex-1 flex items-end">
-                          <PoSparkline logs={exLogs} bodyweight={currentEx.bodyweight} />
+                          <PoSparkline logs={ownLogs} bodyweight={currentEx.bodyweight} />
                         </div>
                       </motion.div>
                     )}
@@ -2676,6 +2752,35 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 </button>
               </div>
 
+              {/* History & records */}
+              <div>
+                <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">History &amp; records</label>
+                <div className="space-y-3">
+                  {([
+                    { label: 'Celebrate a new best', desc: 'Full-screen burst when you beat your record', on: settingsCelebrate, set: setSettingsCelebrate },
+                    { label: 'Next-target rule', desc: 'The "beat your best" card in exercise history', on: settingsNextTarget, set: setSettingsNextTarget },
+                  ] as const).map(t => (
+                    <div key={t.label} className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm text-white/80">{t.label}</p>
+                        <p className="text-[11px] text-white/30">{t.desc}</p>
+                      </div>
+                      <button
+                        onClick={() => t.set(v => !v)}
+                        className="shrink-0 w-11 h-6 rounded-full relative transition-colors"
+                        style={{ background: t.on ? 'rgba(74,222,128,0.35)' : 'rgba(255,255,255,0.1)', border: '1px solid ' + (t.on ? 'rgba(74,222,128,0.5)' : 'rgba(255,255,255,0.12)') }}
+                        aria-pressed={t.on}
+                      >
+                        <span
+                          className="absolute top-0.5 w-4.5 h-4.5 rounded-full transition-all"
+                          style={{ left: t.on ? 'calc(100% - 20px)' : '2px', width: 18, height: 18, background: t.on ? '#4ade80' : 'rgba(255,255,255,0.4)' }}
+                        />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               {/* Data */}
               <div>
                 <label className="text-xs text-white/40 uppercase tracking-wider block mb-3">Data</label>
@@ -2718,6 +2823,24 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     )}
     <ProgramGenerator open={programGenOpen} onClose={() => setProgramGenOpen(false)} prefill={programGenPrefill} />
     <ProgramHistory open={programHistoryOpen} onClose={() => setProgramHistoryOpen(false)} />
+    <ExerciseDetailSheet
+      exerciseId={detail?.id ?? null}
+      exercise={detail ? exercises.find(e => e.id === detail.id) ?? null : null}
+      units={config.units}
+      showNextTarget={config.show_next_target !== false}
+      initialTab={detail?.tab ?? 'history'}
+      onLogSession={id => { setDetail(null); selectEx(id) }}
+      onClose={() => setDetail(null)}
+    />
+    <SwapSheet
+      open={swapOpen}
+      exercise={currentEx ?? null}
+      entries={libraryIndex}
+      onPick={c => { if (currentEx) setSwapOverrides(s => ({ ...s, [currentEx.id]: c })); setSwapOpen(false) }}
+      onInfo={id => setInfoId(id)}
+      onClose={() => setSwapOpen(false)}
+    />
+    <NewBestBurst best={burst} units={config.units} exercise={currentEx ?? null} onDismiss={() => setBurst(null)} />
     <ExerciseInfoSheet id={infoId} onClose={() => setInfoId(null)} />
     </>
   )
