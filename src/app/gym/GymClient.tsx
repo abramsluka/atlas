@@ -1087,10 +1087,12 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const todayExIds = [...new Set(todayAllLogs.map(l => l.exercise_id))]
   const todayVolume = todayAllLogs.reduce((s, l) => s + l.weight * l.reps, 0)
 
-  // Past workouts (for history)
+  // Past workouts (for history) — every distinct past training day, newest first.
+  // No cap: the count badge and the list both need the true total, and allLogs
+  // is already the full unbounded set from /api/gym/logs.
   const pastDates = [...new Set(
     allLogs.filter(l => logDatePST(l.logged_at) !== today).map(l => logDatePST(l.logged_at))
-  )].sort((a, b) => b.localeCompare(a)).slice(0, 10)
+  )].sort((a, b) => b.localeCompare(a))
   const sessionByDate = useMemo(
     () => Object.fromEntries(sessions.map(s => [s.date_key, s])),
     [sessions],
