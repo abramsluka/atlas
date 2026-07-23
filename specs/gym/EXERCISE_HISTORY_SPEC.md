@@ -27,7 +27,8 @@ chrome and `WtChart` for the chart craft.
 | "make it so gives the increase in the last 30 days" | **§4 stats** → `LAST 30 DAYS` tile |
 | "when I lift more weight than ever before I get a star animation that says new best, then click anywhere to continue" | **§7 New-Best Burst** |
 | "beat your best" card: *Your best is 85 kg × 5. Beat it next session: 87.5 kg, or 85 kg × 6* + the two toggles | **§8 Next-Target card** + **§9 Settings** |
-| "swap and history buttons for each exercise… swap suggests exercises but I can also search… info thing with pictures + numbered instructions" | **§10 Swap Sheet** + hero buttons (§11); the info sheet is **already built** — reused, not rebuilt |
+| "swap … for each exercise … swap suggests exercises but I can also search" (traveling / away from home gym) | **§10 Swap Sheet** — today-only substitute + hero button (§11) |
+| "info thing with pictures + numbered instructions" | **How-to tab** of the detail sheet (§5b) — the already-built `ExerciseInfoSheet` content, moved into a tab |
 
 ### What already exists — reuse, do not rebuild
 
@@ -38,7 +39,7 @@ Confirmed in the codebase (file:line):
 - **Best-set memo** `bestSet` (max reps for bodyweight, else max e1RM) — `GymClient.tsx:785`. Closest thing to a PR today; the new PR logic generalizes it.
 - **Chart craft** `WtChart` inline-SVG area chart w/ rolling avg — `GymClient.tsx:210`; `PoSparkline` last-15-set sparkline — `GymClient.tsx:168`. **No charting library is installed** and none should be added — hand-rolled `<path>` + `<linearGradient>` is the house convention (StreakStrip, HomeClient, HealthClient all do this).
 - **Sheet chrome** portal + backdrop + `drag="y"` dismiss + `SPRING_SHEET` — `ExerciseInfoSheet.tsx:99-111`. Copy this shell.
-- **Info sheet** `ExerciseInfoSheet` (photos crossfade demo + numbered instructions) — `src/app/gym/ExerciseInfoSheet.tsx`. **Done.** The Swap sheet's ⓘ affordance and the hero ⓘ both open this; we only add new entry points.
+- **Info content** `ExerciseInfoSheet` (photos crossfade demo + numbered instructions + muscles/meta) — `src/app/gym/ExerciseInfoSheet.tsx`. **Done.** Its body becomes the **How-to tab** of the new detail sheet (§5b), and its bottom-sheet shell is the model for that sheet. The Swap rows' ⓘ opens the detail sheet straight to How-to.
 - **Autocomplete filter/scoring** `ExerciseAutocomplete.tsx` — reuse its library-filter logic for Swap search.
 - **Log mutation** `useLogSet` — `src/features/gym/mutations.ts:104` (POSTs `{exercise_id, weight, reps}`, appends to `['gym-logs', id]` + `['gym-logs-all']`). The burst hooks its success.
 - **Motion constants** `EASE_OUT`, `SPRING_SNAPPY`, `SPRING_SHEET`, `SPRING_POP` — `src/app/gym/motion.ts`.
@@ -47,8 +48,8 @@ Confirmed in the codebase (file:line):
 ### Net-new (what this spec builds)
 
 - A **pure derivation module** (`history.ts`): sets → sessions → chart series + stats + PR detection. No hook re-implements what GymClient already computes ad hoc; this centralizes it.
-- Four components: **ExerciseHistorySheet**, **ProgressionChart**, **NewBestBurst**, **SwapSheet**.
-- Two `gym_config` boolean columns for the celebration/next-target toggles (one small migration).
+- Components: **ExerciseDetailSheet** (one pop-up, tabbed **History** + **How-to**), **ProgressionChart**, **NewBestBurst**, **SwapSheet** — plus refactoring the existing `ExerciseInfoSheet` body into the How-to tab.
+- One small migration: two `gym_config` toggles (celebration / next-target) + two `gym_logs` columns for today-only swap metadata.
 - GymClient wiring: Swap/History buttons on the hero, mount the three overlays, fire the burst on PR.
 
 **Step 0:** this file (`specs/gym/EXERCISE_HISTORY_SPEC.md`) is the spec, kept in the new `specs/` tree.
@@ -59,13 +60,13 @@ Confirmed in the codebase (file:line):
 
 ```
 GymClient (existing)
- ├─ exercise hero (1539) ── + [ⓘ info]  [⇄ swap]  [↗ history]   ← new buttons, act on currentEx
- ├─ useLogSet success ───── detectNewBest() → <NewBestBurst/>     ← new, gated by config.celebrate_pr
+ ├─ exercise hero (1539) ── tap name/card OR [◔ detail] → detail sheet (History tab);  [⇄ swap] button
+ ├─ useLogSet success ───── detectNewBest() → <NewBestBurst/>   ← gated by config.celebrate_pr
  └─ mounts overlays once at bottom:
-      <ExerciseInfoSheet id={infoId}/>          (exists)
-      <ExerciseHistorySheet exerciseId={historyId}/>   ← new
-      <SwapSheet open={swapOpen} exercise={currentEx}/> ← new
-      <NewBestBurst best={burst}/>              ← new
+      <ExerciseDetailSheet exerciseId={detailId} initialTab="history"/>  ← new — tabs: History | How-to
+      <SwapSheet open={swapOpen} exercise={currentEx}/>                   ← new — today-only substitute
+      <NewBestBurst best={burst}/>                                        ← new
+   ExerciseInfoSheet is absorbed as the How-to tab body — no longer a standalone sheet/entry point.
 
 src/features/gym/history.ts   (new, pure)
    groupSessions(logs, exercise) → ExerciseSession[]
@@ -99,6 +100,7 @@ export interface ExerciseSession {
 }
 ```
 
+- **Filter swapped sets** (`performed_exercise != null`) out of the series, best, and deltas — they're a different movement done on a travel day (§10). Keep them for the table (greyed "swapped" rows) and for day volume.
 - Group by `logDatePST(log.logged_at)` (import/duplicate the fn — see Gotchas on the shared-helper split).
 - Order sessions **ascending** by dateKey for the chart; the table renders reversed.
 - `deltaWeight` drives the table's PROGRESS column (`+2.5`, `first`, or a negative "off the line").
@@ -159,15 +161,21 @@ From `best`: `{ weightTarget: best.weight + ex.step, repTarget: best.reps + 1 }`
 
 ## 3. Schema — `supabase/migrations/20260724000001_gym_history_prefs.sql` (new, ~10 lines)
 
-The only backend change. Two per-user toggles on the existing single-row `gym_config`:
+Two things: per-user toggles on the single-row `gym_config`, and today-only swap metadata on `gym_logs`. Still **no new table and no new route** — only these columns plus tiny edits to the existing `config` and `logs` routes.
 
 ```sql
+-- celebration + next-target toggles
 alter table gym_config add column if not exists celebrate_pr boolean not null default true;
 alter table gym_config add column if not exists show_next_target boolean not null default true;
+
+-- today-only swap: the movement actually performed for a set (NULL = the slot's own exercise)
+alter table gym_logs add column if not exists performed_exercise text;
+alter table gym_logs add column if not exists performed_library_id text;  -- substitute's library slug, if picked from the library
 ```
 
 - Run via house convention: `psql "$DATABASE_URL" -f supabase/migrations/20260724000001_gym_history_prefs.sql` (DATABASE_URL in `.env.local`). Re-run is a no-op.
-- `config/route.ts` already spreads the row on GET and the body on PUT, so both flags flow through once they're on the `GymConfig` type — **no route edit needed** beyond the default in the GET fallback (see §5 note).
+- `config/route.ts` spreads the row on GET / body on PUT, so both flags flow through once on the `GymConfig` type (just default them `?? true` on the GET mapper for legacy rows). `logs/route.ts` POST must additionally accept + insert `performed_exercise`/`performed_library_id`; GET already `select *`s them.
+- **Progression math ignores any set with `performed_exercise is not null`** (§2, §10): swapped sets never enter the original exercise's chart, best, or deltas — they'd be incomparable numbers (dumbbell vs barbell). They still count toward the day's volume and show in the history table as a greyed "swapped" row.
 
 No new tables. History, sessions, and PRs are **derived from `gym_logs`** at read time; storing them would just create a sync-drift bug.
 
@@ -180,6 +188,8 @@ No new tables. History, sessions, and PRs are **derived from `gym_logs`** at rea
 celebrate_pr?: boolean       // default true
 show_next_target?: boolean   // default true
 ```
+Extend `GymLog`: `performed_exercise?: string | null; performed_library_id?: string | null`.
+
 Add the `ExerciseSession`, `ExerciseStats`, `BestRecord`, `NewBest` interfaces (or export them from `history.ts` and re-export — keep one home; `history.ts` is fine).
 
 **`src/features/gym/queries.ts`** — no new hook required; `useGymLogs(exerciseId)` (line 56) already exists. The sheet calls it with `enabled: !!exerciseId`. If we want the timeframe/stat math memoized, do it in the component with `useMemo` over `history.ts` fns, not in a query.
@@ -188,19 +198,22 @@ Add the `ExerciseSession`, `ExerciseStats`, `BestRecord`, `NewBest` interfaces (
 
 ---
 
-## 5. UI — `src/app/gym/ExerciseHistorySheet.tsx` (new, ~260 lines)
+## 5. UI — `src/app/gym/ExerciseDetailSheet.tsx` (new, ~320 lines) — the exercise pop-up (replaces the standalone info sheet)
 
-Props: `{ exerciseId: string | null; exercise: GymExercise | null; units: 'lbs'|'kg'; showNextTarget: boolean; onLogSession: (exId: string) => void; onClose: () => void }`.
+**This is the one pop-up** that opens when you tap an exercise. It has a **tab strip** — **History** (default) · **How-to** — inside a single bottom sheet. Tapping the exercise name/card or the detail button lands on History; the tab strip switches the body to How-to (the built photos + instructions). One entry point, two views — the pattern every serious lifting app (Strong / Hevy / Apple Fitness) uses. "Info" and "Tutorial" are the same thing, so there are **two tabs, not three**.
 
-Portals to `document.body`, `z-[70]`, same shell as `ExerciseInfoSheet` (backdrop fade + `motion.div` bottom sheet, `drag="y"`, velocity dismiss, grab handle). Self-fetches via `useGymLogs(exerciseId)`; derives sessions/series/stats with `history.ts` inside `useMemo`.
+Props: `{ exerciseId: string | null; exercise: GymExercise | null; units: 'lbs'|'kg'; showNextTarget: boolean; initialTab?: 'history'|'howto'; onLogSession: (exId: string) => void; onClose: () => void }`.
 
-Layout, top → bottom (mirrors the reference screenshot):
+Portals to `document.body`, `z-[70]`, same shell as today's `ExerciseInfoSheet` (backdrop fade + `motion.div` bottom sheet, `drag="y"`, velocity dismiss, grab handle) + a segmented tab strip under the header. Switching tabs crossfades/slides the body (`AnimatePresence mode="wait"`) and springs the sheet height. History self-fetches via `useGymLogs(exerciseId)` and derives sessions/series/stats with `history.ts` in `useMemo`; How-to uses `useExerciseDetail(exercise.library_id)`.
+
+### 5a. History tab — layout, top → bottom (mirrors the reference screenshot):
 
 ```
 history                                            ×
 Barbell bench                                        ← italic serif header
+[ History • | How-to ]                               ← tab strip; History is the default tab
 
-[ W ][ M ][ 3M ][ 6M ][ Y ][ ALL ]                  ← §6a TimeframeChooser (active = green pill)
+[ W ][ M ][ 3M ][ 6M ][ Y ][ ALL ]                  ← §6a TimeframeChooser (History tab only)
 
 ┌───────────────────────────────────────────────┐
 │  <ProgressionChart/>  (§6)                      │
@@ -228,6 +241,9 @@ Jun 15    4      5     82.5 kg   +2.5
 - The header word "history" is lowercase italic serif; exercise name is the big serif line (use `short_name` fallback to `name`).
 
 Config default note: `config/route.ts` GET should default `celebrate_pr`/`show_next_target` to `true` when the columns are null on legacy rows (one-line `?? true` in the mapper) so the UI never sees `undefined`.
+
+### 5b. How-to tab
+The existing `ExerciseInfoSheet` body verbatim: the crossfade `DemoPlayer` (two dataset photos = start/end of the movement) + primary/secondary muscle pills + equipment/level meta chips + numbered instructions. **Refactor:** extract the inner content of `ExerciseInfoSheet`'s `SheetBody` into `<HowToTab detail={detail} />` and render it here; the old standalone `ExerciseInfoSheet` wrapper is removed (its shell logic moves to `ExerciseDetailSheet`). Loading = the existing pulse skeleton. If `exercise.library_id` is null (custom exercise) → How-to shows a tidy empty state ("No guide for a custom exercise") and the tab strip hides How-to entirely, opening straight to History.
 
 ---
 
@@ -293,42 +309,45 @@ Reuse whatever toggle component the Settings overlay already uses for `upgrade_a
 
 ## 10. UI — `src/app/gym/SwapSheet.tsx` (new, ~200 lines)
 
-The "swap button… suggests exercises, but I can also search… info thing next to each" to-do.
+**What swap is for** (per Luka): you're at a different gym and can't do the slot's movement as written — e.g. no barbell, only dumbbells. Swap lets you do a similar movement **for that one day only**; tomorrow the slot is back to normal. It is not a permanent change to your program.
 
-Props: `{ open: boolean; exercise: GymExercise | null; entries: ExerciseLibraryEntry[]; onPick: (entry|customName) => void; onInfo: (id) => void; onClose: () => void }`. Same bottom-sheet shell.
+Props: `{ open: boolean; exercise: GymExercise | null; entries: ExerciseLibraryEntry[]; onPick: (choice) => void; onInfo: (id) => void; onClose: () => void }`. Same bottom-sheet shell.
 
 Contents:
-- **Header**: "Swap **{exercise.name}**".
-- **Suggestions** (default view): from `useExerciseLibrary()` (already fetched once per session), rank library entries that **share a primary muscle** with the current exercise (via its `library_id` detail, or its name match), tie-broken by `popularity`, excluding the current one. Show ~8. Each row: `short_name`/name + primary-muscle tag + a right-side **ⓘ** button (`onPointerDown` → `onInfo(id)` → opens the existing `ExerciseInfoSheet` — pictures + numbered instructions, **already built**).
-- **Search**: a text input at top; when non-empty, reuse `ExerciseAutocomplete`'s filter+score logic (name-startsWith > alias-startsWith > includes, popularity tiebreak) over the same index. Same row layout, same ⓘ.
-- **Custom**: dashed last row *Use "{query}" as a custom exercise* → unlinked pick.
+- **Header**: "Swap **{exercise.name}** — today only".
+- **Suggestions** (default): rank `useExerciseLibrary()` entries that **share a primary muscle** with the current exercise, **preferring a different `equipment`** (dumbbell / machine / cable when the original is a barbell), tie-broken by `popularity`, excluding the current one. Show ~8. Row: name/`short_name` + muscle tag + an equipment chip + right-side **ⓘ** → `onInfo(id)` (opens the detail sheet's How-to tab).
+- **Search**: text input at top; reuse `ExerciseAutocomplete`'s filter+score over the same index for when the substitute isn't in the suggestions. Same row layout + ⓘ.
+- **Custom**: dashed *Use "{query}" as today's swap* → free-text substitute (no library id).
 
-### Swap semantics (decision — non-destructive, confirm with Luka)
-"Swap" = **substitute the movement in this day's slot**, keeping each movement's history clean. Recommended behavior:
-1. Look for an existing `GymExercise` for the target (same `day_ids`/`gym_id`, matched by `library_id` or normalized name). If found → `selectEx(that.id)`.
-2. If not found → **create** a `GymExercise` from the picked library entry (prefill bodyweight/rep range/step from the library, like the add-exercise modal already does), in the current day/gym, then `selectEx(new.id)`.
+### Swap semantics (recommended — today-only, non-destructive)
+A swap does **not** create or rename any `GymExercise`. It sets a **per-day override** so, for today, the slot shows the substitute and the sets you log carry its name:
+1. Picking a substitute records it in a client-held map keyed by `{today, exerciseId}` → `{ name, library_id }`. Persistence is implicit: every set logged while swapped is written with `performed_exercise` / `performed_library_id` (§3), so a reload re-derives "this slot is swapped today" from today's sets.
+2. The log stepper stays on the **original** `exercise_id`; each `useLogSet` POST includes the `performed_*` fields. The hero shows "Barbell Bench → **Dumbbell Bench** · today" while swapped, with a small revert affordance.
+3. **History stays clean**: progression math filters out `performed_exercise != null` sets (§2), so the barbell chart never gets a dumbbell point. In the History table that day renders as a greyed row: *swapped · Dumbbell Bench · 4×10*. Volume / "Today's Workout" still count it.
+4. Auto-reverts: no swap record persists past the day. Tomorrow the slot is the original again.
 
-Rationale: editing the current exercise's `name`/`library_id` in place would **merge two movements' logs under one history**, corrupting the very chart we're building. Find-or-create keeps Bench history as Bench and Incline history as Incline. **This is the one behavioral decision to confirm** — the alternative ("permanently rename this slot") is simpler but destroys the history invariant. Default to find-or-create.
+**Why not create a real substitute exercise / rename the slot?** Renaming merges two movements' logs into one chart (corrupts progression). Creating a persistent "Dumbbell Bench" exercise clutters the daily rail forever after one travel day. The metadata approach is the least machinery that (a) is truly today-only and (b) keeps the original chart honest. **Trade-off:** no separate progression chart for the substitute — fine for a travel swap. If substitutes should later build their own history, that's the heavier "hidden variant exercise + per-day slot table" model — deferred.
 
 ---
 
 ## 11. GymClient wiring (`src/app/gym/GymClient.tsx`, ~60 lines changed)
 
-1. **State**: `const [historyId, setHistoryId] = useState<string|null>(null)`, `const [swapOpen, setSwapOpen] = useState(false)`, `const [burst, setBurst] = useState<NewBest|null>(null)`. `libraryIndex` and `config` are already in scope.
-2. **Hero buttons** (`GymClient.tsx:1539-1597`, where the ⓘ already renders): add **⇄ Swap** → `setSwapOpen(true)` and **↗ History** → `setHistoryId(currentExId)`, sitting next to the existing info ⓘ. Small icon buttons, act on `currentEx`. (Satisfies "just have them somewhere and whatever exercise is selected it goes to it.")
-3. **PR burst**: in `handleLogSet` / the `useLogSet` success path (`GymClient.tsx:824` / `mutations.ts:104`), capture `exLogs` **before** the insert, then `const pr = detectNewBest(priorLogs, {weight, reps}, currentEx)`; if `pr && config.celebrate_pr !== false` → `setBurst(pr)`. Guard so it fires once per set, not on re-render.
-4. **Mount overlays once** at the bottom, next to the existing `<ExerciseInfoSheet …/>`:
+1. **State**: `const [detail, setDetail] = useState<{id:string; tab:'history'|'howto'}|null>(null)`, `const [swapOpen, setSwapOpen] = useState(false)`, `const [burst, setBurst] = useState<NewBest|null>(null)`, `const [swaps, setSwaps] = useState<Record<string,{name:string;library_id?:string}>>({})` (today's active swaps by exerciseId). `libraryIndex` and `config` already in scope. The old `infoId` state is replaced by `detail`.
+2. **Hero** (`GymClient.tsx:1539-1597`): make the exercise **name/card tappable** → `setDetail({id:currentExId, tab:'history'})`; repurpose the existing ⓘ button as the **detail** button (same target, History tab). Add a **⇄ Swap** button next to it → `setSwapOpen(true)`. Both act on `currentEx`. (Satisfies "swap and history buttons… whatever exercise is selected it goes to it.")
+3. **PR burst**: in `handleLogSet` / `useLogSet` success (`GymClient.tsx:824` / `mutations.ts:104`), capture `exLogs` **before** the insert, then `const pr = detectNewBest(priorLogs, {weight, reps}, currentEx)`; if `pr && config.celebrate_pr !== false && !swaps[currentExId]` → `setBurst(pr)`. (No celebration on a swapped set — it's not a real record on this lift.) Guard so it fires once per set.
+4. **Swap-aware logging**: when `swaps[currentExId]` is set, the hero shows "→ {swap.name} · today", and each `useLogSet` POST includes `performed_exercise: swap.name, performed_library_id: swap.library_id` (§3). A small "revert" affordance clears `swaps[currentExId]`.
+5. **Mount overlays once** at the bottom (replacing the old `<ExerciseInfoSheet/>`):
    ```tsx
-   <ExerciseHistorySheet exerciseId={historyId} exercise={exFor(historyId)} units={units}
-       showNextTarget={config.show_next_target !== false}
-       onLogSession={(id)=>{ setHistoryId(null); selectEx(id); scrollStepperIntoView() }}
-       onClose={()=>setHistoryId(null)} />
+   <ExerciseDetailSheet exerciseId={detail?.id ?? null} exercise={exFor(detail?.id)} units={units}
+       showNextTarget={config.show_next_target !== false} initialTab={detail?.tab ?? 'history'}
+       onLogSession={(id)=>{ setDetail(null); selectEx(id); scrollStepperIntoView() }}
+       onClose={()=>setDetail(null)} />
    <SwapSheet open={swapOpen} exercise={currentEx} entries={libraryIndex}
-       onPick={handleSwapPick} onInfo={setInfoId} onClose={()=>setSwapOpen(false)} />
+       onPick={(c)=>{ setSwaps(s=>({...s,[currentExId]:c})); setSwapOpen(false) }}
+       onInfo={(id)=>setDetail({id, tab:'howto'})} onClose={()=>setSwapOpen(false)} />
    <NewBestBurst best={burst} units={units} exercise={currentEx} onDismiss={()=>setBurst(null)} />
    ```
-5. **`handleSwapPick`**: the find-or-create-then-`selectEx` logic (§10). Reuse the add-exercise create path (`saveEx` / `useCreateExercise`).
-6. The History sheet's ⓘ (on chart? no — on Swap rows and hero) shares `infoId` → the single mounted `ExerciseInfoSheet`.
+6. Swap rows' ⓘ opens the same detail sheet on the **How-to** tab (`setDetail({id, tab:'howto'})`) — one sheet, no separate info overlay.
 
 ---
 
@@ -341,13 +360,15 @@ Rationale: editing the current exercise's `name`/`library_id` in place would **m
 | 2 | `src/features/gym/history.ts` | new | ~160 (pure, testable) |
 | 3 | `src/features/gym/types.ts` | edit | +8 (config flags; import history types) |
 | 4 | `src/app/api/gym/config/route.ts` | edit | +2 (default the two flags on GET) |
+| 4b | `src/app/api/gym/logs/route.ts` | edit | +4 (accept `performed_exercise`/`performed_library_id` on POST; already returned via `select *`) |
 | 5 | `src/app/gym/ProgressionChart.tsx` | new | ~220 |
-| 6 | `src/app/gym/ExerciseHistorySheet.tsx` | new | ~260 |
+| 6 | `src/app/gym/ExerciseDetailSheet.tsx` | new | ~320 (History tab + tab strip; hosts How-to) |
+| 6b | `src/app/gym/ExerciseInfoSheet.tsx` | refactor | body → `<HowToTab/>` used by the detail sheet; drop standalone wrapper |
 | 7 | `src/app/gym/NewBestBurst.tsx` | new | ~150 |
 | 8 | `src/app/gym/SwapSheet.tsx` | new | ~200 |
-| 9 | `src/app/gym/GymClient.tsx` | edit | ~60 changed |
+| 9 | `src/app/gym/GymClient.tsx` | edit | ~70 changed |
 
-**Order**: migration (psql) → `history.ts` (+ a scratch test against real logs) → types/config → chart → history sheet → burst → swap → GymClient wiring. Build the chart and burst in isolation (temporary route or a story) before wiring, since they're the animation-heavy pieces. Load the `ui-ux-pro-max` / `ui-styling` skills before the chart, sheet, and burst.
+**Order**: migration (psql) → `history.ts` (+ a scratch test against real logs) → types/config/logs → chart → detail sheet (History tab + How-to refactor) → burst → swap → GymClient wiring. Build the chart and burst in isolation (temporary route or a story) before wiring, since they're the animation-heavy pieces. Load the `ui-ux-pro-max` / `ui-styling` skills before the chart, sheet, and burst.
 
 ---
 
@@ -360,14 +381,14 @@ Rationale: editing the current exercise's `name`/`library_id` in place would **m
 - Bodyweight exercise (e.g. Pull-ups): everything runs on reps, no NaN weights.
 
 **App (dev server, check `/tmp/atlas-dev.log`; `npm run build` clean):**
-- Tap **History** on Bench → sheet rises; chart draws in; `ALL` fits all sessions; tap `M`/`3M` → window narrows, active pill slides.
+- Tap the exercise (or the detail button) → sheet rises on **History**; chart draws in; `ALL` fits all sessions; tap `M`/`3M` → window narrows, active pill slides. Switch to **How-to** → photos + numbered steps; switch back — sheet height springs, body crossfades.
 - Drag finger across the chart → crosshair tracks nearest point, tooltip shows `date · weight · sets×reps · ▲delta`, set pills below update; release → stays.
 - Stat tiles read `SESSIONS / LAST 30 DAYS / BEST`; "+X · all time" caption correct.
 - Table lists sessions newest-first with correct PROGRESS (`+2.5` / `first` / negative).
 - `+ log a session` closes sheet, selects Bench, focuses stepper.
-- Log a set heavier than the all-time best → amber star burst, correct "arm the bump" numbers, tap anywhere dismisses; toggling **Celebrate a new best** off suppresses it.
+- Log a set heavier than the all-time best → amber star burst, correct "arm the bump" numbers, tap anywhere dismisses; toggling **Celebrate a new best** off suppresses it. A **swapped** set never triggers the burst.
 - **Next-target** card shows/hides with its toggle; wording matches best.
-- **Swap** on Bench → suggestions share a muscle group, search filters live, ⓘ opens the existing info sheet; picking a new movement selects it (find-or-create) and does **not** merge logs into Bench's history.
+- **Swap** on Bench (traveling) → suggestions share the muscle group but prefer different equipment; search filters live; ⓘ opens How-to. Pick DB Bench → hero shows "Bench → Dumbbell Bench · today"; logged sets carry `performed_exercise`, appear in the table as greyed "swapped" rows, and do **not** move Bench's chart/best. Reload keeps today's swap; next day the slot is Bench again; revert affordance clears it early.
 - Reduced-motion: chart static, burst no particles.
 - Real feel verified on the **prod URL** on phone after deploy (mobile-perf rule), especially the touch scrub.
 
@@ -379,7 +400,7 @@ Rationale: editing the current exercise's `name`/`library_id` in place would **m
 - **Shared-helper duplication**: `logDatePST` / `compute1RM` live inside `GymClient.tsx` as module-local fns, not exports. `history.ts` needs them — either lift them into a shared `src/lib/gymCalc.ts` and import from both (cleanest), or duplicate the tiny fns in `history.ts`. **Prefer lifting** to avoid two definitions drifting; it's a mechanical extract. Note GymClient also re-declares `EASE_OUT` locally (line 7) instead of importing from `motion.ts` — don't copy that anti-pattern.
 - **Dropdown/tooltip clipping in a scrollable sheet**: the sheet is `overflow-y-auto`; the chart tooltip must be positioned **within the chart's own bounds** (clamped), never an absolute popover that escapes the sheet — same lesson as the autocomplete list.
 - **PR timing**: `detectNewBest` must run on the **pre-insert** log set. `useLogSet` optimistically appends to `['gym-logs', id]`, so capture `priorLogs` before calling the mutation, or diff against the server response — do not read the cache after the optimistic write.
-- **Swap history invariant** (§10): find-or-create, never rename-in-place, or the chart shows two exercises as one. This is the load-bearing decision — confirm with Luka.
+- **Swap = today-only metadata, never rename/merge** (§10): swapped sets carry `performed_exercise` and are excluded from the original's progression math, so the chart stays honest and the slot auto-reverts next day. Never edit the `GymExercise` in place, never inject swapped weights into the line.
 - **Units**: chart labels + targets use `config.units`; increments use `ex.step` (2.5 in kg data, 2.5/5 in lbs). Luka's data is **lbs**; the reference screenshots are kg — don't hardcode kg anywhere.
 - **Determinism in the burst**: particle angles/offsets from the element index, never `Math.random()` / `Date.now()` (SSR + reproducibility).
 - **`upgrade_at_reps` divergence (pre-existing)**: the config ceiling isn't read by `getRx` (which uses `ex.rep_max`); the next-target "×reps+1" here is derived from the actual best, so it sidesteps that bug — but if we ever surface "reps to next level," use `ex.rep_max`, not `config.upgrade_at_reps`. Out of scope, noted.
