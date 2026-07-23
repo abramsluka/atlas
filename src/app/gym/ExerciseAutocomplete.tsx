@@ -113,7 +113,7 @@ export default function ExerciseAutocomplete({ value, onChange, onPick, onInfo, 
                     exit={reduced ? undefined : { opacity: 0, scale: 0.98 }}
                     transition={{ ...SPRING_SNAPPY, delay: i * 0.02 }}
                     className="relative flex items-center gap-2 px-3.5 py-2.5 active:bg-white/[0.06]"
-                    onPointerDown={e => { e.preventDefault(); onPick(entry); setOpen(false) }}
+                    onClick={() => { onPick(entry); setOpen(false) }}
                   >
                     {i === 0 && (
                       <motion.span
@@ -131,7 +131,7 @@ export default function ExerciseAutocomplete({ value, onChange, onPick, onInfo, 
                       </p>
                     </div>
                     <button
-                      onPointerDown={e => { e.preventDefault(); e.stopPropagation(); onInfo(entry.id) }}
+                      onClick={e => { e.stopPropagation(); onInfo(entry.id) }}
                       className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs text-white/40 active:text-white"
                       style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
                       aria-label={`About ${entry.name}`}
@@ -143,7 +143,7 @@ export default function ExerciseAutocomplete({ value, onChange, onPick, onInfo, 
               </AnimatePresence>
               <div
                 className="px-3.5 py-2.5 active:bg-white/[0.06]"
-                onPointerDown={e => { e.preventDefault(); setOpen(false) }}
+                onClick={() => setOpen(false)}
               >
                 <p className="text-xs text-white/40">
                   Use &ldquo;<span className="text-white/70">{value.trim()}</span>&rdquo; as custom exercise
