@@ -139,8 +139,8 @@ svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
 .area { transition: opacity .5s var(--ease); }
 .line { fill: none; stroke: var(--accent); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 3px 8px var(--accent-soft)); }
 .line-dim { stroke: color-mix(in srgb, var(--accent) 30%, transparent); }
-.dot { fill: var(--accent); stroke: var(--bg2); stroke-width: 1; transition: r .2s var(--ease); }
-.dot.active { fill: var(--accent); stroke: none; }
+.dot { fill: var(--bg2); stroke: var(--accent); stroke-width: 2; transition: r .2s var(--ease); }
+.dot.active { fill: var(--accent); }
 .crosshair { stroke: rgba(255,255,255,0.25); stroke-width: 1; stroke-dasharray: 3 4; }
 .halo { fill: var(--accent); opacity: .18; }
 
