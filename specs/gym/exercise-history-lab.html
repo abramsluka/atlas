@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ATLAS / EXERCISE HISTORY LAB</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&family=Instrument+Serif:ital@0;1&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!--
+  ATLAS / EXERCISE HISTORY LAB
+  ═══════════════════════════════════════════════════════════════
+  Design playground for the Exercise History pop-up (see EXERCISE_HISTORY_SPEC.md).
+  A live preview of the progression chart + a control panel to tune every animation,
+  plus a "New Best" burst lab with swappable celebration variants.
+
+  Matches the "Overload / Design Lab" reference: one phone-frame preview, a control
+  rail on the right, tweak → see it live, replay any group.
+
+  WORKFLOW: open in a browser (double-click, or `open` it). Play with the knobs.
+  Tell Claude "make the scrub snappier" / "burst variant X should do Y" — Claude edits
+  this file, you refresh. No build step. Pure vanilla JS + inline SVG (same as the
+  real component will be: hand-rolled SVG + framer-motion).
+
+  Sample data = a Barbell Bench climb matching the reference screenshots (kg).
+  ═══════════════════════════════════════════════════════════════
+-->
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg: #060608;
+  --bg2: #0c0c10;
+  --accent: #4ade80;
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+  --accent-line: color-mix(in srgb, var(--accent) 28%, transparent);
+  --gold: #f5b23e;
+  --gold-soft: rgba(245,178,62,0.14);
+  --red: #fb7185;
+  --surface: rgba(255,255,255,0.035);
+  --surface2: rgba(255,255,255,0.06);
+  --border: rgba(255,255,255,0.08);
+  --text: #f4f4f5;
+  --muted: rgba(255,255,255,0.44);
+  --dim: rgba(255,255,255,0.22);
+  --serif: 'Newsreader', Georgia, serif;
+  --sans: 'Inter', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+  --speed: 1;
+  --ease: cubic-bezier(.16,1,.3,1);
+}
+
+html, body {
+  background: radial-gradient(1200px 700px at 70% -10%, #12131a 0%, var(--bg) 55%);
+  color: var(--text);
+  font-family: var(--sans);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Top bar ── */
+#topbar {
+  position: sticky; top: 0; z-index: 200;
+  display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+  padding: 12px 20px;
+  background: rgba(6,6,8,0.82);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  border-bottom: 1px solid var(--border);
+}
+#topbar .brand {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .22em; text-transform: uppercase;
+  color: var(--muted); white-space: nowrap;
+}
+#topbar .brand b { color: var(--accent); font-weight: 500; }
+.tgroup { display: flex; align-items: center; gap: 8px; }
+.tgroup label { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
+.swatches { display: flex; gap: 6px; }
+.swatch { width: 18px; height: 18px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: transform .15s; }
+.swatch:hover { transform: scale(1.15); }
+.swatch.on { border-color: #fff; }
+select, input[type=range] { accent-color: var(--accent); }
+select {
+  background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; padding: 5px 8px; font-family: var(--mono); font-size: 11px; cursor: pointer;
+}
+input[type=range] { width: 92px; cursor: pointer; }
+button.ghost {
+  background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 12px; font-family: var(--mono); font-size: 11px; letter-spacing: .06em;
+  cursor: pointer; transition: background .15s, border-color .15s;
+}
+button.ghost:hover { background: rgba(255,255,255,0.1); border-color: var(--accent-line); }
+.chk { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); cursor: pointer; user-select: none; }
+.chk input { accent-color: var(--accent); }
+
+/* ── Layout ── */
+#stage {
+  display: grid; grid-template-columns: minmax(0,1fr) 340px; gap: 28px;
+  max-width: 1180px; margin: 0 auto; padding: 34px 24px 90px;
+  align-items: start;
+}
+@media (max-width: 900px) { #stage { grid-template-columns: 1fr; } .rail { order: -1; } }
+
+/* ── Phone frame ── */
+.phonewrap { display: flex; justify-content: center; }
+.phone {
+  width: 380px; max-width: 100%;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 30px;
+  padding: 22px 20px 20px;
+  box-shadow: 0 40px 120px -40px rgba(0,0,0,0.9), inset 0 1px 0 rgba(255,255,255,0.04);
+  position: relative; overflow: hidden;
+}
+
+/* sheet header */
+.sheet-kicker { font-family: var(--serif); font-style: italic; font-size: 14px; color: var(--muted); }
+.sheet-title { font-family: var(--serif); font-size: 30px; font-weight: 500; letter-spacing: -.01em; line-height: 1.05; margin-top: 2px; }
+.sheet-x { position: absolute; top: 20px; right: 22px; color: var(--dim); font-size: 24px; cursor: pointer; }
+
+/* tab strip */
+.tabs { display: inline-flex; margin: 16px 0 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 3px; position: relative; }
+.tab { position: relative; z-index: 1; font-size: 12px; letter-spacing: .02em; padding: 6px 16px; border-radius: 999px; color: var(--muted); cursor: pointer; transition: color .25s; }
+.tab.on { color: #08120b; }
+.tab-pill { position: absolute; top: 3px; left: 3px; height: calc(100% - 6px); border-radius: 999px; background: var(--accent); transition: transform .4s var(--ease), width .4s var(--ease); z-index: 0; }
+
+/* timeframe chooser */
+.tf { display: flex; gap: 3px; margin: 16px 0 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 4px; position: relative; }
+.tf .pill { flex: 1; text-align: center; font-family: var(--mono); font-size: 11px; letter-spacing: .08em; padding: 7px 0; border-radius: 8px; color: var(--muted); cursor: pointer; z-index: 1; transition: color .3s; }
+.tf .pill.on { color: #08120b; font-weight: 600; }
+.tf-ind { position: absolute; top: 4px; height: calc(100% - 8px); border-radius: 8px; background: var(--accent); z-index: 0; transition: transform .38s var(--ease), width .38s var(--ease); box-shadow: 0 4px 14px -4px var(--accent); }
+
+/* chart */
+.chart-card { margin-top: 8px; border: 1px solid var(--border); border-radius: 18px; padding: 14px 12px 10px; background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent); position: relative; }
+.chart-box { position: relative; touch-action: none; }
+svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
+.grid-line { stroke: rgba(255,255,255,0.06); stroke-width: 1; }
+.grid-label { fill: var(--dim); font-family: var(--mono); font-size: 9px; }
+.x-label { fill: var(--dim); font-family: var(--serif); font-style: italic; font-size: 10px; }
+.area { transition: opacity .5s var(--ease); }
+.line { fill: none; stroke: var(--accent); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 3px 8px var(--accent-soft)); }
+.line-dim { stroke: color-mix(in srgb, var(--accent) 30%, transparent); }
+.dot { fill: var(--bg2); stroke: var(--accent); stroke-width: 2; transition: r .2s var(--ease); }
+.dot.active { fill: var(--accent); }
+.crosshair { stroke: rgba(255,255,255,0.25); stroke-width: 1; stroke-dasharray: 3 4; }
+.halo { fill: var(--accent); opacity: .18; }
+
+/* tooltip */
+.tip {
+  position: absolute; pointer-events: none; transform: translate(-50%, -114%);
+  background: rgba(10,12,14,0.92); border: 1px solid var(--border); border-radius: 10px;
+  padding: 6px 10px; white-space: nowrap; backdrop-filter: blur(8px);
+  box-shadow: 0 10px 30px -12px #000; opacity: 0; transition: opacity .2s;
+  font-size: 11px; z-index: 5;
+}
+.tip .d { font-family: var(--serif); font-style: italic; color: var(--muted); margin-right: 6px; }
+.tip .w { font-weight: 700; }
+.tip .r { color: var(--muted); margin-left: 4px; }
+.tip .delta { margin-left: 6px; font-weight: 600; }
+.up { color: var(--accent); } .down { color: var(--red); } .flat { color: var(--dim); }
+
+.cap { text-align: center; font-family: var(--serif); font-style: italic; color: var(--accent); font-size: 13px; margin-top: 8px; opacity: .9; }
+.pills { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+.pills .plabel { font-family: var(--serif); font-style: italic; font-size: 11px; color: var(--muted); margin-right: 2px; }
+.setpill { min-width: 26px; text-align: center; font-family: var(--mono); font-size: 11px; padding: 4px 0; border-radius: 7px; border: 1px solid var(--accent-line); color: var(--accent); background: var(--accent-soft); }
+.pills .totreps { margin-left: auto; font-family: var(--mono); font-size: 10px; letter-spacing: .12em; color: var(--muted); }
+
+/* next-target */
+.nt { display: flex; align-items: center; gap: 10px; margin-top: 14px; padding: 11px 13px; border: 1px solid rgba(245,178,62,0.28); border-radius: 12px; background: var(--gold-soft); position: relative; overflow: hidden; }
+.nt .star { color: var(--gold); font-size: 15px; }
+.nt .txt { font-size: 12px; color: rgba(255,255,255,0.82); line-height: 1.35; }
+.nt .txt b { color: #fff; } .nt .txt .g { color: var(--gold); font-weight: 600; }
+.nt .shimmer { position: absolute; inset: 0; background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.14) 50%, transparent 60%); transform: translateX(-120%); }
+
+/* stats */
+.stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 16px; }
+.stat { text-align: center; padding: 12px 4px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.stat .k { font-family: var(--mono); font-size: 8.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
+.stat .v { font-family: var(--serif); font-size: 22px; font-weight: 500; margin-top: 4px; }
+.stat.best .v { color: var(--gold); position: relative; display: inline-block; overflow: hidden; }
+.stat.best .v::after { content:''; position:absolute; inset:0; background: linear-gradient(100deg, transparent 40%, rgba(255,255,255,0.7) 50%, transparent 60%); transform: translateX(-140%); }
+.stat.best.shimmer .v::after { animation: sweep 1.6s var(--ease); }
+@keyframes sweep { to { transform: translateX(160%); } }
+
+/* table */
+.tbl { margin-top: 18px; }
+.tbl .head, .tbl .row { display: grid; grid-template-columns: 1.1fr .6fr .6fr 1fr .9fr; align-items: center; padding: 9px 4px; }
+.tbl .head { font-family: var(--mono); font-size: 8.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); border-bottom: 1px solid var(--border); }
+.tbl .row { border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px; }
+.tbl .row .dt { font-family: var(--serif); font-style: italic; color: var(--muted); }
+.tbl .row .wt b { font-weight: 700; } .tbl .row .wt span { color: var(--muted); font-size: 11px; }
+.tbl .row .pg { font-family: var(--mono); font-size: 11px; }
+.tbl .row.swapped { opacity: .5; }
+.tbl .row.swapped .dt::after { content: ' · swapped'; color: var(--dim); font-family: var(--sans); font-style: normal; font-size: 10px; }
+
+.logbtn { margin-top: 14px; width: 100%; text-align: center; padding: 12px; border: 1px dashed var(--border); border-radius: 12px; color: var(--muted); font-size: 12px; cursor: pointer; transition: border-color .2s, color .2s; }
+.logbtn:hover { border-color: var(--accent-line); color: var(--accent); }
+
+/* ── Control rail ── */
+.rail { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 68px; }
+.group { border: 1px solid var(--border); border-radius: 14px; background: rgba(255,255,255,0.02); overflow: hidden; }
+.group > h3 { font-family: var(--mono); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); padding: 11px 14px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+.group > h3 .rep { font-size: 9px; color: var(--dim); cursor: pointer; letter-spacing: .1em; }
+.group > h3 .rep:hover { color: var(--accent); }
+.rows { padding: 10px 14px; display: flex; flex-direction: column; gap: 10px; }
+.ctrl { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ctrl > span { font-size: 11px; color: var(--muted); }
+.ctrl .val { font-family: var(--mono); font-size: 10px; color: var(--dim); min-width: 34px; text-align: right; }
+.burst-trigger { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--gold); background: var(--gold-soft); color: var(--gold); font-family: var(--mono); font-size: 12px; letter-spacing: .08em; cursor: pointer; transition: background .15s; }
+.burst-trigger:hover { background: rgba(245,178,62,0.22); }
+
+/* ── New Best burst overlay ── */
+#burst { position: fixed; inset: 0; z-index: 500; display: none; align-items: center; justify-content: center; cursor: pointer; }
+#burst.on { display: flex; }
+#burst .bg { position: absolute; inset: 0; background: radial-gradient(600px 600px at 50% 44%, rgba(245,178,62,0.22), rgba(0,0,0,0.72) 60%, rgba(0,0,0,0.88)); opacity: 0; }
+#burst .flash { position: absolute; inset: 0; background: rgba(255,240,214,0.9); opacity: 0; }
+#burst .center { position: relative; text-align: center; z-index: 2; }
+#burst .star { font-size: 76px; line-height: 1; filter: drop-shadow(0 0 28px rgba(245,178,62,0.7)); }
+#burst .nb { font-family: var(--serif); font-size: 40px; font-weight: 500; margin-top: 6px; letter-spacing: -.01em; }
+#burst .sub { color: rgba(255,255,255,0.72); font-size: 13px; margin-top: 10px; max-width: 300px; margin-inline: auto; line-height: 1.5; }
+#burst .sub .g { color: var(--gold); font-weight: 600; }
+#burst .hint { font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: var(--dim); margin-top: 22px; }
+.particle, .ring, .confetti { position: absolute; left: 50%; top: 44%; pointer-events: none; }
+.ring { border: 2px solid rgba(245,178,62,0.6); border-radius: 50%; width: 20px; height: 20px; transform: translate(-50%,-50%); }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div class="brand">ATLAS / <b>EXERCISE HISTORY</b> LAB</div>
+  <div class="tgroup"><label>accent</label>
+    <div class="swatches" id="swatches"></div>
+  </div>
+  <div class="tgroup"><label>display font</label>
+    <select id="fontSel">
+      <option value="'Newsreader',serif">Newsreader</option>
+      <option value="'Instrument Serif',serif">Instrument Serif</option>
+      <option value="'Fraunces',serif">Fraunces</option>
+      <option value="Georgia,serif">Georgia</option>
+    </select>
+  </div>
+  <div class="tgroup"><label>speed</label><input type="range" id="speed" min="0.4" max="2" step="0.1" value="1"></div>
+  <div class="tgroup"><label>easing</label>
+    <select id="easeSel">
+      <option value="cubic-bezier(.16,1,.3,1)">out-expo</option>
+      <option value="cubic-bezier(.34,1.56,.64,1)">overshoot</option>
+      <option value="cubic-bezier(.4,0,.2,1)">smooth</option>
+      <option value="linear">linear</option>
+    </select>
+  </div>
+  <label class="chk"><input type="checkbox" id="units"> lbs</label>
+  <label class="chk"><input type="checkbox" id="reduce"> reduced motion</label>
+  <button class="ghost" id="replayAll">↻ replay all</button>
+</div>
+
+<div id="stage">
+  <!-- PREVIEW -->
+  <div class="phonewrap">
+    <div class="phone" id="phone">
+      <span class="sheet-x">×</span>
+      <div class="sheet-kicker">history</div>
+      <div class="sheet-title" id="exName">Barbell Bench</div>
+
+      <div class="tabs">
+        <span class="tab on">History</span>
+        <span class="tab">How-to</span>
+        <span class="tab-pill" id="tabPill"></span>
+      </div>
+
+      <div class="tf" id="tf">
+        <span class="tf-ind" id="tfInd"></span>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-box" id="chartBox">
+          <svg class="chart" id="svg" viewBox="0 0 340 176" preserveAspectRatio="none"></svg>
+          <div class="tip" id="tip"></div>
+        </div>
+        <div class="cap" id="cap">+10 kg · all time</div>
+        <div class="pills" id="pills"></div>
+      </div>
+
+      <div class="nt" id="nt">
+        <span class="star">★</span>
+        <span class="txt" id="ntTxt"></span>
+        <span class="shimmer" id="ntShimmer"></span>
+      </div>
+
+      <div class="stats" id="stats">
+        <div class="stat"><div class="k">Sessions</div><div class="v" data-stat="sessions">0</div></div>
+        <div class="stat"><div class="k">Last 30 days</div><div class="v" data-stat="last30">0</div></div>
+        <div class="stat best" id="bestStat"><div class="k">Best</div><div class="v" data-stat="best">0</div></div>
+      </div>
+
+      <div class="tbl">
+        <div class="head"><span>Date</span><span>Sets</span><span>Reps</span><span>Weight</span><span>Progress</span></div>
+        <div id="tblRows"></div>
+      </div>
+
+      <div class="logbtn">+ log a session</div>
+    </div>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="rail">
+    <div class="group">
+      <h3>Chart entrance <span class="rep" data-rep="draw">↻ replay</span></h3>
+      <div class="rows">
+        <div class="ctrl"><span>Draw duration</span><input type="range" id="drawDur" min="300" max="2400" step="50" value="1100"><span class="val" id="drawDurV"></span></div>
+        <div class="ctrl"><span>Draw style</span>
+          <select id="drawStyle"><option value="line-area">line → area</option><option value="baseline">grow from baseline</option><option value="dissolve">dissolve</option></select></div>
+        <div class="ctrl"><span>Line width</span><input type="range" id="lw" min="1.2" max="4" step="0.2" value="2.4"><span class="val" id="lwV"></span></div>
+        <div class="ctrl"><span>Smoothing</span><input type="range" id="smooth" min="0" max="1" step="0.05" value="0.65"><span class="val" id="smoothV"></span></div>
+        <div class="ctrl"><span>Area fill</span>
+          <select id="areaFill"><option value="grad">gradient</option><option value="flat">flat</option><option value="none">none</option></select></div>
+        <label class="chk"><input type="checkbox" id="pointPop" checked> points pop in</label>
+        <label class="chk"><input type="checkbox" id="gridOn" checked> gridlines</label>
+      </div>
+    </div>
+
+    <div class="group">
+      <h3>Scrub &amp; crosshair</h3>
+      <div class="rows">
+        <div class="ctrl"><span>Crosshair</span>
+          <select id="chStyle"><option value="line-dot">line + dot</option><option value="line">line only</option><option value="dot">dot only</option></select></div>
+        <label class="chk"><input type="checkbox" id="snap" checked> snap to point</label>
+        <label class="chk"><input type="checkbox" id="roll" checked> number roll</label>
+        <label class="chk"><input type="checkbox" id="dimSeg" checked> dim inactive segment</label>
+        <label class="chk"><input type="checkbox" id="glow" checked> glow active point</label>
+      </div>
+    </div>
+
+    <div class="group">
+      <h3>Stats &amp; table <span class="rep" data-rep="stats">↻ replay</span></h3>
+      <div class="rows">
+        <label class="chk"><input type="checkbox" id="countUp" checked> count-up numerals</label>
+        <div class="ctrl"><span>Count duration</span><input type="range" id="countDur" min="300" max="2000" step="50" value="900"><span class="val" id="countDurV"></span></div>
+        <label class="chk"><input type="checkbox" id="bestShimmer" checked> best gold shimmer</label>
+        <label class="chk"><input type="checkbox" id="rowStagger" checked> table rows stagger</label>
+        <label class="chk"><input type="checkbox" id="ntShimmerOn" checked> next-target shimmer</label>
+      </div>
+    </div>
+
+    <div class="group">
+      <h3>New Best burst</h3>
+      <div class="rows">
+        <div class="ctrl"><span>Variant</span>
+          <select id="burstVar"><option value="sparks">sparks</option><option value="fireworks">fireworks</option><option value="shockwave">shockwave</option><option value="confetti">confetti</option><option value="minimal">minimal</option></select></div>
+        <div class="ctrl"><span>Particles</span><input type="range" id="pCount" min="6" max="60" step="2" value="22"><span class="val" id="pCountV"></span></div>
+        <div class="ctrl"><span>Spread</span><input type="range" id="pSpread" min="80" max="420" step="10" value="240"><span class="val" id="pSpreadV"></span></div>
+        <div class="ctrl"><span>Duration</span><input type="range" id="bDur" min="500" max="3000" step="100" value="1400"><span class="val" id="bDurV"></span></div>
+        <label class="chk"><input type="checkbox" id="bFlash" checked> screen flash</label>
+        <label class="chk"><input type="checkbox" id="bShock" checked> shockwave ring</label>
+        <button class="burst-trigger" id="triggerBurst">★  TRIGGER NEW BEST</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="burst">
+  <div class="bg"></div>
+  <div class="flash"></div>
+  <div class="center">
+    <div class="star">★</div>
+    <div class="nb">New best</div>
+    <div class="sub" id="burstSub"></div>
+    <div class="hint">tap anywhere to continue</div>
+  </div>
+</div>
+
+<script>
+/* ══════════════ config / state ══════════════ */
+const S = { get: id => document.getElementById(id) };
+const $ = id => document.getElementById(id);
+const CFG = {
+  accent: '#4ade80', units: 'kg', tf: 'ALL', activeIdx: null,
+};
+const ACCENTS = ['#4ade80','#38bdf8','#a78bfa','#fb7185','#f5b23e','#a3e635'];
+
+/* seeded rng for stable sample data */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+const rng = mulberry32(20260724);
+
+/* ── build sample sessions: weekly Barbell Bench climb, ends 2026-06-24 ── */
+const TODAY = new Date('2026-06-24T12:00:00');
+function buildSessions(){
+  const out = []; let w = 85; // kg at "today", walk backwards
+  for (let i=0;i<40;i++){
+    const d = new Date(TODAY); d.setDate(d.getDate() - i*7);
+    const reps = i===1?4:(rng()<0.15?6:(rng()<0.2?4:5));
+    const sets = rng()<0.15?3:4;
+    out.push({ date:new Date(d), weight:w, reps, sets });
+    // step down going back: mostly 2.5, occasional hold(0) or deload(+5 back = a dip forward)
+    const roll = rng();
+    if (i>2 && roll<0.18) { /* hold */ }
+    else if (i>4 && roll<0.28) w += 5;        // a forward deload week (dip)
+    else w -= 2.5;
+    if (w < 50) w = 50;
+  }
+  out.reverse();
+  // pin the last handful to match the reference screenshots exactly
+  const tail = [[75,5,4],[77.5,5,4],[80,5,4],[82.5,5,4],[85,4,4],[85,5,4]];
+  for (let k=0;k<tail.length;k++){ const s=out[out.length-tail.length+k]; if(s){ s.weight=tail[k][0]; s.reps=tail[k][1]; s.sets=tail[k][2]; } }
+  return out;
+}
+const ALL_SESSIONS = buildSessions();
+
+/* ── metric helpers ── */
+const kg2lb = k => Math.round(k*2.2046/2.5)*2.5;
+const cv = k => CFG.units==='lb' ? kg2lb(k) : k;               // convert weight for display
+const fmtW = k => (CFG.units==='lb' ? kg2lb(k) : k).toString().replace(/\.0$/,'');
+const U = () => CFG.units==='lb' ? 'lbs' : 'kg';
+const STEP = () => CFG.units==='lb' ? 5 : 2.5;
+
+const TF_DAYS = { W:7, M:30, '3M':90, '6M':180, Y:365, ALL:99999 };
+function visibleSessions(){
+  const cut = new Date(TODAY); cut.setDate(cut.getDate() - TF_DAYS[CFG.tf]);
+  const v = ALL_SESSIONS.filter(s => s.date >= cut);
+  return v.length ? v : ALL_SESSIONS.slice(-2);
+}
+function bestRecord(){
+  let bw=-1,br=0,bd=null;
+  for(const s of ALL_SESSIONS){ if(s.weight>bw){bw=s.weight;br=s.reps;bd=s.date;} else if(s.weight===bw&&s.reps>br){br=s.reps;} }
+  return {weight:bw,reps:br,date:bd};
+}
+function last30(){
+  const cut=new Date(TODAY);cut.setDate(cut.getDate()-30);
+  const inWin=ALL_SESSIONS.filter(s=>s.date>=cut);
+  if(inWin.length<2) return null;
+  const before=ALL_SESSIONS.filter(s=>s.date<cut).pop();
+  const base=before?before.weight:inWin[0].weight;
+  return ALL_SESSIONS[ALL_SESSIONS.length-1].weight - base;
+}
+
+/* ══════════════ CHART ══════════════ */
+const PAD = {l:26,r:14,t:16,b:22}, VW=340, VH=176;
+let chartPts=[], chartMeta={};
+
+function catmullRom(pts, k){
+  if(pts.length<2) return pts.length?`M${pts[0].x},${pts[0].y}`:'';
+  let d=`M${pts[0].x},${pts[0].y}`;
+  for(let i=0;i<pts.length-1;i++){
+    const p0=pts[i-1]||pts[i], p1=pts[i], p2=pts[i+1], p3=pts[i+2]||p2;
+    const c1x=p1.x+(p2.x-p0.x)/6*k, c1y=p1.y+(p2.y-p0.y)/6*k;
+    const c2x=p2.x-(p3.x-p1.x)/6*k, c2y=p2.y-(p3.y-p1.y)/6*k;
+    d+=` C${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`;
+  }
+  return d;
+}
+
+function computePoints(){
+  const v=visibleSessions();
+  const ws=v.map(s=>s.weight);
+  let mn=Math.min(...ws), mx=Math.max(...ws);
+  if(mn===mx){mn-=STEP()*2;mx+=STEP()*2;} else {const pad=(mx-mn)*0.18||STEP();mn-=pad;mx+=pad;}
+  const t0=v[0].date.getTime(), t1=v[v.length-1].date.getTime();
+  const xOf=t=> v.length===1?VW/2 : PAD.l+(t-t0)/(t1-t0||1)*(VW-PAD.l-PAD.r);
+  const yOf=w=> VH-PAD.b-(w-mn)/(mx-mn)*(VH-PAD.t-PAD.b);
+  chartPts=v.map(s=>({x:xOf(s.date.getTime()),y:yOf(s.weight),s}));
+  chartMeta={mn,mx,baseline:VH-PAD.b};
+}
+
+function renderChart(animate){
+  computePoints();
+  const svg=$('svg'); svg.innerHTML='';
+  const NS='http://www.w3.org/2000/svg';
+  const mk=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+  const reduce=$('reduce').checked;
+  const dur=(+$('drawDur').value)/(+$('speed').value);
+  const smooth=+$('smooth').value;
+  const drawStyle=$('drawStyle').value;
+
+  // gradient defs
+  const defs=mk('defs',{});
+  defs.innerHTML=`<linearGradient id="ag" x1="0" x2="0" y1="0" y2="1">
+    <stop offset="0" stop-color="${CFG.accent}" stop-opacity="0.34"/>
+    <stop offset="1" stop-color="${CFG.accent}" stop-opacity="0"/></linearGradient>`;
+  svg.appendChild(defs);
+
+  // gridlines
+  if($('gridOn').checked){
+    const {mn,mx}=chartMeta;
+    for(let g=0;g<3;g++){
+      const w=mn+(mx-mn)*(g+0.5)/3;
+      const y=VH-PAD.b-(w-mn)/(mx-mn)*(VH-PAD.t-PAD.b);
+      svg.appendChild(mk('line',{class:'grid-line',x1:PAD.l,x2:VW-PAD.r,y1:y,y2:y}));
+      const lbl=mk('text',{class:'grid-label',x:2,y:y+3}); lbl.textContent=fmtW(Math.round(w/STEP())*STEP()); svg.appendChild(lbl);
+    }
+  }
+
+  const dPath=catmullRom(chartPts,smooth);
+  // area
+  if($('areaFill').value!=='none' && chartPts.length>1){
+    const areaD=dPath+` L${chartPts[chartPts.length-1].x},${chartMeta.baseline} L${chartPts[0].x},${chartMeta.baseline} Z`;
+    const area=mk('path',{class:'area',d:areaD});
+    area.setAttribute('fill', $('areaFill').value==='flat'?CFG.accent:'url(#ag)');
+    if($('areaFill').value==='flat') area.setAttribute('opacity','0.08');
+    if(animate && !reduce){ area.style.opacity='0'; setTimeout(()=>area.style.opacity=$('areaFill').value==='flat'?'0.08':'1', drawStyle==='dissolve'?0:dur*0.55); }
+    svg.appendChild(area);
+  }
+
+  // line
+  const line=mk('path',{class:'line',d:dPath}); line.style.strokeWidth=$('lw').value;
+  svg.appendChild(line);
+  if(animate && !reduce && chartPts.length>1){
+    const len=line.getTotalLength();
+    if(drawStyle==='dissolve'){ line.style.opacity='0'; line.animate([{opacity:0},{opacity:1}],{duration:dur*0.6,easing:getEase(),fill:'both'}); }
+    else if(drawStyle==='baseline'){
+      // morph from a flat baseline up
+      const flat=chartPts.map(p=>({x:p.x,y:chartMeta.baseline}));
+      line.setAttribute('d',catmullRom(flat,smooth));
+      requestAnimationFrame(()=>{ line.style.transition=`d ${dur}ms ${getEaseCss()}`; line.setAttribute('d',dPath); });
+    } else {
+      line.style.strokeDasharray=len; line.style.strokeDashoffset=len;
+      line.animate([{strokeDashoffset:len},{strokeDashoffset:0}],{duration:dur,easing:getEase(),fill:'both'});
+    }
+  }
+
+  // dots
+  chartPts.forEach((p,i)=>{
+    const c=mk('circle',{class:'dot',cx:p.x,cy:p.y,r:3.2,'data-i':i});
+    svg.appendChild(c);
+    if(animate && !reduce && $('pointPop').checked && chartPts.length>1){
+      const frac=(p.x-PAD.l)/(VW-PAD.l-PAD.r);
+      c.style.transformOrigin=`${p.x}px ${p.y}px`;
+      c.animate([{transform:'scale(0)'},{transform:'scale(1.5)'},{transform:'scale(1)'}],
+        {duration:420,delay:(drawStyle==='dissolve'?0:dur*frac)+120,easing:'cubic-bezier(.34,1.56,.64,1)',fill:'both'});
+    }
+  });
+
+  // crosshair layer (added on scrub)
+  const cross=mk('g',{id:'crossLayer'}); svg.appendChild(cross);
+
+  // x labels
+  if(chartPts.length){
+    const l0=mk('text',{class:'x-label',x:PAD.l,y:VH-6}); l0.textContent=fmtDate(chartPts[0].s.date); svg.appendChild(l0);
+    const l1=mk('text',{class:'x-label',x:VW-PAD.r,y:VH-6,'text-anchor':'end'}); l1.textContent=fmtDate(chartPts[chartPts.length-1].s.date); svg.appendChild(l1);
+  }
+
+  setActive(chartPts.length-1, false);
+  updateCaption();
+}
+
+function updateCaption(){
+  const first=ALL_SESSIONS[0].weight, last=ALL_SESSIONS[ALL_SESSIONS.length-1].weight;
+  const d=cv(last)-cv(first);
+  $('cap').textContent = `${d>=0?'+':''}${d} ${U()} · all time`;
+}
+
+/* ── scrub ── */
+function setActive(i, roll){
+  if(i==null||i<0||i>=chartPts.length) return;
+  CFG.activeIdx=i;
+  const svg=$('svg'), layer=$('crossLayer'); if(!layer) return;
+  layer.innerHTML='';
+  const NS='http://www.w3.org/2000/svg';
+  const mk=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+  const p=chartPts[i];
+  const style=$('chStyle').value;
+  if(style!=='dot'){ layer.appendChild(mk('line',{class:'crosshair',x1:p.x,x2:p.x,y1:PAD.t,y2:chartMeta.baseline})); }
+  if($('glow').checked){ const h=mk('circle',{class:'halo',cx:p.x,cy:p.y,r:9}); layer.appendChild(h);
+    if(!$('reduce').checked) h.animate([{r:5,opacity:.35},{r:11,opacity:.12}],{duration:900,iterations:Infinity,direction:'alternate',easing:'ease-in-out'}); }
+  // dim segments: redraw active dot big
+  document.querySelectorAll('.dot').forEach((d,di)=>d.classList.toggle('active',di===i));
+  const big=mk('circle',{class:'dot active',cx:p.x,cy:p.y,r:5}); layer.appendChild(big);
+
+  // tooltip
+  const tip=$('tip'); const box=$('chartBox');
+  const prev=chartPts[i-1];
+  const delta=prev? p.s.weight-prev.s.weight : null;
+  const dCls = delta==null?'flat':delta>0?'up':delta<0?'down':'flat';
+  const dTxt = delta==null?'first':`${delta>0?'▲ +':delta<0?'▼ ':''}${delta!==0?Math.abs(cv(p.s.weight)-cv(prev.s.weight)):''}`.trim()||'—';
+  const scale=box.clientWidth/VW;
+  tip.style.left=(p.x*scale)+'px'; tip.style.top=(p.y*scale)+'px'; tip.style.opacity='1';
+  const wNow = fmtW(p.s.weight);
+  tip.innerHTML=`<span class="d">${fmtDate(p.s.date)}</span><span class="w"><span id="rollW">${wNow}</span> ${U()}</span><span class="r">${p.s.sets} × ${p.s.reps} reps</span><span class="delta ${dCls}">${dTxt}</span>`;
+  if(roll && $('roll').checked && prev && !$('reduce').checked){ rollNumber($('rollW'), cv(prev.s.weight), cv(p.s.weight)); }
+
+  // pills
+  renderPills(p.s);
+}
+function rollNumber(el, from, to){
+  const t0=performance.now(), dur=200;
+  function tick(now){ const k=Math.min(1,(now-t0)/dur); const val=from+(to-from)*(1-Math.pow(1-k,3));
+    el.textContent=(Math.round(val/STEP())*STEP()).toString().replace(/\.0$/,''); if(k<1)requestAnimationFrame(tick); else el.textContent=to.toString().replace(/\.0$/,''); }
+  requestAnimationFrame(tick);
+}
+function renderPills(s){
+  const el=$('pills'); let h=`<span class="plabel">${fmtDate(s.date)}</span>`;
+  for(let k=0;k<s.sets;k++) h+=`<span class="setpill">${s.reps}</span>`;
+  h+=`<span class="totreps">${s.sets*s.reps} REPS</span>`; el.innerHTML=h;
+}
+
+function scrubTo(clientX){
+  const box=$('chartBox'), rect=box.getBoundingClientRect();
+  const xv=(clientX-rect.left)/rect.width*VW;
+  let best=0,bd=1e9; chartPts.forEach((p,i)=>{const d=Math.abs(p.x-xv);if(d<bd){bd=d;best=i;}});
+  if(best!==CFG.activeIdx) setActive(best, true);
+}
+['pointermove','pointerdown'].forEach(ev=>$('chartBox').addEventListener(ev,e=>{e.preventDefault();scrubTo(e.clientX);}));
+$('chartBox').addEventListener('pointerleave',()=>{ if(!$('snap').checked) return; setActive(chartPts.length-1,false); });
+
+/* ══════════════ timeframe chooser ══════════════ */
+function buildTF(){
+  const tf=$('tf'); const keys=Object.keys(TF_DAYS);
+  tf.querySelectorAll('.pill').forEach(p=>p.remove());
+  keys.forEach(k=>{ const el=document.createElement('span'); el.className='pill'+(k===CFG.tf?' on':''); el.textContent=k; el.dataset.k=k;
+    el.onclick=()=>{ CFG.tf=k; tf.querySelectorAll('.pill').forEach(x=>x.classList.toggle('on',x.dataset.k===k)); moveTFInd(); renderChart(true); };
+    tf.appendChild(el); });
+  moveTFInd();
+}
+function moveTFInd(){
+  const on=$('tf').querySelector('.pill.on'); if(!on) return;
+  const ind=$('tfInd'); ind.style.width=on.offsetWidth+'px'; ind.style.transform=`translateX(${on.offsetLeft-4}px)`;
+}
+function moveTabPill(){ const on=document.querySelector('.tab.on'); const pill=$('tabPill'); pill.style.width=on.offsetWidth+'px'; pill.style.transform=`translateX(${on.offsetLeft-3}px)`; }
+
+/* ══════════════ stats + table ══════════════ */
+function renderStats(animate){
+  const v=visibleSessions(), b=bestRecord(), l30=last30();
+  const vals={ sessions:v.length, last30:l30==null?null:cv(l30), best:cv(b.weight) };
+  document.querySelectorAll('[data-stat]').forEach(el=>{
+    const key=el.dataset.stat; const target=vals[key];
+    if(key==='last30'){ el.textContent = target==null?'—':`${target>=0?'+':''}${target} ${U()}`; }
+    else if(key==='best'){ if(animate&&$('countUp').checked&&!$('reduce').checked) countTo(el,target,` ${U()}`); else el.textContent=`${target} ${U()}`; }
+    else { if(animate&&$('countUp').checked&&!$('reduce').checked) countTo(el,target,''); else el.textContent=target; }
+  });
+  if(animate && $('bestShimmer').checked && !$('reduce').checked){ const bs=$('bestStat'); bs.classList.remove('shimmer'); void bs.offsetWidth; bs.classList.add('shimmer'); }
+  // next target
+  const nt=$('ntTxt');
+  nt.innerHTML=`Your best is <b>${cv(b.weight)} ${U()} × ${b.reps}</b>. Beat it next session: <span class="g">${cv(b.weight)+STEP()} ${U()}</span>, or <span class="g">${cv(b.weight)} × ${b.reps+1}</span>.`;
+  if(animate && $('ntShimmerOn').checked && !$('reduce').checked){ const sh=$('ntShimmer'); sh.animate([{transform:'translateX(-120%)'},{transform:'translateX(120%)'}],{duration:1400,delay:400,easing:'ease-in-out'}); }
+}
+function countTo(el,target,suffix){
+  const t0=performance.now(), dur=(+$('countDur').value)/(+$('speed').value), step=STEP();
+  function tick(now){ const k=Math.min(1,(now-t0)/dur); const e=1-Math.pow(1-k,3); const val=target*e;
+    el.textContent=(Math.round(val/step)*step).toString().replace(/\.0$/,'')+suffix; if(k<1)requestAnimationFrame(tick); else el.textContent=target+suffix; }
+  requestAnimationFrame(tick);
+}
+function renderTable(animate){
+  const rows=[...ALL_SESSIONS].slice(-7).reverse();
+  const host=$('tblRows'); host.innerHTML='';
+  rows.forEach((s,idx)=>{
+    const all=ALL_SESSIONS; const pos=all.indexOf(s); const prev=all[pos-1];
+    const delta=prev? s.weight-prev.weight : null;
+    const pg = delta==null?'first':delta>0?`+${cv(s.weight)-cv(prev.weight)}`:delta<0?`${cv(s.weight)-cv(prev.weight)}`:'—';
+    const cls = delta==null?'flat':delta>0?'up':delta<0?'down':'flat';
+    const swapped = idx===2; // demo one swapped row
+    const row=document.createElement('div'); row.className='row'+(swapped?' swapped':'');
+    row.innerHTML=`<span class="dt">${fmtDate(s.date)}</span><span>${s.sets}</span><span>${s.reps}</span>
+      <span class="wt"><b>${fmtW(s.weight)}</b> <span>${U()}</span></span><span class="pg ${cls}">${swapped?'DB Bench':pg}</span>`;
+    host.appendChild(row);
+    if(animate && $('rowStagger').checked && !$('reduce').checked){
+      row.animate([{opacity:0,transform:'translateY(8px)'},{opacity:swapped?.5:1,transform:'none'}],{duration:420,delay:idx*45,easing:getEase(),fill:'both'});
+    }
+  });
+}
+
+/* ══════════════ NEW BEST burst ══════════════ */
+function triggerBurst(){
+  const b=$('burst'), variant=$('burstVar').value, reduce=$('reduce').checked;
+  const n=+$('pCount').value, spread=+$('pSpread').value, dur=+$('bDur').value;
+  const best=bestRecord();
+  $('burstSub').innerHTML=`You beat your record. Next time, arm the bump: <span class="g">${cv(best.weight)+STEP()} ${U()}</span> or <span class="g">${cv(best.weight)} × ${best.reps+1}</span>.`;
+  b.classList.add('on');
+  b.querySelectorAll('.particle,.ring,.confetti').forEach(e=>e.remove());
+  const bg=b.querySelector('.bg'), flash=b.querySelector('.flash'), star=b.querySelector('.star'), center=b.querySelector('.center');
+  bg.animate([{opacity:0},{opacity:1}],{duration:260,fill:'both'});
+  if($('bFlash').checked && variant!=='minimal') flash.animate([{opacity:.85},{opacity:0}],{duration:reduce?1:340,easing:'ease-out'});
+  star.animate(reduce?[{opacity:0},{opacity:1}]:[{transform:'scale(.2) rotate(-25deg)',opacity:0},{transform:'scale(1.18) rotate(6deg)',opacity:1},{transform:'scale(1) rotate(0)'}],{duration:reduce?200:640,easing:'cubic-bezier(.34,1.56,.64,1)',fill:'both'});
+  center.querySelectorAll('.nb,.sub,.hint').forEach((el,i)=>el.animate([{opacity:0,transform:'translateY(10px)'},{opacity:1,transform:'none'}],{duration:500,delay:260+i*110,easing:getEase(),fill:'both'}));
+  if(reduce) return;
+
+  if($('bShock').checked && variant!=='minimal'){
+    for(let r=0;r<(variant==='shockwave'?3:1);r++){ const ring=document.createElement('div'); ring.className='ring'; b.appendChild(ring);
+      ring.animate([{width:'20px',height:'20px',opacity:.7},{width:spread*1.6+'px',height:spread*1.6+'px',opacity:0}],{duration:dur,delay:r*180,easing:'cubic-bezier(.16,1,.3,1)',fill:'both'}); }
+  }
+  const colors=['#f5b23e','#ffd98a','#fff','#ffb347'];
+  if(variant==='sparks'||variant==='fireworks'){
+    const bursts = variant==='fireworks'?[[0,0,0],[-70,-40,150],[80,-30,260],[0,50,380]]:[[0,0,0]];
+    bursts.forEach(([ox,oy,delay])=>{ for(let i=0;i<n;i++){ const a=(i/n)*Math.PI*2+rng()*.3; const dist=spread*(0.5+rng()*0.6);
+      const p=document.createElement('div'); p.className='particle';
+      const sz=3+rng()*4; p.style.width=sz+'px'; p.style.height=(sz*(1+rng()*2))+'px'; p.style.background=colors[i%colors.length]; p.style.borderRadius='2px';
+      b.appendChild(p);
+      p.animate([{transform:`translate(calc(-50% + ${ox}px),calc(-50% + ${oy}px)) rotate(${a}rad) scale(1)`,opacity:1},
+                 {transform:`translate(calc(-50% + ${ox+Math.cos(a)*dist}px),calc(-50% + ${oy+Math.sin(a)*dist}px)) rotate(${a}rad) scale(.2)`,opacity:0}],
+        {duration:dur,delay,easing:'cubic-bezier(.12,.7,.2,1)',fill:'both'}); } });
+  } else if(variant==='confetti'){
+    for(let i=0;i<n*1.5;i++){ const p=document.createElement('div'); p.className='confetti';
+      const sz=5+rng()*5; p.style.width=sz+'px'; p.style.height=(sz*1.6)+'px'; p.style.background=colors[i%colors.length]; p.style.borderRadius='1px';
+      const x=(rng()-0.5)*spread*1.4; b.appendChild(p);
+      p.animate([{transform:`translate(calc(-50% + ${x}px),-50%) rotate(0deg)`,opacity:1},
+                 {transform:`translate(calc(-50% + ${x+(rng()-.5)*80}px),${260+rng()*180}px) rotate(${(rng()-.5)*720}deg)`,opacity:0}],
+        {duration:dur+rng()*600,easing:'cubic-bezier(.3,.7,.5,1)',fill:'both'}); }
+  }
+}
+$('burst').addEventListener('click',()=>{ $('burst').classList.remove('on'); });
+$('triggerBurst').addEventListener('click',triggerBurst);
+
+/* ══════════════ util ══════════════ */
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function fmtDate(d){ return MON[d.getMonth()]+' '+d.getDate(); }
+function getEase(){ const v=$('easeSel').value; return v; }
+function getEaseCss(){ return $('easeSel').value; }
+
+/* ══════════════ wiring ══════════════ */
+function applyAccent(c){ CFG.accent=c; document.documentElement.style.setProperty('--accent',c);
+  document.querySelectorAll('.swatch').forEach(s=>s.classList.toggle('on',s.dataset.c===c)); renderChart(false); }
+function buildSwatches(){ const host=$('swatches'); ACCENTS.forEach(c=>{ const s=document.createElement('div'); s.className='swatch'+(c===CFG.accent?' on':''); s.style.background=c; s.dataset.c=c; s.onclick=()=>applyAccent(c); host.appendChild(s); }); }
+
+function bindVal(id){ const el=$(id), v=$(id+'V'); if(!el||!v) return; const upd=()=>v.textContent=el.value; el.addEventListener('input',upd); upd(); }
+['drawDur','lw','smooth','countDur','pCount','pSpread','bDur'].forEach(bindVal);
+
+$('fontSel').addEventListener('change',e=>document.documentElement.style.setProperty('--serif',e.target.value));
+$('speed').addEventListener('input',()=>{});
+$('easeSel').addEventListener('change',()=>document.documentElement.style.setProperty('--ease',$('easeSel').value));
+$('units').addEventListener('change',e=>{ CFG.units=e.target.checked?'lb':'kg'; e.target.parentNode.childNodes[1].textContent=' '+(e.target.checked?'lbs':'kg'); renderAll(true); });
+$('reduce').addEventListener('change',()=>renderAll(false));
+['drawStyle','lw','smooth','areaFill','pointPop','gridOn','chStyle','glow'].forEach(id=>$(id).addEventListener('change',()=>renderChart(false)));
+$('drawDur').addEventListener('input',()=>{});
+document.querySelectorAll('.rep').forEach(r=>r.addEventListener('click',()=>{ const k=r.dataset.rep; if(k==='draw')renderChart(true); if(k==='stats'){renderStats(true);renderTable(true);} }));
+$('replayAll').addEventListener('click',()=>renderAll(true));
+
+// tabs (visual)
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{ document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on')); t.classList.add('on'); moveTabPill(); }));
+
+function renderAll(animate){ renderChart(animate); renderStats(animate); renderTable(animate); }
+
+/* init */
+buildSwatches(); buildTF();
+requestAnimationFrame(()=>{ moveTFInd(); moveTabPill(); renderAll(true); });
+window.addEventListener('resize',()=>{ moveTFInd(); moveTabPill(); if(CFG.activeIdx!=null) setActive(CFG.activeIdx,false); });
+</script>
+</body>
+</html>
