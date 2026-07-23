@@ -771,6 +771,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
 
   const repMin = currentEx?.rep_min ?? 6
   const repMax = currentEx?.rep_max ?? 8
+  // Slider fill %, clamped so out-of-range reps (e.g. high-rep bodyweight) don't glitch the track
+  const repsPct = Math.min(100, Math.max(0, ((selectedReps - 3) / (20 - 3)) * 100))
 
   const rx = useMemo(() => {
     if (!currentEx) return null
@@ -819,6 +821,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   function handleLogSet() {
     if (!currentEx) return
     const reps = selectedReps
+    if (reps < 1) return
     const w = currentEx.bodyweight ? 0 : (parseFloat(weightInput) || 0)
     logSet.mutate({ exercise_id: currentEx.id, weight: w, reps }, {
       onSuccess: () => {
@@ -1649,11 +1652,42 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   </div>
                 )}
 
-                {/* Reps slider */}
+                {/* Reps — centered stepper (tap to type) + slider */}
                 <div className="mb-5">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30">Reps</label>
-                    <span className="text-2xl font-bold tabular-nums">{selectedReps}</span>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30">Reps</span>
+                    <span className="text-[10px] text-white/20 font-mono">{repMin}–{repMax} target</span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <motion.button
+                      whileTap={{ scale: 0.85 }}
+                      onClick={() => setSelectedReps(r => Math.max(1, r - 1))}
+                      className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl font-light text-white/50 shrink-0"
+                      style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)' }}
+                    >−</motion.button>
+                    <div className="flex-1 text-center">
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        step={1}
+                        value={selectedReps === 0 ? '' : selectedReps}
+                        onFocus={e => e.target.select()}
+                        onChange={e => {
+                          const raw = e.target.value
+                          if (raw === '') { setSelectedReps(0); return }
+                          const n = parseInt(raw, 10)
+                          if (!isNaN(n)) setSelectedReps(Math.min(99, Math.max(0, n)))
+                        }}
+                        className="w-full text-center text-4xl font-bold bg-transparent focus:outline-none tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <p className="text-xs text-white/25 -mt-1 font-mono tracking-widest">reps</p>
+                    </div>
+                    <motion.button
+                      whileTap={{ scale: 0.85 }}
+                      onClick={() => setSelectedReps(r => Math.min(99, r + 1))}
+                      className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl font-light shrink-0"
+                      style={{ background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.2)', color: '#4ade80' }}
+                    >+</motion.button>
                   </div>
                   <input
                     type="range"
@@ -1662,15 +1696,14 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     step={1}
                     value={selectedReps}
                     onChange={e => setSelectedReps(Number(e.target.value))}
-                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer mt-4"
                     style={{
-                      background: `linear-gradient(to right, #4ade80 ${((selectedReps - 3) / (20 - 3)) * 100}%, rgba(255,255,255,0.12) 0%)`,
+                      background: `linear-gradient(to right, #4ade80 ${repsPct}%, rgba(255,255,255,0.12) ${repsPct}%)`,
                       WebkitAppearance: 'none',
                     }}
                   />
                   <div className="flex justify-between mt-1">
                     <span className="text-xs text-white/20">3</span>
-                    <span className="text-xs text-white/20 font-mono">{repMin}–{repMax} target</span>
                     <span className="text-xs text-white/20">20</span>
                   </div>
                 </div>
