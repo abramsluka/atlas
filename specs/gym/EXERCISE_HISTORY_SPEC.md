@@ -280,7 +280,7 @@ Props: `{ best: NewBest | null; units: string; exercise: GymExercise | null; onD
 
 - **Backdrop**: black 70% + radial amber glow bloom from center, fades in ~200ms.
 - **Star**: a big gold star (`#f59e0b`) springs in — scale `0.2→1.15→1` overshoot (`SPRING_POP`), slight rotation settle, soft glow pulse.
-- **Particle burst**: ~14 SVG shards/sparks fired radially from the star on mount — each a `motion` element with random-per-index angle/distance/rotation (compute from index, **not** `Math.random()` — deterministic; workflow/SSR-safe), springing out then fading. Amber/white mix.
+- **Particle burst — LOCKED default = "Sparks + shockwave ring + flash"** (chosen in the lab): one crisp radial burst of ~28–32 amber/white shards fired from the star (angle/distance/rotation from the element **index**, **not** `Math.random()` — deterministic; SSR/workflow-safe), springing out then fading; plus **one expanding shockwave ring** and a brief **screen flash** on mount. This reads as earned + premium without the busy multi-pop of Fireworks, which matters because early in a lift you PR most sessions. (Lab kept `fireworks`, `confetti`, `minimal` variants for reference; **Fireworks is a good optional escalation reserved for a true all-time-milestone PR** — a nice-to-have, not v1.)
 - **Copy**: serif "New best" headline; sub-line = the reference wording built from `nextTarget`:
   *"You beat your record. Next time, arm the bump: **{weight+step}{units}** or **{weight} × {reps+1}**."*
   Tiny dimmed "tap anywhere to continue".
