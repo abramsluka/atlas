@@ -66,7 +66,7 @@ const db = createServiceClient()
 
 **`daily_checkins`** — id, user_id, date (YYYY-MM-DD), morning_planned_training, morning_intent, evening_actual_training, evening_reflection. No migration file — created out-of-band in the dashboard (same for `user_settings`).
 
-Health/food/journal tables (food_logs, water_logs, body_weights, caffeine_logs, supplements, supplement_logs, journal_entries, jots, apple_health_logs, apple_workouts) are defined in `supabase/migrations/` and their exact column gotchas are mapped in `MCP_SERVER_SPEC.md` → Gotchas.
+Health/food/journal tables (food_logs, water_logs, body_weights, caffeine_logs, supplements, supplement_logs, journal_entries, jots, apple_health_logs, apple_workouts) are defined in `supabase/migrations/` and their exact column gotchas are mapped in `specs/platform/MCP_SERVER_SPEC.md` → Gotchas.
 
 **RLS:** Enabled on all tables. API routes bypass it via createServiceClient().
 

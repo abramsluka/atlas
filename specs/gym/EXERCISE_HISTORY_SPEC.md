@@ -1,0 +1,388 @@
+# Exercise History & Progression — Spec & Implementation Plan
+
+## Context
+
+The gym page can log sets and it shows a live "prescription" (INCREASE / HOLD / etc.) for the
+selected exercise, but it has **no way to look back at one exercise over time**. Luka wants the
+Whoop/Overload-style experience: tap an exercise, get a **full-screen history pop-up** with an
+Apple-stocks-style timeframe chooser, a scrubbable weight-progression chart with hover tooltips,
+a "last 30 days" delta, an all-time best, and a session-by-session table. On top of that: a
+**"new best" celebration** the moment you out-lift your record, a **"beat your best" next-target
+card**, and **Swap / History buttons** on every exercise so the picker + info sheet are one tap away.
+
+This is one bundled add-on to the existing PO Coach section — a "pop-up ecosystem" around the
+selected exercise. It intentionally reuses the machinery that already ships.
+
+**Design language** (from the "Overload" reference Luka attached): near-black canvas, italic serif
+display headers ("history", "Barbell bench"), a mint/green primary accent (`#4ade80`) for the line +
+progress, an **amber/gold** accent (`#f59e0b`-ish) reserved for records/celebration, tiny uppercase
+tracked-out labels, serif numerals in the stat tiles. Match `ExerciseInfoSheet.tsx` for the sheet
+chrome and `WtChart` for the chart craft.
+
+### Confirmed scope (parsed from Luka's to-dos)
+
+| To-do (Todoist / video) | Feature in this spec |
+|---|---|
+| "go to a new page or popup to see the history of an exercise… Apple stock ticker timeframe chooser… scroll through points… hover over a point and the date pops up" | **§5 Exercise History Sheet** + **§6 Progression Chart** |
+| "make it so gives the increase in the last 30 days" | **§4 stats** → `LAST 30 DAYS` tile |
+| "when I lift more weight than ever before I get a star animation that says new best, then click anywhere to continue" | **§7 New-Best Burst** |
+| "beat your best" card: *Your best is 85 kg × 5. Beat it next session: 87.5 kg, or 85 kg × 6* + the two toggles | **§8 Next-Target card** + **§9 Settings** |
+| "swap and history buttons for each exercise… swap suggests exercises but I can also search… info thing with pictures + numbered instructions" | **§10 Swap Sheet** + hero buttons (§11); the info sheet is **already built** — reused, not rebuilt |
+
+### What already exists — reuse, do not rebuild
+
+Confirmed in the codebase (file:line):
+- **Per-exercise logs hook** `useGymLogs(exerciseId)` → `['gym-logs', id]`, `GET /api/gym/logs?exercise_id=` — `src/features/gym/queries.ts:56`. **This is the only data source the pop-up needs. No new route.**
+- **Session-day bucketing** `logDatePST(utcStr)` — `GymClient.tsx:53`. Group sets into sessions with this exact fn (LA calendar day) so history matches "Past Workouts".
+- **Epley 1RM** `compute1RM(weight, reps) = weight * (1 + reps/30)` — `GymClient.tsx:116`.
+- **Best-set memo** `bestSet` (max reps for bodyweight, else max e1RM) — `GymClient.tsx:785`. Closest thing to a PR today; the new PR logic generalizes it.
+- **Chart craft** `WtChart` inline-SVG area chart w/ rolling avg — `GymClient.tsx:210`; `PoSparkline` last-15-set sparkline — `GymClient.tsx:168`. **No charting library is installed** and none should be added — hand-rolled `<path>` + `<linearGradient>` is the house convention (StreakStrip, HomeClient, HealthClient all do this).
+- **Sheet chrome** portal + backdrop + `drag="y"` dismiss + `SPRING_SHEET` — `ExerciseInfoSheet.tsx:99-111`. Copy this shell.
+- **Info sheet** `ExerciseInfoSheet` (photos crossfade demo + numbered instructions) — `src/app/gym/ExerciseInfoSheet.tsx`. **Done.** The Swap sheet's ⓘ affordance and the hero ⓘ both open this; we only add new entry points.
+- **Autocomplete filter/scoring** `ExerciseAutocomplete.tsx` — reuse its library-filter logic for Swap search.
+- **Log mutation** `useLogSet` — `src/features/gym/mutations.ts:104` (POSTs `{exercise_id, weight, reps}`, appends to `['gym-logs', id]` + `['gym-logs-all']`). The burst hooks its success.
+- **Motion constants** `EASE_OUT`, `SPRING_SNAPPY`, `SPRING_SHEET`, `SPRING_POP` — `src/app/gym/motion.ts`.
+- **Exercise rail + hero** `ScrollChip` (`GymClient.tsx:324`), exercise hero (`GymClient.tsx:1539-1597`, where the ⓘ button already lives), `currentExId` state (514) + `selectEx(id)` (814).
+
+### Net-new (what this spec builds)
+
+- A **pure derivation module** (`history.ts`): sets → sessions → chart series + stats + PR detection. No hook re-implements what GymClient already computes ad hoc; this centralizes it.
+- Four components: **ExerciseHistorySheet**, **ProgressionChart**, **NewBestBurst**, **SwapSheet**.
+- Two `gym_config` boolean columns for the celebration/next-target toggles (one small migration).
+- GymClient wiring: Swap/History buttons on the hero, mount the three overlays, fire the burst on PR.
+
+**Step 0:** this file (`specs/gym/EXERCISE_HISTORY_SPEC.md`) is the spec, kept in the new `specs/` tree.
+
+---
+
+## 1. Architecture at a glance
+
+```
+GymClient (existing)
+ ├─ exercise hero (1539) ── + [ⓘ info]  [⇄ swap]  [↗ history]   ← new buttons, act on currentEx
+ ├─ useLogSet success ───── detectNewBest() → <NewBestBurst/>     ← new, gated by config.celebrate_pr
+ └─ mounts overlays once at bottom:
+      <ExerciseInfoSheet id={infoId}/>          (exists)
+      <ExerciseHistorySheet exerciseId={historyId}/>   ← new
+      <SwapSheet open={swapOpen} exercise={currentEx}/> ← new
+      <NewBestBurst best={burst}/>              ← new
+
+src/features/gym/history.ts   (new, pure)
+   groupSessions(logs, exercise) → ExerciseSession[]
+   buildSeries(sessions, timeframe) → ChartPoint[]
+   exerciseStats(sessions) → { sessionCount, last30Delta, best, allTimeDelta }
+   detectNewBest(priorLogs, newSet, exercise) → NewBest | null
+   nextTarget(best, exercise) → { weightTarget, repTarget }
+```
+
+Data flow: **one `useGymLogs(exerciseId)` fetch → `history.ts` derives everything client-side.** No server aggregation, no new endpoint.
+
+---
+
+## 2. Data model — session grouping & metrics (`src/features/gym/history.ts`, new, ~160 lines)
+
+All pure, unit-testable, no React. Sets come from `GymLog[]` (`{ weight, reps, logged_at }`).
+
+### 2a. Group sets → sessions
+
+```ts
+export interface ExerciseSession {
+  dateKey: string        // LA day, from logDatePST(logged_at)  — reuse the SAME fn as GymClient
+  date: Date             // parsed for the chart x-axis
+  sets: GymLog[]         // all sets that day, chrono order
+  topWeight: number      // max weight in the session (the "working weight" plotted)
+  repsAtTop: number      // max reps achieved at topWeight (for "85 × 5")
+  setCount: number
+  totalReps: number      // Σ reps  (the "20 REPS" figure)
+  e1rm: number           // max compute1RM across the session's sets
+  deltaWeight: number | null  // topWeight − previous session's topWeight; null for the first
+}
+```
+
+- Group by `logDatePST(log.logged_at)` (import/duplicate the fn — see Gotchas on the shared-helper split).
+- Order sessions **ascending** by dateKey for the chart; the table renders reversed.
+- `deltaWeight` drives the table's PROGRESS column (`+2.5`, `first`, or a negative "off the line").
+
+### 2b. Bodyweight exercises
+
+When `exercise.bodyweight`, the "weight" axis is meaningless — plot **reps** instead:
+- `topWeight` → treat `topReps = max reps`; the chart Y = `topReps`, tooltip shows "× N reps", PR is a rep PR, next target `reps + 1`. All downstream code branches on `exercise.bodyweight` exactly like `getRx` (GymClient:133) and `bestSet` (GymClient:785) already do.
+
+### 2c. Stats (`exerciseStats`)
+
+```ts
+export interface ExerciseStats {
+  sessionCount: number          // count within the ACTIVE timeframe (ALL = every session)
+  last30Delta: number | null    // fixed 30-day window, ignores timeframe
+  best: BestRecord              // all-time, ignores timeframe
+  allTimeDelta: number          // latest topWeight − first topWeight  ("+10 kg · all time")
+}
+export interface BestRecord {
+  weight: number    // heaviest weight ever lifted (bodyweight: max reps)
+  reps: number      // max reps achieved at that heaviest weight
+  e1rm: number
+  dateKey: string
+}
+```
+
+- **`last30Delta`** (this is the "increase in the last 30 days" to-do): `latestTopWeight − topWeightAsOf(today − 30d)`, where `topWeightAsOf` = the top weight of the latest session **on or before** the cutoff; if there is no session before the window, fall back to the **first session inside** the window (so a brand-new exercise still shows its climb). `null` when only one session exists → render `—`.
+- **`best`**: scan all sets. `weight = max(weight)`; among sets at that weight, `reps = max(reps)`. Bodyweight → `weight` field carries the max-rep count.
+- Tiles are labeled exactly like the reference: `SESSIONS` · `LAST 30 DAYS` · `BEST`.
+
+### 2d. PR detection (`detectNewBest`)
+
+```ts
+export interface NewBest {
+  kind: 'weight' | 'reps' | 'e1rm'
+  weight: number
+  reps: number
+  prevWeight: number
+  prevReps: number
+}
+// prior = ALL logs for this exercise BEFORE the new set was inserted
+export function detectNewBest(prior: GymLog[], set: {weight:number;reps:number}, ex: GymExercise): NewBest | null
+```
+
+Rules (weighted exercise):
+1. `set.weight > max(prior.weight)` → **weight PR** (the headline "new best").
+2. else `set.weight === max(prior.weight)` **and** `set.reps > maxRepsAtThatWeight(prior)` → **reps PR**.
+3. (optional, off by default) `compute1RM(set) > max(prior e1rm)` → **e1rm PR**.
+
+Bodyweight: `set.reps > max(prior.reps)` → reps PR. Empty `prior` → **not** a PR (first-ever set is a baseline, not a record — matches the table's "first").
+
+### 2e. Next target (`nextTarget`)
+
+From `best`: `{ weightTarget: best.weight + ex.step, repTarget: best.reps + 1 }`. Rendered as
+*"Your best is **{best.weight}{units} × {best.reps}**. Beat it next session: **{weightTarget}{units}**, or **{best.weight} × {repTarget}**."* — exactly the reference card.
+
+---
+
+## 3. Schema — `supabase/migrations/20260724000001_gym_history_prefs.sql` (new, ~10 lines)
+
+The only backend change. Two per-user toggles on the existing single-row `gym_config`:
+
+```sql
+alter table gym_config add column if not exists celebrate_pr boolean not null default true;
+alter table gym_config add column if not exists show_next_target boolean not null default true;
+```
+
+- Run via house convention: `psql "$DATABASE_URL" -f supabase/migrations/20260724000001_gym_history_prefs.sql` (DATABASE_URL in `.env.local`). Re-run is a no-op.
+- `config/route.ts` already spreads the row on GET and the body on PUT, so both flags flow through once they're on the `GymConfig` type — **no route edit needed** beyond the default in the GET fallback (see §5 note).
+
+No new tables. History, sessions, and PRs are **derived from `gym_logs`** at read time; storing them would just create a sync-drift bug.
+
+---
+
+## 4. Types + hooks
+
+**`src/features/gym/types.ts`** — extend `GymConfig`:
+```ts
+celebrate_pr?: boolean       // default true
+show_next_target?: boolean   // default true
+```
+Add the `ExerciseSession`, `ExerciseStats`, `BestRecord`, `NewBest` interfaces (or export them from `history.ts` and re-export — keep one home; `history.ts` is fine).
+
+**`src/features/gym/queries.ts`** — no new hook required; `useGymLogs(exerciseId)` (line 56) already exists. The sheet calls it with `enabled: !!exerciseId`. If we want the timeframe/stat math memoized, do it in the component with `useMemo` over `history.ts` fns, not in a query.
+
+**`mutations.ts`** — no change; `useSaveGymConfig` already persists arbitrary config fields, so the two toggles save through it.
+
+---
+
+## 5. UI — `src/app/gym/ExerciseHistorySheet.tsx` (new, ~260 lines)
+
+Props: `{ exerciseId: string | null; exercise: GymExercise | null; units: 'lbs'|'kg'; showNextTarget: boolean; onLogSession: (exId: string) => void; onClose: () => void }`.
+
+Portals to `document.body`, `z-[70]`, same shell as `ExerciseInfoSheet` (backdrop fade + `motion.div` bottom sheet, `drag="y"`, velocity dismiss, grab handle). Self-fetches via `useGymLogs(exerciseId)`; derives sessions/series/stats with `history.ts` inside `useMemo`.
+
+Layout, top → bottom (mirrors the reference screenshot):
+
+```
+history                                            ×
+Barbell bench                                        ← italic serif header
+
+[ W ][ M ][ 3M ][ 6M ][ Y ][ ALL ]                  ← §6a TimeframeChooser (active = green pill)
+
+┌───────────────────────────────────────────────┐
+│  <ProgressionChart/>  (§6)                      │
+│   • area+line, crosshair, hover tooltip card    │
+│   • "+10 kg · all time" caption centered below  │
+│   • selected-session set pills:  [5][5][5][5]   │
+│                                     20 REPS      │
+└───────────────────────────────────────────────┘
+
+★ Your best is 85 kg × 5. Beat it next session…    ← §8 next-target card (if showNextTarget)
+
+┌ SESSIONS ┐ ┌ LAST 30 DAYS ┐ ┌ BEST ┐             ← §4 stat tiles, serif numerals
+     6            +10 kg        85 kg
+
+DATE     SETS   REPS   WEIGHT   PROGRESS            ← history table, newest first, scrolls
+Jun 19    4      4     85 kg     +2.5
+Jun 15    4      5     82.5 kg   +2.5
+…                                                  first
+                                    (+ log a session)  ← dashed button
+```
+
+- **Empty state** (0 sessions): serif "No history yet" + the dashed "+ log a session" CTA only.
+- **Single session**: chart shows one point (dot, no line); deltas render `—`/`first`.
+- **`+ log a session`**: `onClose()` then `onLogSession(exerciseId)` → GymClient calls `selectEx(id)` and scrolls the stepper into view / focuses it. Does **not** re-implement logging.
+- The header word "history" is lowercase italic serif; exercise name is the big serif line (use `short_name` fallback to `name`).
+
+Config default note: `config/route.ts` GET should default `celebrate_pr`/`show_next_target` to `true` when the columns are null on legacy rows (one-line `?? true` in the mapper) so the UI never sees `undefined`.
+
+---
+
+## 6. UI — `src/app/gym/ProgressionChart.tsx` (new, ~220 lines)
+
+Hand-rolled inline SVG, modeled on `WtChart` (`GymClient.tsx:210`). framer-motion for the draw-in and the crosshair. `useReducedMotion()` respected (no draw animation, static crosshair). **This is the showpiece — the "Apple stocks" interaction.**
+
+### 6a. Timeframe chooser (sub-component or inline)
+Segmented pill: `W · M · 3M · 6M · Y · ALL`. Active = filled green pill (`bg-[#4ade80]/15 text-[#4ade80] border`), inactive = ghost. Selecting one filters `sessions` to that window and re-fits the chart. `ALL` fits everything. Spring the active-pill background with `layoutId` (framer `layout`) so it slides between options. Default = `ALL` (or `3M` if ≥ ~12 sessions, so recent progress is legible — pick one; `ALL` is safest for v1).
+
+### 6b. The chart
+- **Series**: `buildSeries(sessions, timeframe)` → `{x: dateFraction, y: topWeight (or topReps), session}`.
+- **Path**: smooth cubic-bezier `<path>` (Catmull-Rom→bezier, same technique as `WtChart`); area fill = vertical `<linearGradient>` green→transparent; stroke `#4ade80` ~2px. Y-domain padded ±one step; gridlines at 3 rounded weights (like the reference `70 / 80 / 90`).
+- **Points**: a small circle at each session; the **hovered/scrubbed** point enlarges + gets a filled halo.
+- **Draw-in**: `pathLength` 0→1 spring on open (`SPRING_SNAPPY`), points fade/pop in staggered after the line reaches them.
+- **X labels**: first & last date of the visible window in the lower corners (`Jun 3` … `Jun 24`), tiny serif italic.
+
+### 6c. Scrub + tooltip (the "hover over a point, date pops up" to-do)
+- **Pointer/touch**: a full-height transparent overlay captures `onPointerMove` / `onPointerDown` + `onTouchMove`. Map clientX → nearest session index. This makes the points **"scrollable through"** on mobile (drag the finger across → crosshair tracks nearest point) — the primary target is the PWA on phone, so touch-drag is the main interaction, hover is the desktop bonus.
+- **Crosshair**: a vertical line + the enlarged dot at the active index; animate its x with a fast spring so it glides between points instead of snapping.
+- **Tooltip card**: floats above the active point, clamped inside the chart width. Content exactly like the reference: `Jun 15  82.5 kg  4 × 5 reps  ▲ +2.5` — date (serif italic) · weight (bold) · `setCount × repsAtTop reps` · delta chip (green ▲ / red ▼ / grey "first"). Below the chart, the **selected session's set pills** update to that session (`[5][5][5][5]` + `N REPS`).
+- On pointer-leave (desktop) the active index snaps back to the latest session; on touch it stays where released (so you can read it).
+- **"+10 kg · all time"** caption sits centered under the chart, always the all-time delta (not the scrubbed one).
+
+### 6d. Bodyweight variant
+Y-axis = reps, tooltip "× N reps" with no weight, caption "+N reps · all time". Everything else identical.
+
+---
+
+## 7. UI — `src/app/gym/NewBestBurst.tsx` (new, ~150 lines)
+
+The "star animation → new best → click anywhere to continue" to-do. Full-screen amber celebration.
+
+Props: `{ best: NewBest | null; units: string; exercise: GymExercise | null; onDismiss: () => void }`. Portal, `z-[90]` (above every sheet). Rendered only when `best` is set **and** `config.celebrate_pr`.
+
+- **Backdrop**: black 70% + radial amber glow bloom from center, fades in ~200ms.
+- **Star**: a big gold star (`#f59e0b`) springs in — scale `0.2→1.15→1` overshoot (`SPRING_POP`), slight rotation settle, soft glow pulse.
+- **Particle burst**: ~14 SVG shards/sparks fired radially from the star on mount — each a `motion` element with random-per-index angle/distance/rotation (compute from index, **not** `Math.random()` — deterministic; workflow/SSR-safe), springing out then fading. Amber/white mix.
+- **Copy**: serif "New best" headline; sub-line = the reference wording built from `nextTarget`:
+  *"You beat your record. Next time, arm the bump: **{weight+step}{units}** or **{weight} × {reps+1}**."*
+  Tiny dimmed "tap anywhere to continue".
+- **Dismiss**: the whole overlay is one click/tap target → `onDismiss()`. Also auto-dismiss after ~6s as a fallback. Escape key on desktop.
+- **Reduced motion**: no particles, star just fades in, copy static.
+- Fires **once per qualifying set**. Trigger logic lives in GymClient's log-set success (§11), not here — this is a dumb presentational overlay driven by the `best` prop.
+
+---
+
+## 8. UI — Next-Target card (inline in the History Sheet, and optionally the hero)
+
+A slim card under the chart (gated by `config.show_next_target`): amber ★ icon + the `nextTarget` sentence (§2e). Same card can optionally mount under the main exercise card on the gym page so the target is visible without opening history — but **v1 renders it in the sheet only** to avoid crowding the log screen; flag as a nice-to-have. Label in Settings: *"Next-target rule — the 'beat your best' card under the chart."*
+
+---
+
+## 9. Settings (in GymClient's existing Settings overlay, ~2604)
+
+Two toggles, wired to `gym_config` via `useSaveGymConfig`:
+- **"Celebrate a new best"** — *the full-screen burst when you beat your record.* → `celebrate_pr`.
+- **"Next-target rule"** — *the "beat your best" card under the chart.* → `show_next_target`.
+
+Reuse whatever toggle component the Settings overlay already uses for `upgrade_at_reps_auto`. Both default ON.
+
+---
+
+## 10. UI — `src/app/gym/SwapSheet.tsx` (new, ~200 lines)
+
+The "swap button… suggests exercises, but I can also search… info thing next to each" to-do.
+
+Props: `{ open: boolean; exercise: GymExercise | null; entries: ExerciseLibraryEntry[]; onPick: (entry|customName) => void; onInfo: (id) => void; onClose: () => void }`. Same bottom-sheet shell.
+
+Contents:
+- **Header**: "Swap **{exercise.name}**".
+- **Suggestions** (default view): from `useExerciseLibrary()` (already fetched once per session), rank library entries that **share a primary muscle** with the current exercise (via its `library_id` detail, or its name match), tie-broken by `popularity`, excluding the current one. Show ~8. Each row: `short_name`/name + primary-muscle tag + a right-side **ⓘ** button (`onPointerDown` → `onInfo(id)` → opens the existing `ExerciseInfoSheet` — pictures + numbered instructions, **already built**).
+- **Search**: a text input at top; when non-empty, reuse `ExerciseAutocomplete`'s filter+score logic (name-startsWith > alias-startsWith > includes, popularity tiebreak) over the same index. Same row layout, same ⓘ.
+- **Custom**: dashed last row *Use "{query}" as a custom exercise* → unlinked pick.
+
+### Swap semantics (decision — non-destructive, confirm with Luka)
+"Swap" = **substitute the movement in this day's slot**, keeping each movement's history clean. Recommended behavior:
+1. Look for an existing `GymExercise` for the target (same `day_ids`/`gym_id`, matched by `library_id` or normalized name). If found → `selectEx(that.id)`.
+2. If not found → **create** a `GymExercise` from the picked library entry (prefill bodyweight/rep range/step from the library, like the add-exercise modal already does), in the current day/gym, then `selectEx(new.id)`.
+
+Rationale: editing the current exercise's `name`/`library_id` in place would **merge two movements' logs under one history**, corrupting the very chart we're building. Find-or-create keeps Bench history as Bench and Incline history as Incline. **This is the one behavioral decision to confirm** — the alternative ("permanently rename this slot") is simpler but destroys the history invariant. Default to find-or-create.
+
+---
+
+## 11. GymClient wiring (`src/app/gym/GymClient.tsx`, ~60 lines changed)
+
+1. **State**: `const [historyId, setHistoryId] = useState<string|null>(null)`, `const [swapOpen, setSwapOpen] = useState(false)`, `const [burst, setBurst] = useState<NewBest|null>(null)`. `libraryIndex` and `config` are already in scope.
+2. **Hero buttons** (`GymClient.tsx:1539-1597`, where the ⓘ already renders): add **⇄ Swap** → `setSwapOpen(true)` and **↗ History** → `setHistoryId(currentExId)`, sitting next to the existing info ⓘ. Small icon buttons, act on `currentEx`. (Satisfies "just have them somewhere and whatever exercise is selected it goes to it.")
+3. **PR burst**: in `handleLogSet` / the `useLogSet` success path (`GymClient.tsx:824` / `mutations.ts:104`), capture `exLogs` **before** the insert, then `const pr = detectNewBest(priorLogs, {weight, reps}, currentEx)`; if `pr && config.celebrate_pr !== false` → `setBurst(pr)`. Guard so it fires once per set, not on re-render.
+4. **Mount overlays once** at the bottom, next to the existing `<ExerciseInfoSheet …/>`:
+   ```tsx
+   <ExerciseHistorySheet exerciseId={historyId} exercise={exFor(historyId)} units={units}
+       showNextTarget={config.show_next_target !== false}
+       onLogSession={(id)=>{ setHistoryId(null); selectEx(id); scrollStepperIntoView() }}
+       onClose={()=>setHistoryId(null)} />
+   <SwapSheet open={swapOpen} exercise={currentEx} entries={libraryIndex}
+       onPick={handleSwapPick} onInfo={setInfoId} onClose={()=>setSwapOpen(false)} />
+   <NewBestBurst best={burst} units={units} exercise={currentEx} onDismiss={()=>setBurst(null)} />
+   ```
+5. **`handleSwapPick`**: the find-or-create-then-`selectEx` logic (§10). Reuse the add-exercise create path (`saveEx` / `useCreateExercise`).
+6. The History sheet's ⓘ (on chart? no — on Swap rows and hero) shares `infoId` → the single mounted `ExerciseInfoSheet`.
+
+---
+
+## 12. File-by-file change list & order
+
+| # | File | Action | Size |
+|---|---|---|---|
+| 0 | `specs/gym/EXERCISE_HISTORY_SPEC.md` | new | this file |
+| 1 | `supabase/migrations/20260724000001_gym_history_prefs.sql` | new | ~10 |
+| 2 | `src/features/gym/history.ts` | new | ~160 (pure, testable) |
+| 3 | `src/features/gym/types.ts` | edit | +8 (config flags; import history types) |
+| 4 | `src/app/api/gym/config/route.ts` | edit | +2 (default the two flags on GET) |
+| 5 | `src/app/gym/ProgressionChart.tsx` | new | ~220 |
+| 6 | `src/app/gym/ExerciseHistorySheet.tsx` | new | ~260 |
+| 7 | `src/app/gym/NewBestBurst.tsx` | new | ~150 |
+| 8 | `src/app/gym/SwapSheet.tsx` | new | ~200 |
+| 9 | `src/app/gym/GymClient.tsx` | edit | ~60 changed |
+
+**Order**: migration (psql) → `history.ts` (+ a scratch test against real logs) → types/config → chart → history sheet → burst → swap → GymClient wiring. Build the chart and burst in isolation (temporary route or a story) before wiring, since they're the animation-heavy pieces. Load the `ui-ux-pro-max` / `ui-styling` skills before the chart, sheet, and burst.
+
+---
+
+## 13. Verification
+
+**Derivation (`history.ts`, against Luka's real Bench logs):**
+- `groupSessions` produces one session per training day; `topWeight`/`repsAtTop`/`totalReps` match "Today's / Past Workouts" for the same days.
+- `last30Delta` equals hand-computed (latest top − top 30d ago); `—` when one session.
+- `detectNewBest`: a heavier set flags weight PR; same weight + more reps flags rep PR; first-ever set flags nothing; a lighter set flags nothing.
+- Bodyweight exercise (e.g. Pull-ups): everything runs on reps, no NaN weights.
+
+**App (dev server, check `/tmp/atlas-dev.log`; `npm run build` clean):**
+- Tap **History** on Bench → sheet rises; chart draws in; `ALL` fits all sessions; tap `M`/`3M` → window narrows, active pill slides.
+- Drag finger across the chart → crosshair tracks nearest point, tooltip shows `date · weight · sets×reps · ▲delta`, set pills below update; release → stays.
+- Stat tiles read `SESSIONS / LAST 30 DAYS / BEST`; "+X · all time" caption correct.
+- Table lists sessions newest-first with correct PROGRESS (`+2.5` / `first` / negative).
+- `+ log a session` closes sheet, selects Bench, focuses stepper.
+- Log a set heavier than the all-time best → amber star burst, correct "arm the bump" numbers, tap anywhere dismisses; toggling **Celebrate a new best** off suppresses it.
+- **Next-target** card shows/hides with its toggle; wording matches best.
+- **Swap** on Bench → suggestions share a muscle group, search filters live, ⓘ opens the existing info sheet; picking a new movement selects it (find-or-create) and does **not** merge logs into Bench's history.
+- Reduced-motion: chart static, burst no particles.
+- Real feel verified on the **prod URL** on phone after deploy (mobile-perf rule), especially the touch scrub.
+
+---
+
+## 14. Risks / gotchas / decisions
+
+- **`GymClient.tsx` is ~2,724 lines** — all new UI goes in new files; GymClient gets state + hero buttons + overlay mounts + the PR-check only.
+- **Shared-helper duplication**: `logDatePST` / `compute1RM` live inside `GymClient.tsx` as module-local fns, not exports. `history.ts` needs them — either lift them into a shared `src/lib/gymCalc.ts` and import from both (cleanest), or duplicate the tiny fns in `history.ts`. **Prefer lifting** to avoid two definitions drifting; it's a mechanical extract. Note GymClient also re-declares `EASE_OUT` locally (line 7) instead of importing from `motion.ts` — don't copy that anti-pattern.
+- **Dropdown/tooltip clipping in a scrollable sheet**: the sheet is `overflow-y-auto`; the chart tooltip must be positioned **within the chart's own bounds** (clamped), never an absolute popover that escapes the sheet — same lesson as the autocomplete list.
+- **PR timing**: `detectNewBest` must run on the **pre-insert** log set. `useLogSet` optimistically appends to `['gym-logs', id]`, so capture `priorLogs` before calling the mutation, or diff against the server response — do not read the cache after the optimistic write.
+- **Swap history invariant** (§10): find-or-create, never rename-in-place, or the chart shows two exercises as one. This is the load-bearing decision — confirm with Luka.
+- **Units**: chart labels + targets use `config.units`; increments use `ex.step` (2.5 in kg data, 2.5/5 in lbs). Luka's data is **lbs**; the reference screenshots are kg — don't hardcode kg anywhere.
+- **Determinism in the burst**: particle angles/offsets from the element index, never `Math.random()` / `Date.now()` (SSR + reproducibility).
+- **`upgrade_at_reps` divergence (pre-existing)**: the config ceiling isn't read by `getRx` (which uses `ex.rep_max`); the next-target "×reps+1" here is derived from the actual best, so it sidesteps that bug — but if we ever surface "reps to next level," use `ex.rep_max`, not `config.upgrade_at_reps`. Out of scope, noted.
+- **No stored PRs/sessions**: everything derives from `gym_logs` at read time. Deleting a set (`useDeleteLog`) automatically corrects history/best on the next render — a stored-PR table would need manual invalidation. Keep it derived.
+
+**Patterns to copy**: sheet shell + drag-dismiss + cascade from `ExerciseInfoSheet.tsx`; inline-SVG chart from `WtChart` (`GymClient.tsx:210`); rail/filter + autocomplete scoring from `ExerciseAutocomplete.tsx`; spring constants from `motion.ts`; log mutation from `mutations.ts:104`.
