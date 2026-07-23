@@ -771,8 +771,10 @@ export default function GymClient({ today, initialConfig, initialExercises, init
 
   const repMin = currentEx?.rep_min ?? 6
   const repMax = currentEx?.rep_max ?? 8
-  // Slider fill %, clamped so out-of-range reps (e.g. high-rep bodyweight) don't glitch the track
-  const repsPct = Math.min(100, Math.max(0, ((selectedReps - 3) / (20 - 3)) * 100))
+  // Slider fill %, clamped so out-of-range reps (e.g. high-rep bodyweight) don't glitch the track.
+  // Range is a tight 5–14 so each rep gets enough travel to be accurate on mobile; the numpad and
+  // ±  still cover anything outside it.
+  const repsPct = Math.min(100, Math.max(0, ((selectedReps - 5) / (14 - 5)) * 100))
 
   const rx = useMemo(() => {
     if (!currentEx) return null
@@ -1691,8 +1693,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   </div>
                   <input
                     type="range"
-                    min={3}
-                    max={20}
+                    min={5}
+                    max={14}
                     step={1}
                     value={selectedReps}
                     onChange={e => setSelectedReps(Number(e.target.value))}
@@ -1703,8 +1705,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     }}
                   />
                   <div className="flex justify-between mt-1">
-                    <span className="text-xs text-white/20">3</span>
-                    <span className="text-xs text-white/20">20</span>
+                    <span className="text-xs text-white/20">5</span>
+                    <span className="text-xs text-white/20">14</span>
                   </div>
                 </div>
 
