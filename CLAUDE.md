@@ -141,6 +141,20 @@ src/proxy.ts                        # Next.js 16 middleware (session refresh + l
 
 Finances/subscriptions tab, goals module.
 
+## Deploying — production only builds from main
+
+Vercel builds Production ONLY from `main`. Pushes to `claude/*` session branches
+create Preview deployments; the live app does not change. After the final push of
+any session on a `claude/*` branch, land it on main:
+
+```bash
+git fetch origin && git merge origin/main --no-edit && git push origin HEAD:main
+```
+
+If the merge conflicts, resolve it in the session branch first, then push both the
+branch and main. Never end a session with shipped work sitting only on a preview
+branch — that is how fixes silently never reach the PWA.
+
 ## Dev Server
 
 ```bash
