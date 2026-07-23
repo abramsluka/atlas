@@ -209,9 +209,8 @@ Portals to `document.body`, `z-[70]`, same shell as today's `ExerciseInfoSheet` 
 ### 5a. History tab — layout, top → bottom (mirrors the reference screenshot):
 
 ```
-history                                            ×
-Barbell bench                                        ← italic serif header
-[ History • | How-to ]                               ← tab strip; History is the default tab
+Barbell Bench                                      ×  ← italic serif header (NO separate "history" kicker)
+[ History • | How-to ]                               ← tab strip is the only view indicator (green = active)
 
 [ W ][ M ][ 3M ][ 6M ][ Y ][ ALL ]                  ← §6a TimeframeChooser (History tab only)
 
@@ -238,7 +237,7 @@ Jun 15    4      5     82.5 kg   +2.5
 - **Empty state** (0 sessions): serif "No history yet" + the dashed "+ log a session" CTA only.
 - **Single session**: chart shows one point (dot, no line); deltas render `—`/`first`.
 - **`+ log a session`**: `onClose()` then `onLogSession(exerciseId)` → GymClient calls `selectEx(id)` and scrolls the stepper into view / focuses it. Does **not** re-implement logging.
-- The header word "history" is lowercase italic serif; exercise name is the big serif line (use `short_name` fallback to `name`).
+- No "history" kicker word above the title (removed — the green tab strip already signals the active view). The exercise name is the big serif line, top-left (use `short_name` fallback to `name`), with the × top-right.
 
 Config default note: `config/route.ts` GET should default `celebrate_pr`/`show_next_target` to `true` when the columns are null on legacy rows (one-line `?? true` in the mapper) so the UI never sees `undefined`.
 
@@ -257,16 +256,16 @@ Segmented pill: `W · M · 3M · 6M · Y · ALL`. Active = filled green pill (`b
 ### 6b. The chart
 - **Series**: `buildSeries(sessions, timeframe)` → `{x: dateFraction, y: topWeight (or topReps), session}`.
 - **Path**: smooth cubic-bezier `<path>` (Catmull-Rom→bezier, same technique as `WtChart`); area fill = vertical `<linearGradient>` green→transparent; stroke `#4ade80` ~2px. Y-domain padded ±one step; gridlines at 3 rounded weights (like the reference `70 / 80 / 90`).
-- **Points**: a small circle at each session; the **hovered/scrubbed** point enlarges + gets a filled halo.
+- **Points**: a circle at each session; the **hovered/scrubbed** point enlarges + gets a filled halo. **Adaptive density** (locked in the lab): dot radius shrinks as the visible count grows and **dots hide entirely on long ranges** (≈>40 points → line only), so ALL/Y never turn into a clustered smear. The scrubbed point always renders regardless. For very long histories, downsample/bucket sessions (e.g. weekly→monthly) before plotting — the adaptive radius handles the current volume; bucketing is the next lever if a lift ever has hundreds of sessions.
 - **Draw-in**: `pathLength` 0→1 spring on open (`SPRING_SNAPPY`), points fade/pop in staggered after the line reaches them.
 - **X labels**: first & last date of the visible window in the lower corners (`Jun 3` … `Jun 24`), tiny serif italic.
 
 ### 6c. Scrub + tooltip (the "hover over a point, date pops up" to-do)
 - **Pointer/touch**: a full-height transparent overlay captures `onPointerMove` / `onPointerDown` + `onTouchMove`. Map clientX → nearest session index. This makes the points **"scrollable through"** on mobile (drag the finger across → crosshair tracks nearest point) — the primary target is the PWA on phone, so touch-drag is the main interaction, hover is the desktop bonus.
 - **Crosshair**: a vertical line + the enlarged dot at the active index; animate its x with a fast spring so it glides between points instead of snapping.
-- **Tooltip card**: floats above the active point, clamped inside the chart width. Content exactly like the reference: `Jun 15  82.5 kg  4 × 5 reps  ▲ +2.5` — date (serif italic) · weight (bold) · `setCount × repsAtTop reps` · delta chip (green ▲ / red ▼ / grey "first"). Below the chart, the **selected session's set pills** update to that session (`[5][5][5][5]` + `N REPS`).
+- **Tooltip card**: floats above the active point, **horizontally clamped inside the frame** (`left = clamp(halfWidth+pad, x, boxWidth-halfWidth-pad)`) so the rightmost/leftmost sessions don't clip — measured in the lab, this is required. Content exactly like the reference: `Jun 15  82.5 kg  4 × 5 reps  ▲ +2.5` — date (serif italic) · weight (bold) · `setCount × repsAtTop reps` · delta chip. **The delta is vs the previous session** (session-over-session), the same number as the table's PROGRESS column — green ▲ up / red ▼ down / grey "first" for the earliest visible point. Below the chart, the **selected session's set pills** update to that session (`[5][5][5][5]` + `N REPS`).
 - On pointer-leave (desktop) the active index snaps back to the latest session; on touch it stays where released (so you can read it).
-- **"+10 kg · all time"** caption sits centered under the chart, always the all-time delta (not the scrubbed one).
+- **Timeframe-scoped caption** (locked in the lab): the centered caption under the chart reflects the **selected timeframe**, not always all-time — `+{lastVisible − firstVisible} {units} · {label}` where label = *past week / past month / past 3 months / past 6 months / past year / all time*. So `3M` reads "+7.5 kg · past 3 months", `ALL` reads "+30 kg · all time". This is distinct from the fixed **LAST 30 DAYS** stat tile (they complement: tile is always 30d, caption follows the chooser). Not affected by scrubbing.
 
 ### 6d. Bodyweight variant
 Y-axis = reps, tooltip "× N reps" with no weight, caption "+N reps · all time". Everything else identical.

@@ -195,6 +195,18 @@ svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
 .logbtn { margin-top: 14px; width: 100%; text-align: center; padding: 12px; border: 1px dashed var(--border); border-radius: 12px; color: var(--muted); font-size: 12px; cursor: pointer; transition: border-color .2s, color .2s; }
 .logbtn:hover { border-color: var(--accent-line); color: var(--accent); }
 
+/* how-to tab */
+.howto-media { display: flex; gap: 8px; margin-top: 18px; }
+.howto-frame { flex: 1; aspect-ratio: 4/3; border-radius: 14px; background: linear-gradient(135deg,#1a1c22,#0d0e12); border: 1px solid var(--border); display: flex; align-items: flex-end; }
+.howto-frame span { font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); margin: 8px; }
+.howto-muscles { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 16px; }
+.mp { font-size: 11px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); text-transform: capitalize; }
+.mp.on { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft); }
+.howto-meta { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); margin-top: 12px; }
+.howto-steps { margin-top: 16px; display: flex; flex-direction: column; gap: 13px; counter-reset: step; }
+.howto-steps li { list-style: none; display: flex; gap: 12px; font-size: 13px; color: var(--muted); line-height: 1.5; }
+.howto-steps li::before { counter-increment: step; content: counter(step,decimal-leading-zero); font-family: var(--mono); font-size: 11px; color: var(--accent-line); }
+
 /* ── Control rail ── */
 .rail { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 68px; }
 .group { border: 1px solid var(--border); border-radius: 14px; background: rgba(255,255,255,0.02); overflow: hidden; }
@@ -257,7 +269,6 @@ svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
   <div class="phonewrap">
     <div class="phone" id="phone">
       <span class="sheet-x">×</span>
-      <div class="sheet-kicker">history</div>
       <div class="sheet-title" id="exName">Barbell Bench</div>
 
       <div class="tabs">
@@ -266,6 +277,7 @@ svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
         <span class="tab-pill" id="tabPill"></span>
       </div>
 
+      <div id="historyView">
       <div class="tf" id="tf">
         <span class="tf-ind" id="tfInd"></span>
       </div>
@@ -297,6 +309,24 @@ svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
       </div>
 
       <div class="logbtn">+ log a session</div>
+      </div><!-- /historyView -->
+
+      <div id="howtoView" style="display:none">
+        <div class="howto-media">
+          <div class="howto-frame"><span>start</span></div>
+          <div class="howto-frame"><span>end</span></div>
+        </div>
+        <div class="howto-muscles">
+          <span class="mp on">chest</span><span class="mp on">triceps</span><span class="mp">front delts</span>
+        </div>
+        <div class="howto-meta">Barbell · Compound · Push</div>
+        <ol class="howto-steps">
+          <li>Lie flat, grip just wider than shoulder-width, feet planted.</li>
+          <li>Unrack and hold the bar over your chest, wrists stacked over elbows.</li>
+          <li>Lower under control to mid-chest, elbows ~75° from your torso.</li>
+          <li>Press up and slightly back toward the rack. Lock out. Repeat.</li>
+        </ol>
+      </div>
     </div>
   </div>
 
@@ -412,6 +442,7 @@ const U = () => CFG.units==='lb' ? 'lbs' : 'kg';
 const STEP = () => CFG.units==='lb' ? 5 : 2.5;
 
 const TF_DAYS = { W:7, M:30, '3M':90, '6M':180, Y:365, ALL:99999 };
+const TF_LABEL = { W:'past week', M:'past month', '3M':'past 3 months', '6M':'past 6 months', Y:'past year', ALL:'all time' };
 function visibleSessions(){
   const cut = new Date(TODAY); cut.setDate(cut.getDate() - TF_DAYS[CFG.tf]);
   const v = ALL_SESSIONS.filter(s => s.date >= cut);
@@ -515,11 +546,14 @@ function renderChart(animate){
     }
   }
 
-  // dots
+  // dots — adaptive radius, hidden when dense (line-only for long histories)
+  const n=chartPts.length;
+  const dotR = n<=14?3.2 : n<=24?2.4 : n<=40?1.6 : 0;
   chartPts.forEach((p,i)=>{
-    const c=mk('circle',{class:'dot',cx:p.x,cy:p.y,r:3.2,'data-i':i});
+    if(dotR<=0) return;
+    const c=mk('circle',{class:'dot',cx:p.x,cy:p.y,r:dotR,'data-i':i});
     svg.appendChild(c);
-    if(animate && !reduce && $('pointPop').checked && chartPts.length>1){
+    if(animate && !reduce && $('pointPop').checked && n>1 && n<=24){
       const frac=(p.x-PAD.l)/(VW-PAD.l-PAD.r);
       c.style.transformOrigin=`${p.x}px ${p.y}px`;
       c.animate([{transform:'scale(0)'},{transform:'scale(1.5)'},{transform:'scale(1)'}],
@@ -541,9 +575,10 @@ function renderChart(animate){
 }
 
 function updateCaption(){
-  const first=ALL_SESSIONS[0].weight, last=ALL_SESSIONS[ALL_SESSIONS.length-1].weight;
-  const d=cv(last)-cv(first);
-  $('cap').textContent = `${d>=0?'+':''}${d} ${U()} · all time`;
+  // delta over the SELECTED timeframe window (first → last visible session)
+  const v=visibleSessions();
+  const d=cv(v[v.length-1].weight)-cv(v[0].weight);
+  $('cap').textContent = `${d>=0?'+':''}${d} ${U()} · ${TF_LABEL[CFG.tf]}`;
 }
 
 /* ── scrub ── */
@@ -569,10 +604,14 @@ function setActive(i, roll){
   const delta=prev? p.s.weight-prev.s.weight : null;
   const dCls = delta==null?'flat':delta>0?'up':delta<0?'down':'flat';
   const dTxt = delta==null?'first':`${delta>0?'▲ +':delta<0?'▼ ':''}${delta!==0?Math.abs(cv(p.s.weight)-cv(prev.s.weight)):''}`.trim()||'—';
-  const scale=box.clientWidth/VW;
-  tip.style.left=(p.x*scale)+'px'; tip.style.top=(p.y*scale)+'px'; tip.style.opacity='1';
   const wNow = fmtW(p.s.weight);
   tip.innerHTML=`<span class="d">${fmtDate(p.s.date)}</span><span class="w"><span id="rollW">${wNow}</span> ${U()}</span><span class="r">${p.s.sets} × ${p.s.reps} reps</span><span class="delta ${dCls}">${dTxt}</span>`;
+  tip.style.opacity='1';
+  // position + clamp horizontally so it never gets clipped at the edges
+  const scale=box.clientWidth/VW;
+  const half=tip.offsetWidth/2;
+  const cx=Math.max(half+4, Math.min(box.clientWidth-half-4, p.x*scale));
+  tip.style.left=cx+'px'; tip.style.top=(p.y*scale)+'px';
   if(roll && $('roll').checked && prev && !$('reduce').checked){ rollNumber($('rollW'), cv(prev.s.weight), cv(p.s.weight)); }
 
   // pills
@@ -720,8 +759,16 @@ $('drawDur').addEventListener('input',()=>{});
 document.querySelectorAll('.rep').forEach(r=>r.addEventListener('click',()=>{ const k=r.dataset.rep; if(k==='draw')renderChart(true); if(k==='stats'){renderStats(true);renderTable(true);} }));
 $('replayAll').addEventListener('click',()=>renderAll(true));
 
-// tabs (visual)
-document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{ document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on')); t.classList.add('on'); moveTabPill(); }));
+// tabs — switch body between History and How-to with a cascade
+function staggerHowto(){ if($('reduce').checked) return; document.querySelectorAll('#howtoView > *').forEach((el,i)=>el.animate([{opacity:0,transform:'translateY(8px)'},{opacity:1,transform:'none'}],{duration:400,delay:i*70,easing:getEase(),fill:'both'})); }
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on')); t.classList.add('on'); moveTabPill();
+  const showHow=t.textContent.trim()==='How-to';
+  const inEl=showHow?$('howtoView'):$('historyView'), outEl=showHow?$('historyView'):$('howtoView');
+  outEl.style.display='none'; inEl.style.display='';
+  if(!$('reduce').checked) inEl.animate([{opacity:0,transform:'translateY(6px)'},{opacity:1,transform:'none'}],{duration:320,easing:getEase(),fill:'both'});
+  if(showHow) staggerHowto();
+}));
 
 function renderAll(animate){ renderChart(animate); renderStats(animate); renderTable(animate); }
 
