@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { checkNoApiKey } from '@/lib/apiKeyError'
 import type {
   TrainingProgram, GeneratedProgram, GenerateProgramRequest, ActiveProgramResponse, ProgramDetailResponse,
 } from './programTypes'
@@ -52,6 +53,8 @@ export function useGenerateProgram() {
         body: JSON.stringify(req),
       })
       if (!res.ok) {
+        const noKey = await checkNoApiKey(res)
+        if (noKey) throw noKey
         const j = await res.json().catch(() => null)
         throw new Error(j?.error ?? 'Generation failed')
       }
