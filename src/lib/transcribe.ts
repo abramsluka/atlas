@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getOpenAI } from '@/lib/openai'
+import { getOpenAIForUser } from '@/lib/openai'
+import { noKeyResponse } from '@/lib/userKeys'
 
 // Shared speech-to-text handler: multipart FormData field `audio` → { text }.
 // Used by /api/assistant/transcribe and /api/mentor/transcribe.
@@ -21,7 +22,8 @@ export async function handleTranscribeRequest(req: NextRequest): Promise<NextRes
       ? audioFile
       : new File([audioFile as unknown as Blob], 'audio.webm', { type: 'audio/webm' })
 
-    const openai = getOpenAI()
+    const openai = await getOpenAIForUser(user.id)
+    if (!openai) return noKeyResponse('openai')
     const transcription = await openai.audio.transcriptions.create({
       model: 'gpt-4o-transcribe',
       file,

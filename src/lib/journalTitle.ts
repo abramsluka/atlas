@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { getAnthropicForUser } from '@/lib/anthropic'
 
 const PROMPTS = {
   // Reflective entries: theme or feeling
@@ -9,13 +9,16 @@ const PROMPTS = {
     "Title this day plan by naming its 2-3 biggest themes. Hard limit: 5 words. Plain language, drawn from the actual tasks, no generic labels like Day Plan. Good examples: Atlas, errands, game with dad — or — Deep work and gym day. Reply with the title only, no quotes, no trailing punctuation.",
 } as const
 
-// Short title for untitled journal entries. Returns null on any failure — never block saves on this.
+// Short title for untitled journal entries. Returns null on any failure — never
+// block saves on this (including when the user has no Anthropic key yet).
 export async function generateTitle(
+  userId: string,
   content: string,
   style: keyof typeof PROMPTS = 'entry'
 ): Promise<string | null> {
   try {
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+    const anthropic = await getAnthropicForUser(userId)
+    if (!anthropic) return null
     const res = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 24,

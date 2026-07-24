@@ -1,20 +1,20 @@
 import type { createServiceClient } from '@/lib/supabase/server'
 import { generateTitle } from '@/lib/journalTitle'
+import { requireUserApiKey } from '@/lib/userKeys'
 
 type Db = ReturnType<typeof createServiceClient>
 
 const BUCKET = 'journal-audio'
 
-export async function transcribeAudio(audio: Blob, filename: string): Promise<string> {
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error('OPENAI_API_KEY is not set — add it to .env.local and restart the dev server')
-  }
+// Throws NoApiKeyError when the user has no OpenAI key — callers map it to 428.
+export async function transcribeAudio(userId: string, audio: Blob, filename: string): Promise<string> {
+  const apiKey = await requireUserApiKey(userId, 'openai')
   const fd = new FormData()
   fd.append('file', audio, filename)
   fd.append('model', 'gpt-4o-transcribe')
   const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+    headers: { Authorization: `Bearer ${apiKey}` },
     body: fd,
   })
   if (!res.ok) {
@@ -29,6 +29,7 @@ export async function transcribeAudio(audio: Blob, filename: string): Promise<st
 // Untitled entries also get a short generated title from the transcript.
 export async function ensureEntryTranscript(
   db: Db,
+  userId: string,
   entry: { id: string; audio_path: string | null; audio_transcript: string | null; title?: string | null; kind?: string | null }
 ): Promise<string | null> {
   if (!entry.audio_path) return null
@@ -38,10 +39,10 @@ export async function ensureEntryTranscript(
   if (error || !file) throw new Error(`Could not download audio: ${error?.message ?? 'no file'}`)
 
   const filename = entry.audio_path.split('/').pop() ?? 'audio.webm'
-  const transcript = await transcribeAudio(file, filename)
+  const transcript = await transcribeAudio(userId, file, filename)
 
   const title = !entry.title && transcript
-    ? await generateTitle(transcript, entry.kind === 'morning' ? 'plan' : 'entry')
+    ? await generateTitle(userId, transcript, entry.kind === 'morning' ? 'plan' : 'entry')
     : null
 
   await db
