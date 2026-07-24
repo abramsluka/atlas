@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { getOpenAI } from '@/lib/openai'
+import { getOpenAIForUser } from '@/lib/openai'
+import { noKeyResponse } from '@/lib/userKeys'
 import { toLocalDate } from '@/lib/date'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { PORTION_STYLE_RULES } from '@/features/food/portionStyle'
@@ -60,7 +61,8 @@ export async function POST(request: NextRequest) {
     })
   )
 
-  const openai = getOpenAI()
+  const openai = await getOpenAIForUser(user.id)
+  if (!openai) return noKeyResponse('openai')
   let estimate: FoodEstimate
 
   try {

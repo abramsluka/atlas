@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import Anthropic from '@anthropic-ai/sdk'
+import { getAnthropicForUser } from '@/lib/anthropic'
+import { noKeyResponse } from '@/lib/userKeys'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
 import type { OuraData } from '@/features/health/types'
@@ -263,7 +264,8 @@ Your job: give him a real daily briefing in 4–6 sentences. Be specific to his 
 
 Tone: direct, warm, grounded. Like someone who has been watching your data every day and isn't going to bullshit you. No hollow phrases like "great job keeping up with your habits" — be specific. No bullet points, no headers — just a flowing paragraph or two that feels like a voice memo from someone who knows your life.`
 
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const anthropic = await getAnthropicForUser(user.id)
+  if (!anthropic) return noKeyResponse('anthropic')
 
   const stream = anthropic.messages.stream({
     model: 'claude-sonnet-4-6',

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getOpenAI } from '@/lib/openai'
+import { getOpenAIForUser } from '@/lib/openai'
+import { noKeyResponse } from '@/lib/userKeys'
 
 // Estimate grams of a known product shown in a photo. Photo is NOT stored.
 export async function POST(request: NextRequest) {
@@ -21,7 +22,8 @@ export async function POST(request: NextRequest) {
   const dataUrl = `data:${photo.type || 'image/jpeg'};base64,${base64}`
 
   try {
-    const openai = getOpenAI()
+    const openai = await getOpenAIForUser(user.id)
+    if (!openai) return noKeyResponse('openai')
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       response_format: { type: 'json_object' },

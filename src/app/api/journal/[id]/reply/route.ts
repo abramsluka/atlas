@@ -3,6 +3,8 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 import type { ConversationMessage } from '@/features/journal/types'
 import { transcribeAudio, ensureEntryTranscript, entryContentForAI } from '@/lib/journalAudio'
+import { getAnthropicForUser } from '@/lib/anthropic'
+import { noKeyResponse, NoApiKeyError } from '@/lib/userKeys'
 
 export const maxDuration = 60
 
@@ -52,10 +54,11 @@ export async function POST(
     }
 
     try {
-      message = await transcribeAudio(file, audioPath.split('/').pop() ?? 'audio.webm')
+      message = await transcribeAudio(user.id, file, audioPath.split('/').pop() ?? 'audio.webm')
     } catch (err) {
-      console.error('[journal/reply] transcription failed:', err)
       await db.storage.from('journal-audio').remove([replyAudioPath])
+      if (err instanceof NoApiKeyError) return noKeyResponse(err.provider)
+      console.error('[journal/reply] transcription failed:', err)
       return new Response(`Could not transcribe recording: ${err}`, { status: 500 })
     }
     if (!message) {
@@ -71,9 +74,10 @@ export async function POST(
   }
 
   const existingConversation: ConversationMessage[] = entry.conversation ?? []
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const anthropic = await getAnthropicForUser(user.id)
+  if (!anthropic) return noKeyResponse('anthropic')
 
-  let stream: ReturnType<typeof anthropic.messages.stream>
+  let stream: ReturnType<Anthropic['messages']['stream']>
 
   if (makeLonger) {
     const targetIndex = messageIndex ?? -1
@@ -145,8 +149,10 @@ export async function POST(
   // Include voice note transcript in the entry context (transcribes if needed)
   let entryTranscript: string | null = null
   try {
-    entryTranscript = await ensureEntryTranscript(db, entry)
+    entryTranscript = await ensureEntryTranscript(db, user.id, entry)
   } catch (err) {
+    // Reply can proceed from the typed body; only block when the entry is voice-only
+    if (err instanceof NoApiKeyError && !entry.body?.trim()) return noKeyResponse(err.provider)
     console.error('[journal/reply] entry transcription failed:', err)
   }
   const entryContent = entryContentForAI(entry.body, entryTranscript)

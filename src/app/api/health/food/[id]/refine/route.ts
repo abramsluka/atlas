@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { getOpenAI } from '@/lib/openai'
+import { getOpenAIForUser } from '@/lib/openai'
+import { noKeyResponse } from '@/lib/userKeys'
 import { PORTION_STYLE_RULES } from '@/features/food/portionStyle'
 import type { PhotoRefineQuestion, PhotoRefineAnswer } from '@/features/food/types'
 
@@ -115,7 +116,8 @@ export async function POST(
   }
 
   try {
-    const openai = getOpenAI()
+    const openai = await getOpenAIForUser(user.id)
+    if (!openai) return noKeyResponse('openai')
     const response = await openai.chat.completions.create({
       model: 'gpt-4.1',
       response_format: { type: 'json_object' },

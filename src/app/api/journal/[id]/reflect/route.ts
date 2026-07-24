@@ -1,8 +1,9 @@
 import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import Anthropic from '@anthropic-ai/sdk'
 import { getOuraForDate, summarizeOuraForDate } from '@/features/health/ouraContext'
 import { ensureEntryTranscript, entryContentForAI } from '@/lib/journalAudio'
+import { getAnthropicForUser } from '@/lib/anthropic'
+import { noKeyResponse, NoApiKeyError } from '@/lib/userKeys'
 
 export const maxDuration = 60
 
@@ -29,8 +30,9 @@ export async function POST(
   // Voice entries: transcribe before reflecting (no-op if already transcribed or no audio)
   let transcript: string | null = null
   try {
-    transcript = await ensureEntryTranscript(db, entry)
+    transcript = await ensureEntryTranscript(db, user.id, entry)
   } catch (err) {
+    if (err instanceof NoApiKeyError) return noKeyResponse(err.provider)
     console.error('[journal/reflect] transcription failed:', err)
     if (!entry.body?.trim()) return new Response(`Could not transcribe recording: ${err}`, { status: 500 })
   }
@@ -44,7 +46,8 @@ export async function POST(
 
   const userMessage = `Here is my journal entry for ${entry.date}:\n\n${entry.title ? `Title: ${entry.title}\n\n` : ''}${content}${bodySummary ? `\n\n[Body data for this day: ${bodySummary}]` : ''}`
 
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const anthropic = await getAnthropicForUser(user.id)
+  if (!anthropic) return noKeyResponse('anthropic')
 
   const stream = anthropic.messages.stream({
     model: 'claude-sonnet-4-6',

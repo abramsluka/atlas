@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import Anthropic from '@anthropic-ai/sdk'
+import { getAnthropicForUser } from '@/lib/anthropic'
+import { noKeyResponse } from '@/lib/userKeys'
 
 export const runtime = 'nodejs'
 export const maxDuration = 15
@@ -40,7 +41,8 @@ export async function POST(
     `logged at ${timeLabel}`,
   ].filter(Boolean).join(', ')
 
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const anthropic = await getAnthropicForUser(user.id)
+  if (!anthropic) return noKeyResponse('anthropic')
 
   const stream = anthropic.messages.stream({
     model: 'claude-haiku-4-5-20251001',

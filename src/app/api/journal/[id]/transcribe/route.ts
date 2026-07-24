@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { ensureEntryTranscript } from '@/lib/journalAudio'
+import { noKeyResponse, NoApiKeyError } from '@/lib/userKeys'
 
 export const maxDuration = 60
 
@@ -29,9 +30,10 @@ export async function POST(
   }
 
   try {
-    const transcript = await ensureEntryTranscript(db, entry)
+    const transcript = await ensureEntryTranscript(db, user.id, entry)
     return NextResponse.json({ transcript })
   } catch (err) {
+    if (err instanceof NoApiKeyError) return noKeyResponse(err.provider)
     console.error('[journal/transcribe] failed:', err)
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }

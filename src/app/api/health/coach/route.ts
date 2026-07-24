@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import Anthropic from '@anthropic-ai/sdk'
+import { getAnthropicForUser } from '@/lib/anthropic'
+import { noKeyResponse } from '@/lib/userKeys'
 import { subDays } from 'date-fns'
 import { formatInTimeZone } from 'date-fns-tz'
 import { getUserTimezone } from '@/lib/getUserTimezone'
@@ -190,7 +191,8 @@ export async function POST(_request: NextRequest) {
     waterLines.length > 0 ? `Water intake:\n${waterLines.join('\n')}` : 'Water intake: none logged',
   ].filter(Boolean).join('\n')
 
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const anthropic = await getAnthropicForUser(user.id)
+  if (!anthropic) return noKeyResponse('anthropic')
 
   const stream = anthropic.messages.stream({
     model: 'claude-sonnet-4-6',

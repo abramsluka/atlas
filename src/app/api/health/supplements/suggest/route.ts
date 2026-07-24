@@ -1,19 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import Anthropic from '@anthropic-ai/sdk'
-
-const client = new Anthropic()
+import { getAnthropicForUser } from '@/lib/anthropic'
+import { noKeyResponse } from '@/lib/userKeys'
 
 export async function POST(req: NextRequest) {
   const authClient = await createClient()
   const { data: { user } } = await authClient.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const anthropic = await getAnthropicForUser(user.id)
+  if (!anthropic) return noKeyResponse('anthropic')
+
   const { name } = await req.json()
   if (!name?.trim()) return NextResponse.json({ dose: '', times: ['morning'] })
 
   try {
-    const message = await client.messages.create({
+    const message = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 100,
       messages: [

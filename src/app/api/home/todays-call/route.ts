@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { getAnthropicForUser } from '@/lib/anthropic'
+import { noKeyResponse } from '@/lib/userKeys'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
 import { syncOuraToday } from '@/features/health/ouraSync'
@@ -26,6 +28,7 @@ function verdictFor(oura: OuraData | null): Verdict | null {
 }
 
 async function generateCall(
+  anthropic: Anthropic,
   verdict: Verdict,
   oura: OuraData | null,
 ): Promise<{ headline: string; bullets: string[] }> {
@@ -48,7 +51,6 @@ Write a Today's Call card:
 Return as JSON: { "headline": "...", "bullets": ["✓ ...", "✓ ...", "✓ ..."] }
 No hedging, no "consider", no "might". Direct statements only.`
 
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   const msg = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 200,
@@ -118,7 +120,10 @@ export async function POST(req: Request) {
 
   if (!verdict) return NextResponse.json({ noData: true })
 
-  const { headline, bullets } = await generateCall(verdict, oura)
+  const anthropic = await getAnthropicForUser(user.id)
+  if (!anthropic) return noKeyResponse('anthropic')
+
+  const { headline, bullets } = await generateCall(anthropic, verdict, oura)
 
   // Only cache as "today's" call when it was built from today's data. A
   // fallback-derived call is left uncached so it self-heals once today's data

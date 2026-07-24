@@ -1,14 +1,13 @@
 import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import Anthropic from '@anthropic-ai/sdk'
 import { subDays } from 'date-fns'
 import { formatInTimeZone } from 'date-fns-tz'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
 import { getOuraContextRange, summarizeOuraForCoach } from '@/features/health/ouraContext'
 import { fetchGymLogs, groupByDay, sessionLabel, sessionVolumeLbs } from '@/lib/gymActivity'
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+import { getAnthropicForUser } from '@/lib/anthropic'
+import { noKeyResponse } from '@/lib/userKeys'
 
 function getMostRecentSunday(dateStr: string): string {
   const d = new Date(dateStr + 'T12:00:00')
@@ -28,9 +27,12 @@ export async function POST() {
   const weekOf = getMostRecentSunday(today)
   const sevenDaysAgo = formatInTimeZone(subDays(new Date(), 7), TZ, 'yyyy-MM-dd')
 
-  // Check if report already exists
+  // Check if report already exists — cached reads don't need an API key
   const existing = await db.from('weekly_reports').select('id, report_text, week_of').eq('user_id', user.id).eq('week_of', weekOf).maybeSingle()
   if (existing.data) return NextResponse.json({ report_text: existing.data.report_text, week_of: existing.data.week_of })
+
+  const anthropic = await getAnthropicForUser(user.id)
+  if (!anthropic) return noKeyResponse('anthropic')
 
   // Fetch all data in parallel
   const [workoutsRes, ouraData, waterRes, weightRes, foodRes, jotsRes, contextRes, prevReportRes] = await Promise.all([

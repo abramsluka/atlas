@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { getAnthropicForUser } from '@/lib/anthropic'
+import { noKeyResponse } from '@/lib/userKeys'
 import type { OuraData } from '@/features/health/types'
 import { describeAction, type AssistantStreamEvent } from '@/features/assistant/actions'
 import { loadAssistantContext, buildAssistantTools, resolveToolCall, ACTION_RULES } from '@/features/assistant/tools'
@@ -74,7 +76,8 @@ ${ctx.catalogBlock}`
 
   const tools = buildAssistantTools(ctx.units)
 
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const anthropic = await getAnthropicForUser(user.id)
+  if (!anthropic) return noKeyResponse('anthropic')
   const messages: Anthropic.MessageParam[] = [
     ...history.slice(-12).map(m => ({ role: m.role, content: m.content })),
     { role: 'user' as const, content: message.trim() },

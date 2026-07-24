@@ -5,6 +5,7 @@
 import { NextResponse, after } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { getAnthropicForUser } from '@/lib/anthropic'
 
 export const runtime = 'nodejs'
 
@@ -101,7 +102,8 @@ async function recomputeChips(userId: string) {
     .map(g => `"${g.text}" ×${g.count}${g.hourN ? ` (~${Math.round(g.hourSum / g.hourN)}h)` : ''}`)
     .join('\n')
 
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const anthropic = await getAnthropicForUser(userId)
+  if (!anthropic) return
   const res = await anthropic.messages.create({
     model: CLUSTER_MODEL,
     max_tokens: 400,

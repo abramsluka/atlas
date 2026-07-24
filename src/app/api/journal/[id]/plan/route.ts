@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import Anthropic from '@anthropic-ai/sdk'
 import type { PlanItem } from '@/features/journal/types'
 import { transcribeAudio, ensureEntryTranscript, entryContentForAI } from '@/lib/journalAudio'
 import { generateTitle } from '@/lib/journalTitle'
+import { getAnthropicForUser } from '@/lib/anthropic'
+import { noKeyResponse, NoApiKeyError } from '@/lib/userKeys'
 
 export const maxDuration = 60
 
@@ -70,10 +71,11 @@ export async function POST(
     }
 
     try {
-      instruction = await transcribeAudio(file, audioPath.split('/').pop() ?? 'audio.webm')
+      instruction = await transcribeAudio(user.id, file, audioPath.split('/').pop() ?? 'audio.webm')
     } catch (err) {
-      console.error('[journal/plan] transcription failed:', err)
       await db.storage.from('journal-audio').remove([refineAudioPath])
+      if (err instanceof NoApiKeyError) return noKeyResponse(err.provider)
+      console.error('[journal/plan] transcription failed:', err)
       return NextResponse.json({ error: `Could not transcribe recording: ${err}` }, { status: 500 })
     }
     if (!instruction) {
@@ -86,10 +88,12 @@ export async function POST(
     // First generation — use the entry's own recording and/or typed body
     let transcript: string | null = null
     try {
-      transcript = await ensureEntryTranscript(db, entry)
+      transcript = await ensureEntryTranscript(db, user.id, entry)
     } catch (err) {
+      // A typed body can still be planned without the voice transcript
+      if (err instanceof NoApiKeyError && !entry.body?.trim()) return noKeyResponse(err.provider)
       console.error('[journal/plan] entry transcription failed:', err)
-      if (!entry.body?.trim()) {
+      if (!(err instanceof NoApiKeyError) && !entry.body?.trim()) {
         return NextResponse.json({ error: `Could not transcribe recording: ${err}` }, { status: 500 })
       }
     }
@@ -120,7 +124,8 @@ ${instruction}
 ${instruction}
 </brain_dump>`
 
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const anthropic = await getAnthropicForUser(user.id)
+  if (!anthropic) return noKeyResponse('anthropic')
   const msg = await anthropic.messages.create({
     model: 'claude-haiku-4-5',
     max_tokens: 1000,
@@ -191,7 +196,7 @@ ${instruction}
       .eq('id', id)
       .maybeSingle()
     if (fresh && !fresh.title) {
-      const title = await generateTitle(lines.join('\n'), 'plan')
+      const title = await generateTitle(user.id, lines.join('\n'), 'plan')
       if (title) {
         await db
           .from('journal_entries')

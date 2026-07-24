@@ -80,8 +80,8 @@ import { getOuraContextRange, summarizeOuraForCoach } from '@/features/health/ou
 import { computePatterns } from '@/lib/computePatterns'
 import { loadAssistantContext, buildAssistantTools, resolveToolCall, ACTION_RULES } from '@/features/assistant/tools'
 import { describeAction, type AssistantStreamEvent } from '@/features/assistant/actions'
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+import { getAnthropicForUser } from '@/lib/anthropic'
+import { noKeyResponse } from '@/lib/userKeys'
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -198,7 +198,7 @@ function formatSupplementLogs(logs: SupplementLogRow[], tz: string): string {
 }
 
 // Short title for a new conversation. Returns null on failure — never blocks.
-async function generateChatTitle(message: string): Promise<string | null> {
+async function generateChatTitle(anthropic: Anthropic, message: string): Promise<string | null> {
   try {
     const res = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
@@ -225,6 +225,9 @@ export async function POST(req: NextRequest) {
   const authClient = await createClient()
   const { data: { user } } = await authClient.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const anthropic = await getAnthropicForUser(user.id)
+  if (!anthropic) return noKeyResponse('anthropic')
 
   const { message, history, conversation_id } = await req.json() as {
     message: string
@@ -510,7 +513,7 @@ When journal data is present: look for mood trends across entries (not just toda
             ])
             const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
             if (isNewConversation) {
-              const title = await generateChatTitle(message)
+              const title = await generateChatTitle(anthropic, message)
               if (title) updates.title = title
             }
             await db.from('mentor_conversations').update(updates).eq('id', convoId)

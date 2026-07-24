@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import Anthropic from '@anthropic-ai/sdk'
 import { subDays } from 'date-fns'
 import { formatInTimeZone } from 'date-fns-tz'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+import { getAnthropicForUser } from '@/lib/anthropic'
+import { noKeyResponse } from '@/lib/userKeys'
 
 const FALLBACK_PROMPTS = [
   'How is my week looking?',
@@ -28,6 +27,9 @@ export async function GET() {
   if (cached && Date.now() - cached.ts < CACHE_TTL) {
     return NextResponse.json({ prompts: cached.prompts })
   }
+
+  const anthropic = await getAnthropicForUser(user.id)
+  if (!anthropic) return noKeyResponse('anthropic')
 
   const db = createServiceClient()
   const TZ = await getUserTimezone(user.id)

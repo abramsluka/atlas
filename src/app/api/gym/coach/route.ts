@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import Anthropic from '@anthropic-ai/sdk'
+import { getAnthropicForUser } from '@/lib/anthropic'
+import { noKeyResponse } from '@/lib/userKeys'
 import { subDays } from 'date-fns'
 import { formatInTimeZone } from 'date-fns-tz'
 import { getUserTimezone } from '@/lib/getUserTimezone'
@@ -161,7 +162,8 @@ export async function POST(request: NextRequest) {
 
   const angelSystem = `You are the voice of genuine, overwhelming belief in this person's head. Training means anything — lifting, climbing, running, whatever gets them moving. Your job is to light them up: make them feel the pull of who they're becoming and why it's worth protecting. Talk about momentum, about what consistency does to a person over months, about the version of themselves they're building one session at a time — stronger, leaner, harder to kill. If they've done something recently, use it: name the streak, the comeback, the discipline, and build on that real momentum — it beats empty hype every time. Paint the picture of where this goes if they keep showing up: the body, the confidence, the energy, the person who walks differently. Be real and specific, never hollow or generic. 5–7 sentences of building fire, ending with a charge to go get today's session. No data recitation — pure fire and forward motion.`
 
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const anthropic = await getAnthropicForUser(user.id)
+  if (!anthropic) return noKeyResponse('anthropic')
 
   const stream = anthropic.messages.stream({
     model: 'claude-sonnet-4-6',

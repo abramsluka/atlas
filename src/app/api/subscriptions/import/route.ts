@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import Anthropic from '@anthropic-ai/sdk'
+import { getAnthropicForUser } from '@/lib/anthropic'
+import { noKeyResponse } from '@/lib/userKeys'
 import { BILLING_PERIODS, CURRENCIES, CATEGORIES } from '@/features/subscriptions/types'
 import type { ImportedSubscription } from '@/features/subscriptions/types'
 
@@ -59,7 +60,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unsupported image type' }, { status: 400 })
   }
 
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const anthropic = await getAnthropicForUser(user.id)
+  if (!anthropic) return noKeyResponse('anthropic')
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { getAnthropicForUser } from '@/lib/anthropic'
+import { noKeyResponse } from '@/lib/userKeys'
 import { subDays } from 'date-fns'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import type { OuraData } from '@/features/health/types'
@@ -170,7 +172,8 @@ ${catalog}`
     },
   }]
 
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const anthropic = await getAnthropicForUser(user.id)
+  if (!anthropic) return noKeyResponse('anthropic')
   let parsed: {
     name?: string; notes?: string
     weeks?: Array<{ week_number: number; phase: string; sets?: number; rep_min?: number; rep_max?: number; rpe?: number }>

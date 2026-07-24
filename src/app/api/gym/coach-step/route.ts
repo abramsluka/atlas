@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import Anthropic from '@anthropic-ai/sdk'
+import { getAnthropicForUser } from '@/lib/anthropic'
+import { noKeyResponse } from '@/lib/userKeys'
 
 export async function POST(req: NextRequest) {
   const authClient = await createClient()
@@ -29,7 +30,8 @@ export async function POST(req: NextRequest) {
     existingStep ? `Current step setting: ${existingStep} ${units}` : 'No existing step configured.',
   ].join('\n')
 
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const anthropic = await getAnthropicForUser(user.id)
+  if (!anthropic) return noKeyResponse('anthropic')
 
   try {
     const message = await anthropic.messages.create({

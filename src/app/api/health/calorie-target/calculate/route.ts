@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import Anthropic from '@anthropic-ai/sdk'
+import { getAnthropicForUser } from '@/lib/anthropic'
+import { noKeyResponse } from '@/lib/userKeys'
 
 type Goal = 'cut' | 'recomp' | 'lean_bulk' | 'maintain'
 
@@ -128,7 +129,8 @@ export async function POST() {
   }
 
   // ── Claude writes the reasoning sentence ─────────────────────────────────
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const anthropic = await getAnthropicForUser(user.id)
+  if (!anthropic) return noKeyResponse('anthropic')
 
   const contextLines = [
     `Goal: ${goalLabel}`,
@@ -172,7 +174,7 @@ export async function POST() {
         target_value: Number(profile.target_weight_lbs),
         current_value: Number(currentWeight),
         updated_at: now,
-      }).eq('id', linkedGoalId)
+      }).eq('id', linkedGoalId).eq('user_id', user.id)
     } else {
       const { data: newGoal } = await db.from('goals').insert({
         user_id: user.id,
