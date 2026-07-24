@@ -211,8 +211,19 @@ export function useUpdateFoodLog() {
       if (!res.ok) throw new Error('Failed to update food log')
       return res.json()
     },
-    onSuccess: (_, { date }) => {
-      qc.invalidateQueries({ queryKey: ['food-logs', date] })
+    onSuccess: (data, { id }) => {
+      // Patch the edited row directly into every cached day-list (keyed by id,
+      // not date) so the client-summed calorie/macro totals update instantly.
+      // We don't lean on invalidate+refetch here: the caller's `date` isn't
+      // guaranteed to match the meal's stored date key, and a refetch can be
+      // served stale. `data` is the server's authoritative row; it has no
+      // `photo_url` column, so the spread preserves the existing signed URL.
+      qc.setQueriesData<FoodLog[]>({ queryKey: ['food-logs'] }, (old) =>
+        old?.map((m) => (m.id === id ? { ...m, ...data } : m)),
+      )
+      // The 14-day sparkline is a server-summed aggregate — nothing else
+      // refreshes it, so recompute it after an edit.
+      qc.invalidateQueries({ queryKey: ['food-history'] })
     },
   })
 }
@@ -224,8 +235,13 @@ export function useDeleteFoodLog() {
       const res = await fetch(`/api/health/food/${id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error('Failed to delete food log')
     },
-    onSuccess: (_, { date }) => {
-      qc.invalidateQueries({ queryKey: ['food-logs', date] })
+    onSuccess: (_, { id }) => {
+      // Drop the row from every cached day-list so the totals fall instantly,
+      // regardless of which date key held it (see useUpdateFoodLog).
+      qc.setQueriesData<FoodLog[]>({ queryKey: ['food-logs'] }, (old) =>
+        old?.filter((m) => m.id !== id),
+      )
+      qc.invalidateQueries({ queryKey: ['food-history'] })
     },
   })
 }
