@@ -76,8 +76,14 @@ Health/food/journal tables (food_logs, water_logs, body_weights, caffeine_logs, 
 NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
 SUPABASE_SERVICE_ROLE_KEY
-ANTHROPIC_API_KEY
+SECRETS_ENCRYPTION_KEY   # 32-byte base64; encrypts per-user API keys in user_secrets
 ```
+
+**AI keys are per-user (BYOK), not env vars.** Every user stores their own Anthropic +
+OpenAI key via /settings → `user_secrets` (AES-256-GCM, RLS with no policies). All AI
+routes resolve clients through `getAnthropicForUser()` / `getOpenAIForUser()` and return
+428 `no_api_key` when unset. There is NO global ANTHROPIC_API_KEY/OPENAI_API_KEY fallback
+in app code (the env vars remain only for scripts/ CLI tools).
 
 After changing .env.local, always restart the dev server.
 

@@ -12,6 +12,16 @@ export async function POST(req: NextRequest) {
   }
 
   const db = createServiceClient()
+
+  // The referenced supplement must belong to the caller
+  const { data: owned } = await db
+    .from('supplements')
+    .select('id')
+    .eq('id', supplement_id)
+    .eq('user_id', user.id)
+    .maybeSingle()
+  if (!owned) return NextResponse.json({ error: 'Unknown supplement' }, { status: 404 })
+
   const { data, error } = await db
     .from('supplement_logs')
     .insert({ user_id: user.id, supplement_id, date, time_slot })

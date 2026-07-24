@@ -31,6 +31,18 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json()
   const db = createServiceClient()
+
+  // The referenced exercise must belong to the caller
+  if (body.exercise_id) {
+    const { data: owned } = await db
+      .from('gym_exercises')
+      .select('id')
+      .eq('id', body.exercise_id)
+      .eq('user_id', user.id)
+      .maybeSingle()
+    if (!owned) return NextResponse.json({ error: 'Unknown exercise' }, { status: 404 })
+  }
+
   const { data, error } = await db
     .from('gym_logs')
     .insert({ ...body, user_id: user.id })
