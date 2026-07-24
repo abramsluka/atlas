@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useFoodCoachMessages } from '@/features/food/queries'
+import { checkNoApiKey, noApiKeyMessage } from '@/lib/apiKeyError'
 import type { FoodLog } from '@/features/food/types'
 
 const CHIPS = [
@@ -47,7 +48,11 @@ export function FoodCoachSection({ today, meals, profile }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ date: today, tz: Intl.DateTimeFormat().resolvedOptions().timeZone }),
       })
-      if (!res.ok || !res.body) return
+      if (!res.ok || !res.body) {
+        const noKey = await checkNoApiKey(res)
+        if (noKey) setSummaryStream(noApiKeyMessage(noKey.provider))
+        return
+      }
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       while (true) {
@@ -76,7 +81,11 @@ export function FoodCoachSection({ today, meals, profile }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ date: today, question, chip_label: chipLabel ?? null, tz: Intl.DateTimeFormat().resolvedOptions().timeZone }),
       })
-      if (!res.ok || !res.body) return
+      if (!res.ok || !res.body) {
+        const noKey = await checkNoApiKey(res)
+        if (noKey) setAskStream(noApiKeyMessage(noKey.provider))
+        return
+      }
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       while (true) {
@@ -106,7 +115,7 @@ export function FoodCoachSection({ today, meals, profile }: Props) {
         <div className="rounded-[10px] bg-white/[0.025] border border-white/[0.06] px-3 py-3 min-h-[48px]">
           {!hasMeals ? (
             <p className="text-xs italic text-zinc-600">Log a meal and I will take a look.</p>
-          ) : summaryGenerating ? (
+          ) : summaryGenerating || summaryStream ? (
             <p className="text-xs text-zinc-300 leading-relaxed">{summaryStream || <span className="text-zinc-600">…</span>}</p>
           ) : summaryMsg ? (
             <div className="flex items-start gap-2">

@@ -2,6 +2,8 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useRefinePhotoMeal, useFavoriteFoodLog, useDeleteFoodLog, useUpdateFoodLog } from '@/features/food/mutations'
+import { checkNoApiKey, noApiKeyMessage, NoApiKeyClientError, type KeyProvider } from '@/lib/apiKeyError'
+import NoApiKeyNotice from '@/components/NoApiKeyNotice'
 import type { FoodLog, PhotoRefineQuestion, PhotoRefineAnswer } from '@/features/food/types'
 
 type AiRaw = {
@@ -49,6 +51,7 @@ export function PhotoMealCard({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [coachFeedback, setCoachFeedback] = useState(meal.coach_feedback ?? '')
   const [coachStreaming, setCoachStreaming] = useState(false)
+  const [refineNoKeyProvider, setRefineNoKeyProvider] = useState<KeyProvider | null>(null)
   const coachFired = useRef(false)
 
   const refine = useRefinePhotoMeal()
@@ -63,7 +66,11 @@ export function PhotoMealCard({
     setCoachFeedback('')
     try {
       const res = await fetch(`/api/health/food/${mealId}/coach`, { method: 'POST' })
-      if (!res.ok || !res.body) return
+      if (!res.ok || !res.body) {
+        const noKey = await checkNoApiKey(res)
+        if (noKey) setCoachFeedback(noApiKeyMessage(noKey.provider))
+        return
+      }
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       while (true) {
@@ -94,6 +101,7 @@ export function PhotoMealCard({
     setSubmitting(true)
     setOtherOpen(false)
     setOtherText('')
+    setRefineNoKeyProvider(null)
 
     try {
       const result = await refine.mutateAsync({
@@ -122,8 +130,8 @@ export function PhotoMealCard({
         // Fire coach feedback now that refine is complete
         streamCoachFeedback(meal.id)
       }
-    } catch {
-      // silent
+    } catch (err) {
+      if (err instanceof NoApiKeyClientError) setRefineNoKeyProvider(err.provider)
     } finally {
       setSubmitting(false)
     }
@@ -149,6 +157,7 @@ export function PhotoMealCard({
     setQuestions(prev => prev.slice(0, questionIndex + 1))
     setDone(false)
     setSubmitting(true)
+    setRefineNoKeyProvider(null)
     try {
       const result = await refine.mutateAsync({
         id: meal.id,
@@ -176,8 +185,8 @@ export function PhotoMealCard({
         coachFired.current = false
         streamCoachFeedback(meal.id)
       }
-    } catch {
-      // silent
+    } catch (err) {
+      if (err instanceof NoApiKeyClientError) setRefineNoKeyProvider(err.provider)
     } finally {
       setSubmitting(false)
     }
@@ -353,6 +362,7 @@ export function PhotoMealCard({
               {done && questions.length > 0 && (
                 <p className="text-xs text-zinc-500">Estimate refined ✓</p>
               )}
+              {refineNoKeyProvider && <NoApiKeyNotice provider={refineNoKeyProvider} />}
             </div>
           )}
 

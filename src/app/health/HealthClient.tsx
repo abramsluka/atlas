@@ -30,6 +30,8 @@ import {
 import { useFoodLogs } from '@/features/food/queries'
 import { useLogFood, useUpdateFoodLog, useDeleteFoodLog, useCalculateCalorieTarget } from '@/features/food/mutations'
 import { resizeImage } from '@/features/food/resize'
+import { checkNoApiKey, noApiKeyMessage, NoApiKeyClientError, type KeyProvider } from '@/lib/apiKeyError'
+import NoApiKeyNotice from '@/components/NoApiKeyNotice'
 import { FoodWizardSheet, BarcodeFlow, FrequentsRow } from './FoodEntry'
 import { MealBuilderSheet } from './MealBuilder'
 import { PhotoMealCard } from './PhotoMealCard'
@@ -649,6 +651,7 @@ function AddStackForm({
   const [showResults, setShowResults] = useState(false)
   const [adding, setAdding] = useState(false)
   const [aiSuggested, setAiSuggested] = useState(false)
+  const [suggestNoKeyProvider, setSuggestNoKeyProvider] = useState<KeyProvider | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
 
   // Local DB search on every keystroke
@@ -673,7 +676,12 @@ function AddStackForm({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: name.trim() }),
         })
-        if (!res.ok) return
+        if (!res.ok) {
+          const noKey = await checkNoApiKey(res)
+          if (noKey) setSuggestNoKeyProvider(noKey.provider)
+          return
+        }
+        setSuggestNoKeyProvider(null)
         const data = await res.json()
         if (data.dose && !dose) {
           setDose(data.dose)
@@ -740,6 +748,7 @@ function AddStackForm({
               onChange={e => {
                 setName(e.target.value)
                 setAiSuggested(false)
+                setSuggestNoKeyProvider(null)
                 setPendingNote('')
               }}
               onKeyDown={e => {
@@ -812,6 +821,7 @@ function AddStackForm({
         {aiSuggested && (
           <p className="mt-1.5 pl-1 text-[10px] text-zinc-600">✦ AI suggested</p>
         )}
+        {suggestNoKeyProvider && <NoApiKeyNotice provider={suggestNoKeyProvider} className="mt-1.5" />}
       </div>
     </div>
   )
@@ -876,6 +886,7 @@ function StackTracker({
   const totalSlots = allSupplements.length
   const takenCount = allSupplements.filter(s => allLogs.some(l => l.supplement_id === s.id)).length
   const pct = totalSlots > 0 ? takenCount / totalSlots : 0
+  const allTaken = totalSlots > 0 && takenCount === totalSlots
 
   function handleToggle(s: Supplement) {
     const slot = (s.times[0] as TimeSlot | undefined) ?? 'anytime'
@@ -886,6 +897,20 @@ function StackTracker({
       unlogDose.mutate(existingLog.id)
     } else {
       logDose.mutate({ supplement_id: s.id, time_slot: slot })
+    }
+  }
+
+  function handleLogAll() {
+    if (allTaken) {
+      allLogs.forEach(l => {
+        if (!l.id.startsWith('optimistic-')) unlogDose.mutate(l.id)
+      })
+    } else {
+      allSupplements.forEach(s => {
+        const slot = (s.times[0] as TimeSlot | undefined) ?? 'anytime'
+        const alreadyLogged = allLogs.some(l => l.supplement_id === s.id && l.time_slot === slot)
+        if (!alreadyLogged) logDose.mutate({ supplement_id: s.id, time_slot: slot })
+      })
     }
   }
 
@@ -928,18 +953,29 @@ function StackTracker({
       <StackTicker supplements={allSupplements} logs={allLogs} />
 
       {/* Header */}
-      <div className="mb-4">
-        <div className="font-mono text-[11px] font-semibold tracking-[0.16em] uppercase text-zinc-500 mb-1.5">
-          Daily stack
+      <div className="mb-4 flex items-stretch justify-between gap-3">
+        <div>
+          <div className="font-mono text-[11px] font-semibold tracking-[0.16em] uppercase text-zinc-500 mb-1.5">
+            Daily stack
+          </div>
+          <div className="text-2xl font-bold tracking-tight text-white leading-tight">
+            Tap each as you take it
+          </div>
+          <div className="font-mono text-xs text-zinc-500 mt-1.5 tabular-nums">
+            {totalSlots === 0
+              ? '— / — taken today · resets at 3 AM'
+              : `${takenCount} / ${totalSlots} taken today · resets at 3 AM`}
+          </div>
         </div>
-        <div className="text-2xl font-bold tracking-tight text-white leading-tight">
-          Tap each as you take it
-        </div>
-        <div className="font-mono text-xs text-zinc-500 mt-1.5 tabular-nums">
-          {totalSlots === 0
-            ? '— / — taken today · resets at 3 AM'
-            : `${takenCount} / ${totalSlots} taken today · resets at 3 AM`}
-        </div>
+        {totalSlots > 0 && (
+          <button
+            onClick={handleLogAll}
+            className="flex-none self-stretch rounded-[10px] border px-4 text-[12.5px] font-semibold whitespace-nowrap"
+            style={{ color: '#dffbe9', borderColor: 'rgba(74,222,128,0.4)', background: 'radial-gradient(120% 150% at 50% 0%, rgba(74,222,128,0.18), transparent)' }}
+          >
+            {allTaken ? '↺ Reset today' : 'Log all'}
+          </button>
+        )}
       </div>
 
       {/* Progress bar */}
@@ -1912,6 +1948,8 @@ function CalorieTargetSheet({
   const [saved, setSaved] = useState(false)
   const [editingMacros, setEditingMacros] = useState(false)
   const [editedMacros, setEditedMacros] = useState<{ cal: string; protein: string; carbs: string } | null>(null)
+  const [calcError, setCalcError] = useState<string | null>(null)
+  const [calcNoKeyProvider, setCalcNoKeyProvider] = useState<KeyProvider | null>(null)
 
   const updateProfile = useUpdateHealthProfile()
   const calcTarget = useCalculateCalorieTarget()
@@ -1921,6 +1959,8 @@ function CalorieTargetSheet({
   const canCalculate = needsTargetWeight ? !!parseFloat(targetWeight) : true
 
   async function handleCalculate() {
+    setCalcError(null)
+    setCalcNoKeyProvider(null)
     const updates: Record<string, unknown> = {
       fitness_goal: goal,
     }
@@ -1934,11 +1974,16 @@ function CalorieTargetSheet({
       updates.cut_pace = null
       if (goal !== 'recomp') updates.target_weight_lbs = null
     }
-    await updateProfile.mutateAsync(updates as Parameters<typeof updateProfile.mutateAsync>[0])
-    const res = await calcTarget.mutateAsync()
-    setResult(res)
-    setEditingMacros(false)
-    setEditedMacros(null)
+    try {
+      await updateProfile.mutateAsync(updates as Parameters<typeof updateProfile.mutateAsync>[0])
+      const res = await calcTarget.mutateAsync()
+      setResult(res)
+      setEditingMacros(false)
+      setEditedMacros(null)
+    } catch (err) {
+      if (err instanceof NoApiKeyClientError) setCalcNoKeyProvider(err.provider)
+      else setCalcError(err instanceof Error ? err.message : 'Failed to calculate target')
+    }
   }
 
   function startEditMacros() {
@@ -2139,6 +2184,12 @@ function CalorieTargetSheet({
           </div>
         )}
 
+        {calcNoKeyProvider ? (
+          <NoApiKeyNotice provider={calcNoKeyProvider} />
+        ) : calcError ? (
+          <p className="text-xs text-red-400">{calcError}</p>
+        ) : null}
+
         <div className="flex gap-2">
           <button onClick={onClose} className="flex-1 rounded-xl border border-white/[0.12] py-3 text-sm font-semibold text-zinc-400">
             Cancel
@@ -2190,6 +2241,8 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
   const [scanOpen, setScanOpen] = useState(false)
   const [waterNote, setWaterNote] = useState<number | null>(null)
   const [caffeineNote, setCaffeineNote] = useState<number | null>(null)
+  const [photoError, setPhotoError] = useState<string | null>(null)
+  const [photoNoKeyProvider, setPhotoNoKeyProvider] = useState<KeyProvider | null>(null)
   const labelHintRef = useRef(false)
   const updateProfile = useUpdateHealthProfile()
   // Overlays must portal to document.body — the health page has ancestors with
@@ -2234,7 +2287,11 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
   const streamNonPhotoFeedback = useCallback(async (mealId: string) => {
     try {
       const res = await fetch(`/api/health/food/${mealId}/coach`, { method: 'POST' })
-      if (!res.ok || !res.body) return
+      if (!res.ok || !res.body) {
+        const noKey = await checkNoApiKey(res)
+        if (noKey) setMealFeedback(prev => ({ ...prev, [mealId]: noApiKeyMessage(noKey.provider) }))
+        return
+      }
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       while (true) {
@@ -2278,6 +2335,8 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
   const submitPendingPhoto = useCallback(async () => {
     if (pendingFiles.length === 0) return
     setUploading(true)
+    setPhotoError(null)
+    setPhotoNoKeyProvider(null)
     const filesToSubmit = pendingFiles
     clearPending()
     try {
@@ -2291,7 +2350,12 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
       const newMeal = await logFood.mutateAsync(fd)
       setNewlyLoggedId(newMeal.id)
     } catch (err) {
-      console.error('Food log error:', err)
+      if (err instanceof NoApiKeyClientError) {
+        setPhotoNoKeyProvider(err.provider)
+      } else {
+        console.error('Food log error:', err)
+        setPhotoError('Failed to log meal. Try again.')
+      }
     } finally {
       setUploading(false)
       setDescription('')
@@ -2411,6 +2475,12 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
         {caffeineNote != null && (
           <p className="text-xs text-amber-300">+{caffeineNote} mg added to caffeine tracker</p>
         )}
+
+        {photoNoKeyProvider ? (
+          <NoApiKeyNotice provider={photoNoKeyProvider} />
+        ) : photoError ? (
+          <p className="text-xs text-red-400">{photoError}</p>
+        ) : null}
 
         {/* Frequents */}
         <FrequentsRow onSaved={handleManualSaved} />
@@ -2647,7 +2717,8 @@ function HealthCoach() {
     try {
       const res = await fetch('/api/health/coach', { method: 'POST' })
       if (!res.ok || !res.body) {
-        setText('Something went wrong. Try again.')
+        const noKey = await checkNoApiKey(res)
+        setText(noKey ? noApiKeyMessage(noKey.provider) : 'Something went wrong. Try again.')
         return
       }
       const reader = res.body.getReader()
