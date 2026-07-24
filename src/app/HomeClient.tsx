@@ -1194,9 +1194,12 @@ export default function HomeClient({
           <BriefingCard initialContent={initialBriefing} />
         </motion.div>
 
-        <div className="px-4 pb-6 flex justify-center mt-6">
+        <div className="px-4 pb-6 flex justify-center gap-6 mt-6">
           <a href="/subscriptions" className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors">
             Bills &amp; subscriptions →
+          </a>
+          <a href="/settings" className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors">
+            Settings →
           </a>
         </div>
       </main>
