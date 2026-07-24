@@ -12,7 +12,10 @@ import type { PlanItem } from '@/features/journal/types'
 import type { BentoStats } from '@/lib/home/bentoStats'
 import type { Streaks } from '@/lib/home/streaks'
 import StreakStrip from './StreakStrip'
+import ApiKeyBanner from './ApiKeyBanner'
 import { computeRing, CIRC, type RingState } from '@/features/home/dayRing'
+import { checkNoApiKey, type KeyProvider } from '@/lib/apiKeyError'
+import NoApiKeyNotice from '@/components/NoApiKeyNotice'
 
 // Code-split the Three.js HUD so it never enters the main bundle — loads only
 // when the user opens map view. ssr:false because it's a WebGL/client-only view.
@@ -603,6 +606,7 @@ function TodaysCallCard({ initial }: { initial?: TodaysCallData | null }) {
   const [loading, setLoading] = useState(false)
   const [noData, setNoData] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
+  const [keyProvider, setKeyProvider] = useState<KeyProvider | null>(null)
   const fetched = useRef(false)
 
   const fetch_ = useCallback(async (refresh = false) => {
@@ -611,9 +615,14 @@ function TodaysCallCard({ initial }: { initial?: TodaysCallData | null }) {
     try {
       const url = refresh ? '/api/home/todays-call?refresh=1' : '/api/home/todays-call'
       const res = await fetch(url, { method: 'POST' })
-      if (!res.ok) return
+      if (!res.ok) {
+        const keyErr = await checkNoApiKey(res)
+        if (keyErr) setKeyProvider(keyErr.provider)
+        return
+      }
       const json = await res.json()
       if (json.noData) { setNoData(true); return }
+      setKeyProvider(null)
       setData(json)
     } finally {
       setLoading(false)
@@ -639,6 +648,7 @@ function TodaysCallCard({ initial }: { initial?: TodaysCallData | null }) {
   }
 
   if (noData) return null
+  if (keyProvider && !data) return <NoApiKeyNotice provider={keyProvider} className="mb-4" />
   if (!data && !loading) return null
 
   const color = data ? VERDICT_COLOR[data.color] : 'rgba(255,255,255,0.2)'
@@ -839,6 +849,7 @@ function BriefingCard({ initialContent }: { initialContent?: string | null }) {
   const [coachText, setCoachText] = useState(initialContent ?? '')
   const [coachStreaming, setCoachStreaming] = useState(false)
   const [loading, setLoading] = useState(initialContent === undefined)
+  const [keyProvider, setKeyProvider] = useState<KeyProvider | null>(null)
 
   useEffect(() => {
     if (initialContent !== undefined) return // seeded server-side; skip the client fetch
@@ -852,10 +863,13 @@ function BriefingCard({ initialContent }: { initialContent?: string | null }) {
     if (coachStreaming) return
     setCoachStreaming(true)
     setCoachText('')
+    setKeyProvider(null)
     try {
       const res = await fetch('/api/home/coach', { method: 'POST' })
       if (!res.ok || !res.body) {
-        setCoachText('Something went wrong. Try again.')
+        const keyErr = await checkNoApiKey(res)
+        if (keyErr) setKeyProvider(keyErr.provider)
+        else setCoachText('Something went wrong. Try again.')
         return
       }
       const reader = res.body.getReader()
@@ -889,7 +903,10 @@ function BriefingCard({ initialContent }: { initialContent?: string | null }) {
           <div className="h-3 rounded bg-white/[0.06] animate-pulse w-4/6" />
         </div>
       )}
-      {!loading && !coachText && !coachStreaming && (
+      {!loading && keyProvider && (
+        <NoApiKeyNotice provider={keyProvider} className="mb-4" />
+      )}
+      {!loading && !keyProvider && !coachText && !coachStreaming && (
         <p className="text-sm text-zinc-500 mb-4 leading-relaxed">
           Get a read on where you stand across everything — gym, habits, health, journal.
         </p>
@@ -1128,6 +1145,8 @@ export default function HomeClient({
             </svg>
           </motion.button>
         </div>
+
+        <ApiKeyBanner />
 
         <GoalTicker checkin={checkin} />
 
