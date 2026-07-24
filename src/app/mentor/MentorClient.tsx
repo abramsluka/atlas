@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import ChatText from '@/components/ChatText'
+import NoApiKeyNotice from '@/components/NoApiKeyNotice'
+import { checkNoApiKey, noApiKeyMessage, NoApiKeyClientError } from '@/lib/apiKeyError'
 import InsightsTab from './InsightsTab'
 import { useQueryClient } from '@tanstack/react-query'
 import {
@@ -430,6 +432,14 @@ function TheVoid({
         </button>
       </div>
 
+      {runSynthesis.isError && (
+        runSynthesis.error instanceof NoApiKeyClientError ? (
+          <NoApiKeyNotice provider={runSynthesis.error.provider} className="mb-6" />
+        ) : (
+          <p className="text-xs text-red-400/80 text-center mb-6">Failed to synthesize. Try again.</p>
+        )
+      )}
+
       {/* Heading */}
       <motion.h2
         className="text-4xl font-bold italic text-white mb-3"
@@ -592,6 +602,13 @@ function ReportsTab() {
           {generateReport.isPending ? 'Generating report…' : 'Generate this week\'s report'}
         </button>
       )}
+      {generateReport.isError && (
+        generateReport.error instanceof NoApiKeyClientError ? (
+          <NoApiKeyNotice provider={generateReport.error.provider} className="mb-4" />
+        ) : (
+          <p className="text-xs text-red-400/80 text-center mb-4">Failed to generate report. Try again.</p>
+        )
+      )}
       <div className="space-y-3">
         {(reports ?? []).map(report => (
           <div
@@ -752,7 +769,8 @@ export default function MentorClient() {
       })
 
       if (!res.ok || !res.body) {
-        setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: 'Something went wrong. Try again.' } : m))
+        const noKeyErr = res.ok ? null : await checkNoApiKey(res)
+        setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: noKeyErr ? noApiKeyMessage(noKeyErr.provider) : 'Something went wrong. Try again.' } : m))
         return
       }
 

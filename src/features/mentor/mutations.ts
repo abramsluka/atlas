@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { checkNoApiKey } from '@/lib/apiKeyError'
 import type { Jot, JotSynthesis, WeeklyReport } from './types'
 
 export function useCreateJot() {
@@ -26,7 +27,7 @@ export function useGenerateWeeklyReport() {
   return useMutation({
     mutationFn: async (): Promise<WeeklyReport> => {
       const res = await fetch('/api/mentor/weekly-report', { method: 'POST' })
-      if (!res.ok) throw new Error('Failed to generate report')
+      if (!res.ok) throw (await checkNoApiKey(res)) ?? new Error('Failed to generate report')
       return res.json()
     },
     onSuccess: () => {
@@ -41,7 +42,7 @@ export function useRunSynthesis() {
   return useMutation({
     mutationFn: async (): Promise<JotSynthesis | { skipped: boolean; reason: string }> => {
       const res = await fetch('/api/mentor/synthesize', { method: 'POST' })
-      if (!res.ok) throw new Error('Failed to run synthesis')
+      if (!res.ok) throw (await checkNoApiKey(res)) ?? new Error('Failed to run synthesis')
       return res.json()
     },
     onSuccess: () => {
