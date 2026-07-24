@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { CreateSubscriptionPayload, UpdateSubscriptionPayload, ImportedSubscription } from './types'
+import { checkNoApiKey } from '@/lib/apiKeyError'
 
 export function useCreateSubscription() {
   const qc = useQueryClient()
@@ -41,7 +42,11 @@ export function useAnalyzeSubscriptionScreenshot() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-      if (!res.ok) throw new Error('Failed to read screenshot')
+      if (!res.ok) {
+        const keyErr = await checkNoApiKey(res)
+        if (keyErr) throw keyErr
+        throw new Error('Failed to read screenshot')
+      }
       return res.json() as Promise<{ subscriptions: ImportedSubscription[] }>
     },
   })

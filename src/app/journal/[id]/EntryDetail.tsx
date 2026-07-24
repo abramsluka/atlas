@@ -9,6 +9,8 @@ import { useUpdateEntry, useDeleteEntry } from '@/features/journal/mutations'
 import type { EntryKind, JournalEntry, PlanItem } from '@/features/journal/types'
 import { useVoiceRecorder, formatElapsed } from '@/features/journal/useVoiceRecorder'
 import { uploadAudioToStorage } from '@/features/journal/uploadAudio'
+import { checkNoApiKey, NoApiKeyClientError, type KeyProvider } from '@/lib/apiKeyError'
+import NoApiKeyNotice from '@/components/NoApiKeyNotice'
 
 interface Props {
   initialEntry: JournalEntry
@@ -63,6 +65,7 @@ export default function EntryDetail({ initialEntry }: Props) {
   const [reflectionText, setReflectionText] = useState(entry.ai_reflection ?? '')
   const [streaming, setStreaming] = useState(false)
   const [streamError, setStreamError] = useState<string | null>(null)
+  const [streamKeyProvider, setStreamKeyProvider] = useState<KeyProvider | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const [conversation, setConversation] = useState(entry.conversation ?? [])
@@ -70,10 +73,12 @@ export default function EntryDetail({ initialEntry }: Props) {
   const [isReplying, setIsReplying] = useState(false)
   const [streamingReply, setStreamingReply] = useState('')
   const [replyError, setReplyError] = useState<string | null>(null)
+  const [replyKeyProvider, setReplyKeyProvider] = useState<KeyProvider | null>(null)
 
   const [plan, setPlan] = useState<PlanItem[]>(entry.plan ?? [])
   const [planning, setPlanning] = useState(false)
   const [planError, setPlanError] = useState<string | null>(null)
+  const [planKeyProvider, setPlanKeyProvider] = useState<KeyProvider | null>(null)
   const [refineText, setRefineText] = useState('')
   const [focusItemId, setFocusItemId] = useState<string | null>(null)
 
@@ -81,6 +86,7 @@ export default function EntryDetail({ initialEntry }: Props) {
   const [showTranscript, setShowTranscript] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
   const [transcribeError, setTranscribeError] = useState<string | null>(null)
+  const [transcribeKeyProvider, setTranscribeKeyProvider] = useState<KeyProvider | null>(null)
   const rec = useVoiceRecorder()
 
   const bodyTextareaRef = useRef<HTMLTextAreaElement>(null)
@@ -146,19 +152,26 @@ export default function EntryDetail({ initialEntry }: Props) {
   async function requestPlan(payload?: { message?: string; audioPath?: string }) {
     setPlanning(true)
     setPlanError(null)
+    setPlanKeyProvider(null)
     try {
       const res = await fetch(`/api/journal/${entry.id}/plan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload ?? {}),
       })
+      if (!res.ok) {
+        const keyErr = await checkNoApiKey(res)
+        if (keyErr) throw keyErr
+        const json = await res.json().catch(() => ({}))
+        throw new Error(json.error ?? 'Failed to build plan')
+      }
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error ?? 'Failed to build plan')
       setPlan(json.plan)
       queryClient.invalidateQueries({ queryKey: ['journal', entry.id] })
       queryClient.invalidateQueries({ queryKey: ['journal'] })
     } catch (err) {
-      setPlanError(String(err))
+      if (err instanceof NoApiKeyClientError) setPlanKeyProvider(err.provider)
+      else setPlanError(err instanceof Error ? err.message : String(err))
     } finally {
       setPlanning(false)
     }
@@ -211,11 +224,14 @@ export default function EntryDetail({ initialEntry }: Props) {
   async function handleGetReflection() {
     setStreaming(true)
     setStreamError(null)
+    setStreamKeyProvider(null)
     setReflectionText('')
 
     try {
       const res = await fetch(`/api/journal/${entry.id}/reflect`, { method: 'POST' })
       if (!res.ok || !res.body) {
+        const keyErr = await checkNoApiKey(res)
+        if (keyErr) throw keyErr
         const text = await res.text()
         throw new Error(text || 'Failed to get reflection')
       }
@@ -230,7 +246,8 @@ export default function EntryDetail({ initialEntry }: Props) {
 
       queryClient.invalidateQueries({ queryKey: ['journal', entry.id] })
     } catch (err) {
-      setStreamError(String(err))
+      if (err instanceof NoApiKeyClientError) setStreamKeyProvider(err.provider)
+      else setStreamError(err instanceof Error ? err.message : String(err))
     } finally {
       setStreaming(false)
     }
@@ -244,15 +261,22 @@ export default function EntryDetail({ initialEntry }: Props) {
   async function handleTranscribe() {
     setTranscribing(true)
     setTranscribeError(null)
+    setTranscribeKeyProvider(null)
     try {
       const res = await fetch(`/api/journal/${entry.id}/transcribe`, { method: 'POST' })
+      if (!res.ok) {
+        const keyErr = await checkNoApiKey(res)
+        if (keyErr) throw keyErr
+        const json = await res.json().catch(() => ({}))
+        throw new Error(json.error ?? 'Transcription failed')
+      }
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error ?? 'Transcription failed')
       setTranscript(json.transcript)
       setShowTranscript(true)
       queryClient.invalidateQueries({ queryKey: ['journal', entry.id] })
     } catch (err) {
-      setTranscribeError(String(err))
+      if (err instanceof NoApiKeyClientError) setTranscribeKeyProvider(err.provider)
+      else setTranscribeError(err instanceof Error ? err.message : String(err))
     } finally {
       setTranscribing(false)
     }
@@ -274,6 +298,7 @@ export default function EntryDetail({ initialEntry }: Props) {
     setIsReplying(true)
     setStreamingReply('')
     setReplyError(null)
+    setReplyKeyProvider(null)
 
     try {
       // Upload the audio straight to storage first (no Vercel 4.5 MB body limit),
@@ -284,7 +309,11 @@ export default function EntryDetail({ initialEntry }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ audioPath }),
       })
-      if (!res.ok || !res.body) throw new Error(await res.text() || 'Failed')
+      if (!res.ok || !res.body) {
+        const keyErr = await checkNoApiKey(res)
+        if (keyErr) throw keyErr
+        throw new Error(await res.text() || 'Failed')
+      }
 
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
@@ -298,7 +327,8 @@ export default function EntryDetail({ initialEntry }: Props) {
       // Server holds the transcript + signed audio URL for the new messages
       await refreshConversation()
     } catch (err) {
-      setReplyError(String(err))
+      if (err instanceof NoApiKeyClientError) setReplyKeyProvider(err.provider)
+      else setReplyError(err instanceof Error ? err.message : String(err))
     } finally {
       setIsReplying(false)
     }
@@ -311,6 +341,7 @@ export default function EntryDetail({ initialEntry }: Props) {
     setReplyText('')
     setStreamingReply('')
     setReplyError(null)
+    setReplyKeyProvider(null)
 
     try {
       const res = await fetch(`/api/journal/${entry.id}/reply`, {
@@ -318,7 +349,11 @@ export default function EntryDetail({ initialEntry }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userMsg }),
       })
-      if (!res.ok || !res.body) throw new Error(await res.text() || 'Failed')
+      if (!res.ok || !res.body) {
+        const keyErr = await checkNoApiKey(res)
+        if (keyErr) throw keyErr
+        throw new Error(await res.text() || 'Failed')
+      }
 
       let assistantText = ''
       const reader = res.body.getReader()
@@ -337,7 +372,8 @@ export default function EntryDetail({ initialEntry }: Props) {
         { role: 'assistant' as const, content: assistantText },
       ])
     } catch (err) {
-      setReplyError(String(err))
+      if (err instanceof NoApiKeyClientError) setReplyKeyProvider(err.provider)
+      else setReplyError(err instanceof Error ? err.message : String(err))
     } finally {
       setIsReplying(false)
     }
@@ -348,6 +384,7 @@ export default function EntryDetail({ initialEntry }: Props) {
     setIsReplying(true)
     setStreamingReply('')
     setReplyError(null)
+    setReplyKeyProvider(null)
 
     try {
       const res = await fetch(`/api/journal/${entry.id}/reply`, {
@@ -355,7 +392,11 @@ export default function EntryDetail({ initialEntry }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ makeLonger: true, messageIndex }),
       })
-      if (!res.ok || !res.body) throw new Error(await res.text() || 'Failed')
+      if (!res.ok || !res.body) {
+        const keyErr = await checkNoApiKey(res)
+        if (keyErr) throw keyErr
+        throw new Error(await res.text() || 'Failed')
+      }
 
       let expandedText = ''
       const reader = res.body.getReader()
@@ -376,7 +417,8 @@ export default function EntryDetail({ initialEntry }: Props) {
         ))
       }
     } catch (err) {
-      setReplyError(String(err))
+      if (err instanceof NoApiKeyClientError) setReplyKeyProvider(err.provider)
+      else setReplyError(err instanceof Error ? err.message : String(err))
     } finally {
       setIsReplying(false)
     }
@@ -461,7 +503,11 @@ export default function EntryDetail({ initialEntry }: Props) {
           <div className="mb-5 rounded-[18px] px-4 py-3" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
             <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-600">Voice note</p>
             <audio controls src={entry.audio_url} className="w-full" />
-            {transcribeError && <p className="mt-2 text-xs text-red-400">{transcribeError}</p>}
+            {transcribeKeyProvider ? (
+              <NoApiKeyNotice provider={transcribeKeyProvider} className="mt-2" />
+            ) : transcribeError ? (
+              <p className="mt-2 text-xs text-red-400">{transcribeError}</p>
+            ) : null}
             <div className="mt-2">
               {transcript ? (
                 <>
@@ -491,7 +537,11 @@ export default function EntryDetail({ initialEntry }: Props) {
         {isMorning ? (
           /* ─── Morning: day plan ─────────────────────────────────────────── */
           <div>
-            {planError && <p className="mb-3 text-sm text-red-400">{planError}</p>}
+            {planKeyProvider ? (
+              <NoApiKeyNotice provider={planKeyProvider} className="mb-3" />
+            ) : planError ? (
+              <p className="mb-3 text-sm text-red-400">{planError}</p>
+            ) : null}
 
             {!hasPlanItems && !planning && canPlanFromEntry && (
               <button
@@ -818,9 +868,11 @@ export default function EntryDetail({ initialEntry }: Props) {
                     </div>
                   )}
 
-                  {replyError && (
+                  {replyKeyProvider ? (
+                    <NoApiKeyNotice provider={replyKeyProvider} className="mt-3" />
+                  ) : replyError ? (
                     <p className="mt-3 text-sm text-red-400">{replyError}</p>
-                  )}
+                  ) : null}
 
                   {/* Reply input */}
                   {rec.error && <p className="mt-3 text-xs text-red-400">{rec.error}</p>}
@@ -889,9 +941,11 @@ export default function EntryDetail({ initialEntry }: Props) {
                 </>
               ) : (
                 <>
-                  {streamError && (
+                  {streamKeyProvider ? (
+                    <NoApiKeyNotice provider={streamKeyProvider} className="mb-3" />
+                  ) : streamError ? (
                     <p className="mb-3 text-sm text-red-400">{streamError}</p>
-                  )}
+                  ) : null}
                   <button
                     onClick={handleGetReflection}
                     disabled={streaming}

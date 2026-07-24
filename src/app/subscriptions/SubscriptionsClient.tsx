@@ -16,6 +16,8 @@ import type {
   ImportedSubscription,
 } from '@/features/subscriptions/types'
 import { BILLING_PERIODS, CURRENCIES, CATEGORIES } from '@/features/subscriptions/types'
+import { NoApiKeyClientError, type KeyProvider } from '@/lib/apiKeyError'
+import NoApiKeyNotice from '@/components/NoApiKeyNotice'
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
 
@@ -441,6 +443,7 @@ type ImportState =
   | { status: 'analyzing' }
   | { status: 'review'; items: ImportedSubscription[]; included: boolean[] }
   | { status: 'error'; message: string }
+  | { status: 'no-api-key'; provider: KeyProvider }
 
 function ImportSheet({
   state,
@@ -488,6 +491,18 @@ function ImportSheet({
         {state.status === 'error' && (
           <div className="space-y-4 py-4 text-center">
             <p className="text-sm text-zinc-400">{state.message}</p>
+            <button
+              onClick={onClose}
+              className="w-full rounded-xl border border-zinc-700 py-3 text-sm font-medium text-zinc-400 active:bg-zinc-800"
+            >
+              Close
+            </button>
+          </div>
+        )}
+
+        {state.status === 'no-api-key' && (
+          <div className="space-y-4 py-4">
+            <NoApiKeyNotice provider={state.provider} />
             <button
               onClick={onClose}
               className="w-full rounded-xl border border-zinc-700 py-3 text-sm font-medium text-zinc-400 active:bg-zinc-800"
@@ -827,11 +842,15 @@ export default function SubscriptionsClient({
       const payload = await fileToBase64Image(file)
       const { subscriptions: items } = await analyzeScreenshot.mutateAsync(payload)
       setImportState({ status: 'review', items, included: items.map(() => true) })
-    } catch {
-      setImportState({
-        status: 'error',
-        message: 'Could not read that screenshot. Try again with a clearer image.',
-      })
+    } catch (err) {
+      if (err instanceof NoApiKeyClientError) {
+        setImportState({ status: 'no-api-key', provider: err.provider })
+      } else {
+        setImportState({
+          status: 'error',
+          message: 'Could not read that screenshot. Try again with a clearer image.',
+        })
+      }
     }
   }
 

@@ -21,6 +21,7 @@ import { useOrbChips } from './queries'
 import { getOrbHints, bandOf, GYM_SESSION_HINTS } from './hints'
 import { readGymSession } from '@/features/gym/sessionSignal'
 import ActionCard from './ActionCard'
+import { checkNoApiKey, noApiKeyMessage } from '@/lib/apiKeyError'
 
 interface OrbMsg {
   id: string
@@ -99,6 +100,14 @@ export default function OrbAssistant() {
           context: { hour: new Date().getHours(), inGymSession: gym.active, sessionMinutes: gym.minutes },
         }),
       })
+      if (!res.ok) {
+        const keyErr = await checkNoApiKey(res)
+        if (keyErr) {
+          updateMsg(assistantId, m => ({ ...m, content: noApiKeyMessage(keyErr.provider) }))
+          return
+        }
+        throw new Error('request failed')
+      }
       if (!res.body) throw new Error('no body')
       const reader = res.body.getReader()
       const decoder = new TextDecoder()

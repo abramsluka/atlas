@@ -10,6 +10,8 @@ import {
   GUIDE_SECTIONS,
   type DebloatLog,
 } from '@/features/debloat/types'
+import { checkNoApiKey, type KeyProvider } from '@/lib/apiKeyError'
+import NoApiKeyNotice from '@/components/NoApiKeyNotice'
 
 interface Props {
   today: string
@@ -62,6 +64,7 @@ export default function DebloatClient({ today, initialTodayLog, initialHistory }
   const [analyzeText, setAnalyzeText] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [analyzeKeyProvider, setAnalyzeKeyProvider] = useState<KeyProvider | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const last7 = getLast7Days(today)
@@ -86,6 +89,7 @@ export default function DebloatClient({ today, initialTodayLog, initialHistory }
     const url = URL.createObjectURL(file)
     setPreviewUrl(url)
     setAnalyzeText('')
+    setAnalyzeKeyProvider(null)
     setAnalyzing(true)
 
     try {
@@ -106,7 +110,9 @@ export default function DebloatClient({ today, initialTodayLog, initialHistory }
       })
 
       if (!res.ok || !res.body) {
-        setAnalyzeText('Something went wrong. Try again.')
+        const keyErr = await checkNoApiKey(res)
+        if (keyErr) setAnalyzeKeyProvider(keyErr.provider)
+        else setAnalyzeText('Something went wrong. Try again.')
         return
       }
 
@@ -258,9 +264,11 @@ export default function DebloatClient({ today, initialTodayLog, initialHistory }
             {analyzing ? 'Analyzing…' : previewUrl ? 'Take another selfie' : 'Take a selfie'}
           </button>
 
-          {analyzeText && (
+          {analyzeKeyProvider ? (
+            <NoApiKeyNotice provider={analyzeKeyProvider} className="mt-4" />
+          ) : analyzeText ? (
             <p className="mt-4 text-sm leading-relaxed text-zinc-300">{analyzeText}</p>
-          )}
+          ) : null}
         </section>
 
         {/* Guide */}
