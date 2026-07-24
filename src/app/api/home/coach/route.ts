@@ -28,6 +28,8 @@ export async function POST(_request: NextRequest) {
     debloatHistoryRes,
     bodyweightRes,
     ouraWearableRes,
+    foodTodayRes,
+    healthProfileRes,
   ] = await Promise.all([
     db.from('daily_checkins')
       .select('*')
@@ -94,6 +96,16 @@ export async function POST(_request: NextRequest) {
       .limit(14),
 
     db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'oura').eq('date', today).maybeSingle(),
+
+    db.from('food_logs')
+      .select('item_name, calories, protein_g, carbs_g')
+      .eq('user_id', user.id)
+      .eq('date', today),
+
+    db.from('health_profile')
+      .select('daily_calorie_target, daily_protein_target_g')
+      .eq('user_id', user.id)
+      .maybeSingle(),
   ])
 
   const checkin = checkinRes.data
@@ -154,6 +166,12 @@ export async function POST(_request: NextRequest) {
 
   const ouraToday = ouraWearableRes.data?.data as OuraData | null
 
+  const foodToday = foodTodayRes.data ?? []
+  const caloriesToday = Math.round(foodToday.reduce((s, f) => s + (f.calories ?? 0), 0))
+  const proteinToday = Math.round(foodToday.reduce((s, f) => s + (Number(f.protein_g) || 0), 0))
+  const carbsToday = Math.round(foodToday.reduce((s, f) => s + (Number(f.carbs_g) || 0), 0))
+  const profile = healthProfileRes.data
+
   const wearableLines: string[] = []
   if (ouraToday) {
     if (ouraToday.readiness?.score != null) wearableLines.push(`  Oura readiness: ${ouraToday.readiness.score}`)
@@ -209,6 +227,15 @@ export async function POST(_request: NextRequest) {
     '',
     '--- WEARABLES ---',
     wearableLines.length > 0 ? wearableLines.join('\n') : 'No wearable data for today.',
+    '',
+    '--- NUTRITION ---',
+    foodToday.length === 0
+      ? 'No food logged today.'
+      : `Food today: ${caloriesToday} cal, ${proteinToday}g protein, ${carbsToday}g carbs across ${foodToday.length} item${foodToday.length === 1 ? '' : 's'}.`,
+    foodToday.length > 0 ? `  Items: ${foodToday.map(f => f.item_name).join(', ')}` : '',
+    profile?.daily_calorie_target
+      ? `Daily targets: ${profile.daily_calorie_target} cal${profile.daily_protein_target_g ? `, ${profile.daily_protein_target_g}g protein` : ''}`
+      : '',
     '',
     '--- HEALTH ---',
     `Water today: ${waterOz > 0 ? `${waterOz} oz` : 'none logged'}`,
