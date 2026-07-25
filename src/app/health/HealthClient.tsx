@@ -91,13 +91,6 @@ function scoreColor(score: number | null | undefined): string {
   return 'text-red-400'
 }
 
-function formatDuration(seconds: number | null | undefined): string {
-  if (seconds == null) return '--'
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  return `${h}h ${m}m`
-}
-
 function fmtInt(n: number | null | undefined): string {
   return n == null ? '--' : Math.round(n).toLocaleString('en-US')
 }
@@ -134,7 +127,16 @@ function WearablesSection({
   const { data: oura, isPending: ouraPending } = useOuraData(today, hasOura, initialOura)
   const { data: apple } = useAppleHealth(today)
   const appleLatest = apple?.latest ?? null
-  const hasApple = !!appleLatest && (apple?.daysOfData ?? 0) > 0
+  // Only treat Apple data as live if it synced within the last few days. A
+  // stale one-off sync shouldn't leave a dead card lingering (or feed the Oura
+  // steps fallback) forever.
+  const appleFresh =
+    !!appleLatest?.date &&
+    (new Date(today).getTime() - new Date(appleLatest.date).getTime()) / 86_400_000 <= 3
+  const hasApple = appleFresh && (apple?.daysOfData ?? 0) > 0
+  // Steps for the Oura card: Oura's own activity steps, falling back to a fresh
+  // Apple Watch sync when Oura hasn't reported them.
+  const ouraSteps = oura?.activity?.steps ?? (hasApple ? appleLatest?.steps ?? null : null)
   const qc = useQueryClient()
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -194,17 +196,15 @@ function WearablesSection({
                   <p className="text-sm font-semibold text-white">{oura.sleep?.score ?? '--'}</p>
                 </div>
                 <div>
-                  <p className="text-[10px] uppercase tracking-wide text-zinc-500">Slept</p>
-                  <p className="text-sm font-semibold text-white">
-                    {oura.sleep?.total_sleep_duration != null ? formatDuration(oura.sleep.total_sleep_duration) : '--'}
-                  </p>
+                  <p className="text-[10px] uppercase tracking-wide text-zinc-500">Steps</p>
+                  <p className="text-sm font-semibold text-white">{fmtInt(ouraSteps)}</p>
                 </div>
               </div>
             </div>
           )}
         </div>
 
-        {/* Apple Watch — only shown once Apple Health has synced data */}
+        {/* Apple Watch — only shown when Apple Health synced within the last few days */}
         {hasApple && (
           <div className="bg-[#111113] border border-white/[0.06] rounded-[18px] p-4">
             <div className="mb-3 flex items-center justify-between">

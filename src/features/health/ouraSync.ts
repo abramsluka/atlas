@@ -111,7 +111,19 @@ export async function syncOuraToday(
 
   const sleepScore = byToday(sleepScoreJson?.data)
   const readiness = byToday(readinessJson?.data)
-  const activity = byToday(activityJson?.data)
+
+  // Activity (steps/calories) is a completed-day metric Oura finalizes on a lag —
+  // today's daily_activity doc usually isn't published until the evening. Unlike
+  // the sleep/readiness SCORES above (which are strictly "for today", so a
+  // latest-available fallback would mislabel yesterday's score), steps only ever
+  // grow toward a daily total, so the most recent available day is the right
+  // value to show and matches Oura's own app. Strict today-matching here froze
+  // steps at null every single day. Prefer today's doc, else the latest within
+  // the 3-day fetch window.
+  const activity = ((activityJson?.data ?? []) as Array<Record<string, unknown>>)
+    .filter(r => typeof r.day === 'string' && (r.day as string) <= today)
+    .sort((a, b) => (a.day as string).localeCompare(b.day as string))
+    .at(-1)
 
   // The main nightly sleep is always type 'long_sleep'; short 'sleep' sessions
   // are naps or aborted recordings and must never be chosen (they wreck the
