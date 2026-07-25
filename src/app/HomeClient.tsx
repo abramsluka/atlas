@@ -1022,6 +1022,7 @@ function SundayModal({ onDismiss, initialReports }: { onDismiss: () => void; ini
 export default function HomeClient({
   today,
   timezone: _timezone,
+  displayName,
   initialCheckin,
   initialBento,
   initialTodaysCall,
@@ -1032,6 +1033,7 @@ export default function HomeClient({
 }: {
   today: string
   timezone: string
+  displayName: string
   initialCheckin: DailyCheckin | null
   initialBento?: BentoStats
   initialTodaysCall?: TodaysCallData | null
@@ -1117,7 +1119,7 @@ export default function HomeClient({
         {/* Header */}
         <div className="flex items-start justify-between mb-4">
           <h1
-            className="text-5xl font-bold tracking-tight"
+            className="text-[2.7rem] font-bold tracking-tight whitespace-nowrap"
             style={{
               background: 'linear-gradient(180deg, #FFFFFF 0%, #C7C4BC 120%)',
               WebkitBackgroundClip: 'text',
@@ -1125,7 +1127,7 @@ export default function HomeClient({
               backgroundClip: 'text',
             }}
           >
-            Luka&apos;s Dashboard
+            {displayName}&apos;s Dashboard
           </h1>
           <motion.button
             onClick={toggleMapView}
