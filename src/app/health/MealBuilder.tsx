@@ -24,8 +24,11 @@ import {
 import { useSavedMeals, useUserIngredients } from '@/features/food/queries'
 import {
   useCreateIngredient,
+  useDeleteIngredient,
   useDeleteSavedMeal,
   useLogMeal,
+  useUpdateIngredient,
+  useUpdateSavedMeal,
 } from '@/features/food/mutations'
 import type { BarcodeLookup, MealIngredient, SavedMeal, UserIngredient } from '@/features/food/types'
 import { formatAmount, nextUnit, toGrams, type AmountUnit } from '@/features/food/units'
@@ -337,6 +340,10 @@ function hitMacroHint(hit: SearchHit): string {
   }
   if (hit.kind === 'custom') {
     const i = hit.item
+    if (Number(i.unit_grams) > 0) {
+      const perServing = Math.round((Number(i.cal_per_100) * Number(i.unit_grams)) / 100)
+      return `${perServing} cal / ${i.unit_name || 'serving'}`
+    }
     return `${Math.round(Number(i.cal_per_100))} cal / 100${i.liquid ? 'ml' : 'g'}`
   }
   const i = hit.item
@@ -345,12 +352,19 @@ function hitMacroHint(hit: SearchHit): string {
   return unit ? `${base} · 1 ${unit.name} = ${unit.grams}${i.liquid ? 'ml' : 'g'}` : base
 }
 
+const ROW_VARIANTS = {
+  hidden: { opacity: 0, y: 10 },
+  show: { opacity: 1, y: 0, transition: SPRING },
+}
+
 function SearchResults({
   hits,
   onPick,
+  onEditCustom,
 }: {
   hits: SearchHit[]
   onPick: (hit: SearchHit) => void
+  onEditCustom: (ing: UserIngredient) => void
 }) {
   const reduced = useReducedMotion()
   return (
@@ -363,17 +377,8 @@ function SearchResults({
       {hits.map(hit => {
         const badge = KIND_BADGE[hit.kind]
         const emoji = hit.kind === 'library' ? hit.item.emoji : hit.kind === 'meal' ? (hit.item.emoji ?? '🍽') : '📦'
-        return (
-          <motion.button
-            key={`${hit.kind}:${hit.item.id}`}
-            variants={{
-              hidden: { opacity: 0, y: 10 },
-              show: { opacity: 1, y: 0, transition: SPRING },
-            }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => onPick(hit)}
-            className="flex w-full items-center gap-2.5 rounded-xl border border-white/[0.07] bg-white/[0.025] px-3 py-2.5 text-left active:bg-white/[0.06]"
-          >
+        const body = (
+          <>
             <span className="text-base leading-none">{emoji}</span>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-white">
@@ -389,6 +394,47 @@ function SearchResults({
                 {badge.label}
               </span>
             )}
+          </>
+        )
+
+        // Custom foods carry an inline edit pencil, so the row is a container
+        // with two sibling buttons rather than one big button.
+        if (hit.kind === 'custom') {
+          return (
+            <motion.div
+              key={`${hit.kind}:${hit.item.id}`}
+              variants={ROW_VARIANTS}
+              className="flex items-center rounded-xl border border-white/[0.07] bg-white/[0.025]"
+            >
+              <button
+                onClick={() => onPick(hit)}
+                className="flex min-w-0 flex-1 items-center gap-2.5 rounded-l-xl px-3 py-2.5 text-left active:bg-white/[0.06]"
+              >
+                {body}
+                <span className="shrink-0 text-zinc-600">＋</span>
+              </button>
+              <button
+                onClick={() => onEditCustom(hit.item)}
+                aria-label={`Edit ${hit.item.name}`}
+                className="shrink-0 self-stretch rounded-r-xl border-l border-white/[0.07] px-3 text-zinc-500 active:bg-white/[0.06]"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                </svg>
+              </button>
+            </motion.div>
+          )
+        }
+
+        return (
+          <motion.button
+            key={`${hit.kind}:${hit.item.id}`}
+            variants={ROW_VARIANTS}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => onPick(hit)}
+            className="flex w-full items-center gap-2.5 rounded-xl border border-white/[0.07] bg-white/[0.025] px-3 py-2.5 text-left active:bg-white/[0.06]"
+          >
+            {body}
             <span className="shrink-0 text-zinc-600">＋</span>
           </motion.button>
         )
@@ -402,12 +448,14 @@ function SearchResults({
 function SavedMealCard({
   meal,
   onLoad,
+  onEdit,
   onQuickLog,
   logging,
   onDelete,
 }: {
   meal: SavedMeal
   onLoad: () => void
+  onEdit: () => void
   onQuickLog: () => void
   logging: boolean
   onDelete: () => void
@@ -424,19 +472,33 @@ function SavedMealCard({
       <button onClick={onLoad} className="block w-full text-left">
         <div className="flex items-start justify-between">
           <span className="text-xl leading-none">{meal.emoji ?? '🍽'}</span>
-          <button
-            onClick={e => {
-              e.stopPropagation()
-              if (confirm) onDelete()
-              else {
-                setConfirm(true)
-                setTimeout(() => setConfirm(false), 2500)
-              }
-            }}
-            className={`-mr-1 -mt-1 px-1.5 py-0.5 text-xs transition-colors ${confirm ? 'text-red-400' : 'text-zinc-600'}`}
-          >
-            {confirm ? 'sure?' : '×'}
-          </button>
+          <div className="-mr-1 -mt-1 flex items-center gap-0.5">
+            <button
+              onClick={e => {
+                e.stopPropagation()
+                onEdit()
+              }}
+              aria-label={`Edit ${meal.name}`}
+              className="px-1 py-0.5 text-zinc-600 active:text-zinc-300"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+            </button>
+            <button
+              onClick={e => {
+                e.stopPropagation()
+                if (confirm) onDelete()
+                else {
+                  setConfirm(true)
+                  setTimeout(() => setConfirm(false), 2500)
+                }
+              }}
+              className={`px-1.5 py-0.5 text-xs transition-colors ${confirm ? 'text-red-400' : 'text-zinc-600'}`}
+            >
+              {confirm ? 'sure?' : '×'}
+            </button>
+          </div>
         </div>
         <p className="mt-1.5 truncate text-sm font-semibold text-white">{meal.name}</p>
         <p className="text-[10px] text-zinc-500 tabular-nums">
@@ -540,46 +602,101 @@ function CategoryBrowser({ onPick }: { onPick: (ing: LibraryIngredient) => void 
   )
 }
 
-// ─── Create custom ingredient (manual / barcode-not-found) ───────────────────
+// ─── Create / edit custom ingredient (manual / barcode-not-found) ────────────
+// The label is entered the way food labels actually read: everything is "per
+// serving" (cal + macros for one serving) plus how many grams a serving weighs.
+// We convert to the per-100g the rest of the app scales on, right before saving.
+
+const round1 = (n: number) => Math.round(n * 10) / 10
 
 function CreateIngredientForm({
+  editing,
   prefill,
   onCancel,
   onCreated,
+  onSaved,
 }: {
+  editing: UserIngredient | null
   prefill: { name?: string; barcode?: string | null }
   onCancel: () => void
   onCreated: (ing: UserIngredient) => void
+  onSaved: () => void
 }) {
   const create = useCreateIngredient()
-  const [name, setName] = useState(prefill.name ?? '')
-  const [cal, setCal] = useState('')
-  const [protein, setProtein] = useState('')
-  const [carbs, setCarbs] = useState('')
-  const [unitName, setUnitName] = useState('')
-  const [unitGrams, setUnitGrams] = useState('')
-  const [liquid, setLiquid] = useState(false)
-  const [hydrating, setHydrating] = useState(false)
+  const update = useUpdateIngredient()
+  const remove = useDeleteIngredient()
+
+  // Existing foods store per-100g. Convert back to per-serving for the form,
+  // falling back to a 100g serving for older foods saved without a unit.
+  const editServing = editing && Number(editing.unit_grams) > 0 ? Number(editing.unit_grams) : 100
+  const backToServing = (per100: number) => {
+    const v = round1((Number(per100) * editServing) / 100)
+    return v > 0 ? String(v) : ''
+  }
+
+  const [name, setName] = useState(editing?.name ?? prefill.name ?? '')
+  const [cal, setCal] = useState(editing ? backToServing(editing.cal_per_100) : '')
+  const [protein, setProtein] = useState(editing ? backToServing(editing.protein_per_100) : '')
+  const [carbs, setCarbs] = useState(editing ? backToServing(editing.carbs_per_100) : '')
+  const [unitName, setUnitName] = useState(editing?.unit_name ?? 'serving')
+  const [servingGrams, setServingGrams] = useState(
+    editing && Number(editing.unit_grams) > 0 ? String(Number(editing.unit_grams)) : ''
+  )
+  const [liquid, setLiquid] = useState(editing?.liquid ?? false)
+  const [hydrating, setHydrating] = useState(editing?.hydrating ?? false)
+  const [confirmDel, setConfirmDel] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const valid = name.trim() && Number.isFinite(Number(cal)) && Number(cal) >= 0
+  const servingG = Number(servingGrams)
+  const valid =
+    name.trim() !== '' && servingG > 0 && cal !== '' && Number.isFinite(Number(cal)) && Number(cal) >= 0
+
+  // Live preview of the per-100g the app will actually store — this is the
+  // "autocalculate" made visible, so the number is never a mystery.
+  const per100Preview =
+    servingG > 0 && cal !== '' ? Math.round((Number(cal) * 100) / servingG) : null
 
   async function submit() {
     if (!valid) return
     setError(null)
+    const per = 100 / servingG
+    const macros = {
+      cal_per_100: Math.min(1000, round1(Number(cal) * per)),
+      protein_per_100: Math.min(100, round1((Number(protein) || 0) * per)),
+      carbs_per_100: Math.min(100, round1((Number(carbs) || 0) * per)),
+      unit_name: unitName.trim() || 'serving',
+      unit_grams: round1(servingG),
+      liquid,
+      hydrating: liquid && hydrating,
+    }
     try {
-      const created = await create.mutateAsync({
-        name: name.trim(),
-        barcode: prefill.barcode ?? null,
-        cal_per_100: Number(cal),
-        protein_per_100: Number(protein) || 0,
-        carbs_per_100: Number(carbs) || 0,
-        unit_name: unitName.trim() || null,
-        unit_grams: Number(unitGrams) > 0 ? Number(unitGrams) : null,
-        liquid,
-        hydrating: liquid && hydrating,
-      })
-      onCreated(created)
+      if (editing) {
+        await update.mutateAsync({ id: editing.id, name: name.trim(), ...macros })
+        onSaved()
+      } else {
+        const created = await create.mutateAsync({
+          name: name.trim(),
+          barcode: prefill.barcode ?? null,
+          ...macros,
+        })
+        onCreated(created)
+      }
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err))
+    }
+  }
+
+  async function del() {
+    if (!editing) return
+    if (!confirmDel) {
+      setConfirmDel(true)
+      setTimeout(() => setConfirmDel(false), 2500)
+      return
+    }
+    setError(null)
+    try {
+      await remove.mutateAsync({ id: editing.id })
+      onSaved()
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err))
     }
@@ -587,6 +704,8 @@ function CreateIngredientForm({
 
   const inputCls =
     'w-full rounded-xl border border-white/[0.12] bg-black/30 px-3 py-2.5 text-sm text-white placeholder:text-zinc-600 outline-none focus:border-white/30'
+  const unitWord = unitName.trim() || 'serving'
+  const pending = create.isPending || update.isPending
 
   return (
     <motion.div
@@ -595,18 +714,32 @@ function CreateIngredientForm({
       transition={SPRING}
       className="space-y-3"
     >
-      <p className="text-sm font-semibold text-white">New ingredient</p>
-      {prefill.barcode && (
+      <p className="text-sm font-semibold text-white">{editing ? 'Edit food' : 'New food'}</p>
+      {!editing && prefill.barcode && (
         <p className="text-[10px] text-zinc-500">
-          Barcode {prefill.barcode} — enter the label&apos;s per-100g values once, it&apos;s math forever after.
+          Barcode {prefill.barcode} — enter the serving info off the label once, it&apos;s math forever after.
         </p>
       )}
       {error && <p className="text-xs text-red-400">{error}</p>}
       <input value={name} onChange={e => setName(e.target.value)} placeholder="Name" autoFocus className={inputCls} />
+
+      {/* Serving definition — "1 serving = N grams" */}
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <input value={unitName} onChange={e => setUnitName(e.target.value)} placeholder="serving" className={inputCls} />
+          <p className="mt-1 text-center text-[9px] text-zinc-600">unit name</p>
+        </div>
+        <div>
+          <input type="number" inputMode="decimal" value={servingGrams} onChange={e => setServingGrams(e.target.value)} placeholder="0" className={inputCls} />
+          <p className="mt-1 text-center text-[9px] text-zinc-600">{liquid ? 'ml' : 'grams'} / {unitWord}</p>
+        </div>
+      </div>
+
+      {/* Per-serving macros */}
       <div className="grid grid-cols-3 gap-2">
         <div>
           <input type="number" inputMode="decimal" value={cal} onChange={e => setCal(e.target.value)} placeholder="0" className={inputCls} />
-          <p className="mt-1 text-center text-[9px] text-zinc-600">cal / 100{liquid ? 'ml' : 'g'}</p>
+          <p className="mt-1 text-center text-[9px] text-zinc-600">cal / {unitWord}</p>
         </div>
         <div>
           <input type="number" inputMode="decimal" value={protein} onChange={e => setProtein(e.target.value)} placeholder="0" className={inputCls} />
@@ -617,10 +750,10 @@ function CreateIngredientForm({
           <p className="mt-1 text-center text-[9px] text-zinc-600">carbs g</p>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        <input value={unitName} onChange={e => setUnitName(e.target.value)} placeholder="Unit (scoop, slice…)" className={inputCls} />
-        <input type="number" inputMode="decimal" value={unitGrams} onChange={e => setUnitGrams(e.target.value)} placeholder="Unit grams" className={inputCls} />
-      </div>
+      {per100Preview != null && (
+        <p className="text-center text-[10px] text-zinc-500">≈ {per100Preview} cal / 100{liquid ? 'ml' : 'g'}</p>
+      )}
+
       <div className="flex gap-2">
         <button
           onClick={() => setLiquid(!liquid)}
@@ -641,17 +774,30 @@ function CreateIngredientForm({
           </button>
         )}
       </div>
+
+      {editing && (
+        <button
+          onClick={del}
+          disabled={remove.isPending}
+          className={`w-full rounded-xl border px-3 py-2 text-xs transition-colors disabled:opacity-50 ${
+            confirmDel ? 'border-red-400/50 bg-red-400/10 text-red-300' : 'border-white/[0.09] bg-white/[0.03] text-zinc-500'
+          }`}
+        >
+          {remove.isPending ? 'Deleting…' : confirmDel ? 'Tap again to delete this food' : '🗑 Delete food'}
+        </button>
+      )}
+
       <div className="flex gap-2">
         <button onClick={onCancel} className="h-11 flex-1 rounded-xl border border-white/[0.09] bg-white/[0.04] text-sm text-zinc-400">
-          Back
+          {editing ? 'Cancel' : 'Back'}
         </button>
         <button
           onClick={submit}
-          disabled={!valid || create.isPending}
+          disabled={!valid || pending}
           className="h-11 flex-[2] rounded-xl text-sm font-semibold text-black disabled:opacity-40"
           style={{ background: 'linear-gradient(180deg,#ffffff 0%,#e8e5dd 100%)' }}
         >
-          {create.isPending ? 'Saving…' : 'Add to meal'}
+          {pending ? 'Saving…' : editing ? 'Save changes' : 'Add to meal'}
         </button>
       </div>
     </motion.div>
@@ -734,6 +880,7 @@ export function MealBuilderSheet({
   const logMeal = useLogMeal()
   const createIngredient = useCreateIngredient()
   const deleteSavedMeal = useDeleteSavedMeal()
+  const updateSavedMeal = useUpdateSavedMeal()
 
   const [rows, setRows] = useState<TrayRow[]>([])
   const [query, setQuery] = useState('')
@@ -742,6 +889,8 @@ export function MealBuilderSheet({
   const [saveAs, setSaveAs] = useState(false)
   const [view, setView] = useState<'build' | 'scan' | 'create'>('build')
   const [createPrefill, setCreatePrefill] = useState<{ name?: string; barcode?: string | null }>({})
+  const [editingIngredient, setEditingIngredient] = useState<UserIngredient | null>(null)
+  const [editingMealId, setEditingMealId] = useState<string | null>(null)
   const [loadedMeal, setLoadedMeal] = useState<{ id: string; base: MealIngredient[] } | null>(null)
   const [scale, setScale] = useState(1)
   const [quickLogId, setQuickLogId] = useState<string | null>(null)
@@ -800,6 +949,48 @@ export function MealBuilderSheet({
     }
     setQuery('')
     setEditingKey(null)
+  }
+
+  // Open the create/edit sheet for a custom food.
+  function startEditIngredient(ing: UserIngredient) {
+    setEditingIngredient(ing)
+    setCreatePrefill({ name: ing.name })
+    setQuery('')
+    setError(null)
+    setView('create')
+  }
+
+  // Edit a saved recipe: load it into the tray (only reachable from the empty
+  // state, so this is always a clean load) and switch the footer into save mode.
+  function startEditMeal(meal: SavedMeal) {
+    loadSavedMeal(meal)
+    setEditingMealId(meal.id)
+  }
+
+  function resetBuilder() {
+    setRows([])
+    setEditingMealId(null)
+    setLoadedMeal(null)
+    setMealName('')
+    setScale(1)
+    setQuery('')
+    setEditingKey(null)
+  }
+
+  async function saveMealEdits() {
+    if (!editingMealId || rows.length === 0 || updateSavedMeal.isPending) return
+    setError(null)
+    try {
+      await updateSavedMeal.mutateAsync({
+        id: editingMealId,
+        name: mealName.trim() || suggestedName || 'Meal',
+        ingredients: rows.map(r => r.ing),
+      })
+      navigator.vibrate?.(15)
+      resetBuilder()
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err))
+    }
   }
 
   // Rescale only the rows that came from the loaded meal — ingredients the
@@ -920,7 +1111,7 @@ export function MealBuilderSheet({
     return <BarcodeScannerOverlay onClose={() => setView('build')} onCode={handleBarcode} />
   }
 
-  const showEmptyState = rows.length === 0 && view === 'build'
+  const showEmptyState = rows.length === 0 && view === 'build' && !editingMealId
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-[9vh]">
@@ -947,7 +1138,9 @@ export function MealBuilderSheet({
         {/* Header */}
         <div className="px-5 pt-4">
           <div className="flex items-center justify-between">
-            <p className="text-base font-bold text-white">Add food</p>
+            <p className="text-base font-bold text-white">
+              {editingMealId ? 'Edit recipe' : view === 'create' && editingIngredient ? 'Edit food' : 'Add food'}
+            </p>
             <button onClick={onClose} className="text-sm text-zinc-500 active:opacity-60">✕</button>
           </div>
         </div>
@@ -1006,7 +1199,7 @@ export function MealBuilderSheet({
                     style={{ background: '#191919', boxShadow: '0 12px 32px rgba(0,0,0,0.55), 0 0 0 1px rgba(0,0,0,0.4)' }}
                   >
                     {hits.length > 0 ? (
-                      <SearchResults hits={hits} onPick={pickHit} />
+                      <SearchResults hits={hits} onPick={pickHit} onEditCustom={startEditIngredient} />
                     ) : (
                       <p className="py-3 text-center text-xs text-zinc-600">Nothing in the library for “{query}”</p>
                     )}
@@ -1038,17 +1231,36 @@ export function MealBuilderSheet({
 
           {view === 'create' ? (
             <CreateIngredientForm
+              editing={editingIngredient}
               prefill={createPrefill}
-              onCancel={() => setView('build')}
+              onCancel={() => {
+                setView('build')
+                setEditingIngredient(null)
+              }}
               onCreated={ing => {
                 setView('build')
+                setEditingIngredient(null)
                 addIngredient(fromUserIngredient(ing, defaultGrams(ing)))
+              }}
+              onSaved={() => {
+                setView('build')
+                setEditingIngredient(null)
               }}
             />
           ) : (
             <>
-              {/* Portion scaling for a loaded saved meal */}
-              {loadedMeal && rows.length > 0 && (
+              {/* Editing an existing recipe — the tray is the recipe itself */}
+              {editingMealId && (
+                <div className="flex items-center justify-between rounded-xl border border-violet-300/30 bg-violet-300/[0.06] px-3 py-2">
+                  <span className="text-[11px] text-violet-200">Editing recipe · add or remove ingredients</span>
+                  <button onClick={resetBuilder} className="text-[11px] text-zinc-400 active:text-white">
+                    Cancel
+                  </button>
+                </div>
+              )}
+
+              {/* Portion scaling for a loaded saved meal (not while editing it) */}
+              {loadedMeal && !editingMealId && rows.length > 0 && (
                 <motion.div layout className="flex items-center gap-1.5" transition={SPRING}>
                   <span className="text-[10px] uppercase tracking-wider text-zinc-600">Portion</span>
                   {SCALES.map(s => (
@@ -1099,6 +1311,7 @@ export function MealBuilderSheet({
                               meal={meal}
                               logging={quickLogId === meal.id}
                               onLoad={() => loadSavedMeal(meal)}
+                              onEdit={() => startEditMeal(meal)}
                               onQuickLog={() => quickLog(meal)}
                               onDelete={() => deleteSavedMeal.mutate({ id: meal.id })}
                             />
@@ -1159,15 +1372,27 @@ export function MealBuilderSheet({
                 </button>
               )}
             </div>
-            <motion.button
-              whileTap={{ scale: 0.98 }}
-              onClick={log}
-              disabled={logMeal.isPending}
-              className="h-12 w-full rounded-xl text-sm font-semibold text-black disabled:opacity-40"
-              style={{ background: 'linear-gradient(180deg,#ffffff 0%,#e8e5dd 100%)' }}
-            >
-              {logMeal.isPending ? 'Logging…' : `Log ${totals.cal.toLocaleString()} cal`}
-            </motion.button>
+            {editingMealId ? (
+              <motion.button
+                whileTap={{ scale: 0.98 }}
+                onClick={saveMealEdits}
+                disabled={updateSavedMeal.isPending}
+                className="h-12 w-full rounded-xl text-sm font-semibold text-black disabled:opacity-40"
+                style={{ background: 'linear-gradient(180deg,#ffffff 0%,#e8e5dd 100%)' }}
+              >
+                {updateSavedMeal.isPending ? 'Saving…' : 'Save recipe changes'}
+              </motion.button>
+            ) : (
+              <motion.button
+                whileTap={{ scale: 0.98 }}
+                onClick={log}
+                disabled={logMeal.isPending}
+                className="h-12 w-full rounded-xl text-sm font-semibold text-black disabled:opacity-40"
+                style={{ background: 'linear-gradient(180deg,#ffffff 0%,#e8e5dd 100%)' }}
+              >
+                {logMeal.isPending ? 'Logging…' : `Log ${totals.cal.toLocaleString()} cal`}
+              </motion.button>
+            )}
           </motion.div>
         )}
       </motion.div>

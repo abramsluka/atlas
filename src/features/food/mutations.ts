@@ -179,6 +179,70 @@ export function useDeleteSavedMeal() {
   })
 }
 
+export interface UpdateSavedMealInput {
+  id: string
+  name?: string
+  emoji?: string | null
+  ingredients?: MealIngredient[]
+}
+
+export function useUpdateSavedMeal() {
+  const qc = useQueryClient()
+  return useMutation<SavedMeal, Error, UpdateSavedMealInput>({
+    mutationFn: async ({ id, ...updates }) => {
+      const res = await fetch(`/api/health/food/meals/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(typeof err.error === 'string' ? err.error : 'Failed to update recipe')
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['saved-meals'] })
+    },
+  })
+}
+
+export type UpdateIngredientInput = Partial<CreateIngredientInput> & { id: string }
+
+export function useUpdateIngredient() {
+  const qc = useQueryClient()
+  return useMutation<UserIngredient, Error, UpdateIngredientInput>({
+    mutationFn: async ({ id, ...updates }) => {
+      const res = await fetch(`/api/health/food/ingredients/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(typeof err.error === 'string' ? err.error : 'Failed to update food')
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['user-ingredients'] })
+    },
+  })
+}
+
+export function useDeleteIngredient() {
+  const qc = useQueryClient()
+  return useMutation<void, Error, { id: string }>({
+    mutationFn: async ({ id }) => {
+      const res = await fetch(`/api/health/food/ingredients/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to delete food')
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['user-ingredients'] })
+    },
+  })
+}
+
 export function useRepeatFoodLog() {
   const qc = useQueryClient()
   return useMutation<FoodLog & { water_logged: boolean }, Error, { id: string }>({
