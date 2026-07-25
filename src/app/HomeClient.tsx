@@ -16,6 +16,7 @@ import ApiKeyBanner from './ApiKeyBanner'
 import { computeRing, CIRC, type RingState } from '@/features/home/dayRing'
 import { checkNoApiKey, type KeyProvider } from '@/lib/apiKeyError'
 import NoApiKeyNotice from '@/components/NoApiKeyNotice'
+import ChatText from '@/components/ChatText'
 
 // Code-split the Three.js HUD so it never enters the main bundle — loads only
 // when the user opens map view. ssr:false because it's a WebGL/client-only view.
@@ -912,12 +913,13 @@ function BriefingCard({ initialContent }: { initialContent?: string | null }) {
         </p>
       )}
       {!loading && coachText && (
-        <p className="text-sm text-zinc-300 leading-relaxed mb-4 whitespace-pre-wrap">
-          {coachText}
-          {coachStreaming && (
+        <ChatText
+          className="text-sm text-zinc-300 leading-relaxed mb-4"
+          text={coachText}
+          cursor={coachStreaming ? (
             <span className="inline-block w-[2px] h-[14px] bg-zinc-400 ml-0.5 align-middle animate-pulse" />
-          )}
-        </p>
+          ) : undefined}
+        />
       )}
       {!loading && !coachText && coachStreaming && (
         <p className="text-sm text-zinc-500 mb-4 leading-relaxed">
@@ -977,7 +979,8 @@ function SundayModal({ onDismiss, initialReports }: { onDismiss: () => void; ini
 
   if (!report) return null
 
-  const preview = report.report_text.split(/[.!?]/).slice(0, 3).join('. ').trim() + '.'
+  const plainText = report.report_text.replace(/[*_#`]/g, '').replace(/^\s*-\s+/gm, '')
+  const preview = plainText.split(/[.!?]/).slice(0, 3).join('. ').trim() + '.'
 
   return (
     <div

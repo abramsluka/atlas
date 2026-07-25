@@ -471,7 +471,7 @@ function TheVoid({
             <span className="text-[9px] font-bold tracking-[0.2em] uppercase text-green-600">✦ ATLAS NOTICED</span>
             <span className="text-[10px] text-zinc-600">{relativeTime(synthesis.created_at)}</span>
           </div>
-          <p className="text-sm text-zinc-300 leading-relaxed">{synthesis.synthesis_text}</p>
+          <ChatText className="text-sm text-zinc-300 leading-relaxed" text={synthesis.synthesis_text} />
         </div>
       )}
 
@@ -587,7 +587,14 @@ function ReportsTab() {
 
   function extractSection(text: string, heading: string): string {
     const match = text.match(new RegExp(`\\*\\*${heading}\\*\\*[\\s\\S]*?(?=\\*\\*|$)`, 'i'))
-    return match ? match[0].replace(/\*\*[^*]+\*\*/g, '').trim().slice(0, 120) + '…' : ''
+    if (!match) return ''
+    // Drop the heading itself, then strip markdown markers (keep bolded words)
+    return match[0]
+      .replace(new RegExp(`\\*\\*${heading}\\*\\*:?`, 'i'), '')
+      .replace(/[*_#`]/g, '')
+      .replace(/^\s*-\s+/gm, '')
+      .trim()
+      .slice(0, 120) + '…'
   }
 
   return (
@@ -632,9 +639,7 @@ function ReportsTab() {
             </div>
             {expanded === report.id && (
               <div className="px-4 pb-4 border-t border-white/[0.06]">
-                <div className="mt-3 text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap">
-                  {report.report_text}
-                </div>
+                <ChatText className="mt-3 text-sm text-zinc-300 leading-relaxed" text={report.report_text} />
               </div>
             )}
           </div>
@@ -951,12 +956,13 @@ export default function MentorClient() {
               }}
             >
               <span className="text-[9px] font-bold tracking-[0.2em] uppercase text-green-800 block mb-1">✦ ATLAS NOTICED</span>
-              <p className="text-[11px] text-zinc-400 leading-relaxed">
-                {typewriterText}
-                {typewriterText.length > 0 && typewriterText.length < (synthesisText?.length ?? 0) && (
+              <ChatText
+                className="text-[11px] text-zinc-400 leading-relaxed"
+                text={typewriterText}
+                cursor={typewriterText.length > 0 && typewriterText.length < (synthesisText?.length ?? 0) ? (
                   <span className="inline-block w-[1px] h-[11px] bg-green-700/60 ml-0.5 align-middle animate-pulse" />
-                )}
-              </p>
+                ) : undefined}
+              />
             </div>
           ) : (
             <p className="text-[11px] text-zinc-600 italic">

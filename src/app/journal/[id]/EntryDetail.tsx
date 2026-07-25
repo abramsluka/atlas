@@ -10,6 +10,7 @@ import type { EntryKind, JournalEntry, PlanItem } from '@/features/journal/types
 import { useVoiceRecorder, formatElapsed } from '@/features/journal/useVoiceRecorder'
 import { uploadAudioToStorage } from '@/features/journal/uploadAudio'
 import { checkNoApiKey, NoApiKeyClientError, type KeyProvider } from '@/lib/apiKeyError'
+import ChatText from '@/components/ChatText'
 import NoApiKeyNotice from '@/components/NoApiKeyNotice'
 
 interface Props {
@@ -782,10 +783,11 @@ export default function EntryDetail({ initialEntry }: Props) {
                       borderLeft: '2px solid rgba(74,222,128,0.3)',
                     }}
                   >
-                    <p className="text-[15px] italic leading-relaxed text-zinc-300">
-                      {displayReflection}
-                      {streaming && <span className="ml-1 inline-block h-[15px] w-[2px] bg-green-400/60 align-middle animate-pulse" />}
-                    </p>
+                    <ChatText
+                      className="text-[15px] italic leading-relaxed text-zinc-300"
+                      text={displayReflection ?? ''}
+                      cursor={streaming ? <span className="ml-1 inline-block h-[15px] w-[2px] bg-green-400/60 align-middle animate-pulse" /> : undefined}
+                    />
                   </div>
                   <div className="mt-2 flex gap-4">
                     {savedReflection && !streaming && (
@@ -836,7 +838,7 @@ export default function EntryDetail({ initialEntry }: Props) {
                                 borderLeft: '2px solid rgba(74,222,128,0.25)',
                               }}
                             >
-                              <p className="text-sm italic leading-relaxed text-zinc-300">{msg.content}</p>
+                              <ChatText className="text-sm italic leading-relaxed text-zinc-300" text={msg.content} />
                               <button
                                 onClick={() => handleGoLonger(i)}
                                 disabled={isReplying}
@@ -861,10 +863,11 @@ export default function EntryDetail({ initialEntry }: Props) {
                         borderLeft: '2px solid rgba(74,222,128,0.25)',
                       }}
                     >
-                      <p className="text-sm italic leading-relaxed text-zinc-300">
-                        {streamingReply}
-                        <span className="ml-1 inline-block h-[13px] w-[2px] bg-green-400/60 align-middle animate-pulse" />
-                      </p>
+                      <ChatText
+                        className="text-sm italic leading-relaxed text-zinc-300"
+                        text={streamingReply}
+                        cursor={<span className="ml-1 inline-block h-[13px] w-[2px] bg-green-400/60 align-middle animate-pulse" />}
+                      />
                     </div>
                   )}
 

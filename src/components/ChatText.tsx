@@ -23,7 +23,7 @@ function renderInline(text: string, kb: string): React.ReactNode[] {
   return nodes
 }
 
-export default function ChatText({ text, className }: { text: string; className?: string }) {
+export default function ChatText({ text, className, cursor }: { text: string; className?: string; cursor?: React.ReactNode }) {
   const lines = text.split('\n')
   const blocks: React.ReactNode[] = []
   let list: string[] = []
@@ -73,6 +73,23 @@ export default function ChatText({ text, className }: { text: string; className?
     blocks.push(<p key={`p${idx}`} className="my-0.5">{renderInline(t, `p${idx}`)}</p>)
   })
   flushList('end')
+
+  // Streaming caret: tuck it inline at the end of the last paragraph so it
+  // doesn't wrap onto its own line mid-stream.
+  if (cursor != null) {
+    const last = blocks[blocks.length - 1]
+    if (React.isValidElement(last) && last.type === 'p') {
+      const kids = (last.props as { children?: React.ReactNode }).children
+      blocks[blocks.length - 1] = React.cloneElement(
+        last as React.ReactElement<{ children?: React.ReactNode }>,
+        {},
+        ...(Array.isArray(kids) ? kids : [kids]),
+        <React.Fragment key="cursor">{cursor}</React.Fragment>
+      )
+    } else {
+      blocks.push(<span key="cursor">{cursor}</span>)
+    }
+  }
 
   return <div className={className}>{blocks}</div>
 }

@@ -12,6 +12,7 @@ import {
 } from '@/features/debloat/types'
 import { checkNoApiKey, type KeyProvider } from '@/lib/apiKeyError'
 import NoApiKeyNotice from '@/components/NoApiKeyNotice'
+import ChatText from '@/components/ChatText'
 
 interface Props {
   today: string
@@ -267,7 +268,7 @@ export default function DebloatClient({ today, initialTodayLog, initialHistory }
           {analyzeKeyProvider ? (
             <NoApiKeyNotice provider={analyzeKeyProvider} className="mt-4" />
           ) : analyzeText ? (
-            <p className="mt-4 text-sm leading-relaxed text-zinc-300">{analyzeText}</p>
+            <ChatText className="mt-4 text-sm leading-relaxed text-zinc-300" text={analyzeText} />
           ) : null}
         </section>
 

@@ -4,6 +4,7 @@ import { useState, useRef, useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useFoodCoachMessages } from '@/features/food/queries'
 import { checkNoApiKey, noApiKeyMessage } from '@/lib/apiKeyError'
+import ChatText from '@/components/ChatText'
 import type { FoodLog } from '@/features/food/types'
 
 const CHIPS = [
@@ -116,10 +117,12 @@ export function FoodCoachSection({ today, meals, profile }: Props) {
           {!hasMeals ? (
             <p className="text-xs italic text-zinc-600">Log a meal and I will take a look.</p>
           ) : summaryGenerating || summaryStream ? (
-            <p className="text-xs text-zinc-300 leading-relaxed">{summaryStream || <span className="text-zinc-600">…</span>}</p>
+            summaryStream
+              ? <ChatText className="text-xs text-zinc-300 leading-relaxed" text={summaryStream} />
+              : <p className="text-xs text-zinc-300 leading-relaxed"><span className="text-zinc-600">…</span></p>
           ) : summaryMsg ? (
             <div className="flex items-start gap-2">
-              <p className="flex-1 text-xs text-zinc-300 leading-relaxed">{summaryMsg.content}</p>
+              <ChatText className="flex-1 text-xs text-zinc-300 leading-relaxed" text={summaryMsg.content} />
               <button
                 onClick={generateSummary}
                 className="shrink-0 mt-0.5 text-zinc-600 hover:text-zinc-400 transition-colors"
@@ -152,15 +155,13 @@ export function FoodCoachSection({ today, meals, profile }: Props) {
           <div className="space-y-2 mb-3">
             {threadMessages.map(msg => (
               <div key={msg.id} className={msg.role === 'user' ? 'flex justify-end' : ''}>
-                <p
-                  className={
-                    msg.role === 'user'
-                      ? 'inline-block max-w-[82%] rounded-2xl bg-white/[0.07] px-3 py-2 text-xs text-zinc-300'
-                      : 'text-xs text-zinc-300 leading-relaxed pr-2'
-                  }
-                >
-                  {msg.content}
-                </p>
+                {msg.role === 'user' ? (
+                  <p className="inline-block max-w-[82%] rounded-2xl bg-white/[0.07] px-3 py-2 text-xs text-zinc-300">
+                    {msg.content}
+                  </p>
+                ) : (
+                  <ChatText className="text-xs text-zinc-300 leading-relaxed pr-2" text={msg.content} />
+                )}
               </div>
             ))}
             {pendingQuestion && (
@@ -171,9 +172,9 @@ export function FoodCoachSection({ today, meals, profile }: Props) {
               </div>
             )}
             {(asking || askStream) && (
-              <p className="text-xs text-zinc-300 leading-relaxed pr-2">
-                {askStream || <span className="text-zinc-600">…</span>}
-              </p>
+              askStream
+                ? <ChatText className="text-xs text-zinc-300 leading-relaxed pr-2" text={askStream} />
+                : <p className="text-xs text-zinc-300 leading-relaxed pr-2"><span className="text-zinc-600">…</span></p>
             )}
           </div>
         )}

@@ -32,6 +32,7 @@ import { useLogFood, useUpdateFoodLog, useDeleteFoodLog, useCalculateCalorieTarg
 import { resizeImage } from '@/features/food/resize'
 import { checkNoApiKey, noApiKeyMessage, NoApiKeyClientError, type KeyProvider } from '@/lib/apiKeyError'
 import NoApiKeyNotice from '@/components/NoApiKeyNotice'
+import ChatText from '@/components/ChatText'
 import { FoodWizardSheet, BarcodeFlow, FrequentsRow } from './FoodEntry'
 import { MealBuilderSheet } from './MealBuilder'
 import { PhotoMealCard } from './PhotoMealCard'
@@ -2175,7 +2176,7 @@ function CalorieTargetSheet({
                 </div>
               </div>
             )}
-            <p className="text-xs text-zinc-400 leading-relaxed">{result.reasoning}</p>
+            <ChatText className="text-xs text-zinc-400 leading-relaxed" text={result.reasoning} />
             {editedMacros && !editingMacros && (
               <p className="text-[10px] text-zinc-600">
                 Manually adjusted from {result.daily_calories.toLocaleString()} cal · {result.protein_g}g P · {result.carbs_g}g C
@@ -2539,9 +2540,10 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
                       </div>
                     </div>
                     {(mealFeedback[meal.id] || meal.coach_feedback) && (
-                      <p className="px-3 pb-2.5 text-xs italic text-zinc-400 leading-relaxed border-t border-white/[0.05] pt-2">
-                        {mealFeedback[meal.id] || meal.coach_feedback}
-                      </p>
+                      <ChatText
+                        className="px-3 pb-2.5 text-xs italic text-zinc-400 leading-relaxed border-t border-white/[0.05] pt-2"
+                        text={mealFeedback[meal.id] || meal.coach_feedback || ''}
+                      />
                     )}
                   </div>
                 )}
@@ -2743,7 +2745,7 @@ function HealthCoach() {
         {streaming ? 'Thinking…' : 'Get coach feedback'}
       </button>
       {text && (
-        <p className="mt-3 text-sm leading-relaxed text-zinc-300">{text}</p>
+        <ChatText className="mt-3 text-sm leading-relaxed text-zinc-300" text={text} />
       )}
     </section>
   )

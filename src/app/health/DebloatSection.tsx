@@ -4,6 +4,7 @@ import { useState, useRef, useCallback } from 'react'
 import { useDebloatLog, useDebloatHistory } from '@/features/debloat/queries'
 import { useUpsertDebloatLog } from '@/features/debloat/mutations'
 import { CHECKLIST_ITEMS, BLOAT_LEVELS, GUIDE_SECTIONS } from '@/features/debloat/types'
+import ChatText from '@/components/ChatText'
 
 const BLOAT_COLORS: Record<number, string> = {
   1: '#4ade80',
@@ -206,7 +207,7 @@ export default function DebloatSection({ today }: { today: string }) {
           {analyzing ? 'Analyzing…' : previewUrl ? 'Take another selfie' : 'Take a selfie'}
         </button>
 
-        {analyzeText && <p className="mt-4 text-sm leading-relaxed text-zinc-300">{analyzeText}</p>}
+        {analyzeText && <ChatText className="mt-4 text-sm leading-relaxed text-zinc-300" text={analyzeText} />}
       </section>
 
       {/* Guide */}
