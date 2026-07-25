@@ -12,7 +12,7 @@ import * as THREE from 'three'
 const METEOR_RATE = 0.4
 const METEOR_SIZE = 0.8
 const TWINKLE = 0.6
-const NEBULA = 0.8
+const NEBULA = 0 // purple nebula clouds off for now — restore with 0.8
 const DUST = 0.25
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a)
