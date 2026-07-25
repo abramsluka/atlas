@@ -14,18 +14,21 @@ export default async function HomePage() {
   const tz = await getUserTimezone(user.id)
   const today = toLocalDate(tz)
 
-  // "Sam's Dashboard" — first name from the account's full_name (set in
-  // Supabase user_metadata), falling back to the email local part.
-  const fullName = (user.user_metadata?.full_name as string | undefined)?.trim()
-  const firstName = fullName ? fullName.split(/\s+/)[0] : (user.email?.split('@')[0] ?? 'Your')
-  const displayName = firstName.charAt(0).toUpperCase() + firstName.slice(1)
-
-  // Fetch the checkin + all home-card data in parallel, server-side (next to
-  // Supabase) so the browser doesn't make ~5 cross-region calls on mount.
-  const [checkinRes, home] = await Promise.all([
+  // Fetch the checkin + all home-card data (plus the dashboard name) in parallel,
+  // server-side (next to Supabase) so the browser doesn't make ~5 cross-region
+  // calls on mount.
+  const [checkinRes, home, settingsRes] = await Promise.all([
     db.from('daily_checkins').select('*').eq('user_id', user.id).eq('date', today).maybeSingle(),
     getHomeInitialData(db, user.id, today, tz),
+    db.from('user_settings').select('first_name').eq('user_id', user.id).maybeSingle(),
   ])
+
+  // "Sam's Dashboard" — the user's first name from user_settings (read fresh
+  // from the DB, so it never lags behind a stale auth-session cookie). Email
+  // local part is only a defensive fallback so the title is never blank.
+  const settingsName = (settingsRes.data?.first_name as string | null | undefined)?.trim()
+  const rawFirst = settingsName || user.email?.split('@')[0] || 'Your'
+  const displayName = rawFirst.charAt(0).toUpperCase() + rawFirst.slice(1)
 
   return (
     <HomeClient
