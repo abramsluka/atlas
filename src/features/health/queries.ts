@@ -138,14 +138,28 @@ export function useOuraHistory(days: number, enabled: boolean) {
   })
 }
 
-// Today's Apple Health steps (synced via the Shortcuts bridge). Backend-only
-// data surfaced as a single tile; null when nothing synced today.
-export function useAppleSteps(today: string) {
-  return useQuery({
+export interface AppleHealthStatus {
+  daysOfData: number
+  lastSync: string | null
+  todaySteps: number | null
+  latest: {
+    date: string
+    steps: number | null
+    active_calories: number | null
+    vo2_max: number | null
+  } | null
+}
+
+// Apple Health status (steps, active energy, VO₂ max) synced via the Shortcuts
+// bridge. Surfaces the latest synced day for the wearables card; latest is null
+// when the user has never set up Apple Health sync.
+export function useAppleHealth(today: string) {
+  return useQuery<AppleHealthStatus>({
     queryKey: ['apple-status', today],
-    queryFn: async (): Promise<{ todaySteps: number | null }> => {
+    queryFn: async (): Promise<AppleHealthStatus> => {
+      const empty: AppleHealthStatus = { daysOfData: 0, lastSync: null, todaySteps: null, latest: null }
       const res = await fetch('/api/health/apple/status')
-      if (!res.ok) return { todaySteps: null }
+      if (!res.ok) return empty
       return res.json()
     },
     staleTime: 60_000,

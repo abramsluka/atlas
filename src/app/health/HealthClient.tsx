@@ -12,6 +12,7 @@ import {
   useHealthProfile,
   useWaterHistory,
   useOuraData,
+  useAppleHealth,
 } from '@/features/health/queries'
 import { useQueryClient } from '@tanstack/react-query'
 import {
@@ -97,6 +98,20 @@ function formatDuration(seconds: number | null | undefined): string {
   return `${h}h ${m}m`
 }
 
+function fmtInt(n: number | null | undefined): string {
+  return n == null ? '--' : Math.round(n).toLocaleString('en-US')
+}
+
+function relTimeShort(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const h = Math.floor(mins / 60)
+  if (h < 24) return `${h}h ago`
+  return `${Math.floor(h / 24)}d ago`
+}
+
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
@@ -117,6 +132,9 @@ function WearablesSection({
   today: string
 }) {
   const { data: oura, isPending: ouraPending } = useOuraData(today, hasOura, initialOura)
+  const { data: apple } = useAppleHealth(today)
+  const appleLatest = apple?.latest ?? null
+  const hasApple = !!appleLatest && (apple?.daysOfData ?? 0) > 0
   const qc = useQueryClient()
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -185,6 +203,36 @@ function WearablesSection({
             </div>
           )}
         </div>
+
+        {/* Apple Watch — only shown once Apple Health has synced data */}
+        {hasApple && (
+          <div className="bg-[#111113] border border-white/[0.06] rounded-[18px] p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-xs font-medium text-zinc-500">Apple Watch</p>
+              {apple?.lastSync && (
+                <span className="text-[10px] text-zinc-600">{relTimeShort(apple.lastSync)}</span>
+              )}
+            </div>
+            <div className="space-y-4">
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-zinc-500">Steps</p>
+                <p className="text-3xl font-bold text-white">{fmtInt(appleLatest?.steps)}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide text-zinc-500">Active cal</p>
+                  <p className="text-sm font-semibold text-white">{fmtInt(appleLatest?.active_calories)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide text-zinc-500">VO₂ Max</p>
+                  <p className="text-sm font-semibold text-white">
+                    {appleLatest?.vo2_max != null ? appleLatest.vo2_max.toFixed(1) : '--'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Freshness footer */}
