@@ -1002,8 +1002,8 @@ function StackTracker({
       <StackTicker supplements={allSupplements} logs={allLogs} />
 
       {/* Header */}
-      <div className="mb-4 flex items-stretch justify-between gap-3">
-        <div>
+      <div className="mb-4 flex items-end justify-between gap-3">
+        <div className="min-w-0">
           <div className="font-mono text-[11px] font-semibold tracking-[0.16em] uppercase text-zinc-500 mb-1.5">
             Daily stack
           </div>
@@ -1019,10 +1019,10 @@ function StackTracker({
         {totalSlots > 0 && (
           <button
             onClick={handleLogAll}
-            className="flex-none self-stretch rounded-[10px] border px-4 text-[12.5px] font-semibold whitespace-nowrap"
+            className="flex-none rounded-[8px] border px-2.5 py-1 text-[10.5px] font-semibold whitespace-nowrap"
             style={{ color: '#dffbe9', borderColor: 'rgba(74,222,128,0.4)', background: 'radial-gradient(120% 150% at 50% 0%, rgba(74,222,128,0.18), transparent)' }}
           >
-            {allTaken ? '↺ Reset today' : 'Log all'}
+            {allTaken ? '↺ Reset' : 'Log all'}
           </button>
         )}
       </div>
