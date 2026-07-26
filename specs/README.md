@@ -27,6 +27,9 @@ iterated on, then implemented ("run the spec").
 - [VOICE_SPEC.md](voice/VOICE_SPEC.md) — Atlas voice logging ("The Orb").
 - [ORB_SUGGESTIONS_SPEC.md](voice/ORB_SUGGESTIONS_SPEC.md) — suggested replies, learned commands, mic behavior.
 
+## health/
+- [APPLE_HEALTH_SYNC_SPEC.md](health/APPLE_HEALTH_SYNC_SPEC.md) — easy Apple Health onboarding (pre-built iCloud Shortcut + scheduled Automations) so a family member can connect in a few taps; surface today's steps on the wearables card. **Planned, not built.**
+
 ## platform/
 - [MCP_SERVER_SPEC.md](platform/MCP_SERVER_SPEC.md) — Atlas MCP server (Claude tools over remote MCP) + table gotchas.
 
