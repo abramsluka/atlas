@@ -3,6 +3,7 @@
   "short_name": "Atlas",
   "start_url": "/",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#050508",
   "theme_color": "#050508",
   "icons": [

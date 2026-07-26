@@ -342,9 +342,29 @@ export function BarcodeScannerOverlay({
   onCode: (code: string) => void
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const trackRef = useRef<MediaStreamTrack | null>(null)
   const firedRef = useRef(false)
   const [cameraError, setCameraError] = useState<string | null>(null)
   const [manual, setManual] = useState('')
+  const [zoomRange, setZoomRange] = useState<{ min: number; max: number; step: number } | null>(null)
+  const [zoom, setZoom] = useState<number | null>(null)
+  const [torchSupported, setTorchSupported] = useState(false)
+  const [torchOn, setTorchOn] = useState(false)
+
+  function applyZoom(z: number) {
+    setZoom(z)
+    trackRef.current
+      ?.applyConstraints({ advanced: [{ zoom: z }] } as unknown as MediaTrackConstraints)
+      .catch(() => {})
+  }
+
+  function toggleTorch() {
+    const next = !torchOn
+    trackRef.current
+      ?.applyConstraints({ advanced: [{ torch: next }] } as unknown as MediaTrackConstraints)
+      .then(() => setTorchOn(next))
+      .catch(() => {})
+  }
 
   useEffect(() => {
     let stream: MediaStream | null = null
@@ -353,10 +373,24 @@ export function BarcodeScannerOverlay({
 
     ;(async () => {
       try {
+        // Keep the scanner upright — a mid-scan rotation re-crops the camera
+        // feed and throws off lining up the barcode. Works on Android and
+        // installed PWAs; iOS Safari rejects it (rely on the system portrait
+        // lock there), so swallow the failure.
+        try {
+          await (screen.orientation as unknown as { lock?: (o: string) => Promise<void> })?.lock?.('portrait')
+        } catch { /* unsupported context — ignore */ }
+
         // Lazy import — WASM only loads when the scanner opens
         const { BarcodeDetector } = await import('barcode-detector/ponyfill')
+        // Request a high-res rear stream so small or slightly-distant barcodes
+        // stay sharp enough to read without holding the phone right up to them.
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' },
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
         })
         if (cancelled) {
           stream.getTracks().forEach(t => t.stop())
@@ -366,6 +400,29 @@ export function BarcodeScannerOverlay({
           videoRef.current.srcObject = stream
           await videoRef.current.play()
         }
+
+        // Best-effort camera tuning + progressive-enhancement controls. All of
+        // these are absent on iOS Safari, so each is guarded and the UI only
+        // shows a control when the device actually reports it.
+        const track = stream.getVideoTracks()[0] ?? null
+        trackRef.current = track
+        const caps = (track?.getCapabilities?.() ?? {}) as MediaTrackCapabilities & {
+          zoom?: { min: number; max: number; step: number }
+          torch?: boolean
+          focusMode?: string[]
+        }
+        if (caps.focusMode?.includes('continuous')) {
+          track
+            ?.applyConstraints({ advanced: [{ focusMode: 'continuous' }] } as unknown as MediaTrackConstraints)
+            .catch(() => {})
+        }
+        if (caps.zoom && typeof caps.zoom.max === 'number' && caps.zoom.max > (caps.zoom.min ?? 1)) {
+          setZoomRange({ min: caps.zoom.min, max: caps.zoom.max, step: caps.zoom.step || 0.1 })
+          const current = (track?.getSettings() as MediaTrackSettings & { zoom?: number })?.zoom
+          setZoom(current ?? caps.zoom.min)
+        }
+        if (caps.torch) setTorchSupported(true)
+
         const detector = new BarcodeDetector({
           formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e'],
         })
@@ -394,6 +451,10 @@ export function BarcodeScannerOverlay({
       cancelled = true
       if (interval) clearInterval(interval)
       stream?.getTracks().forEach(t => t.stop())
+      trackRef.current = null
+      try {
+        (screen.orientation as unknown as { unlock?: () => void })?.unlock?.()
+      } catch { /* ignore */ }
     }
   }, [onCode])
 
@@ -413,12 +474,42 @@ export function BarcodeScannerOverlay({
         ) : (
           <>
             <video ref={videoRef} playsInline muted className="absolute inset-0 h-full w-full object-cover" />
+
+            {/* Flashlight — only when the camera reports torch support */}
+            {torchSupported && (
+              <button
+                onClick={toggleTorch}
+                aria-label="Toggle flashlight"
+                className={`absolute top-3 right-3 z-10 rounded-full p-2.5 text-lg backdrop-blur ${torchOn ? 'bg-emerald-300/20' : 'bg-black/40'}`}
+              >
+                {torchOn ? '🔦' : '💡'}
+              </button>
+            )}
+
             {/* Reticle */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-[80%] max-w-sm h-36 rounded-2xl border-2 border-white/50 relative">
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none px-6">
+              <p className="mb-3 text-xs text-white/70 text-center">Line up the barcode inside the box</p>
+              <div className="w-[86%] max-w-md h-48 rounded-2xl border-2 border-white/60 relative">
                 <div className="absolute left-3 right-3 top-1/2 h-0.5 bg-emerald-300/80 animate-pulse" />
               </div>
             </div>
+
+            {/* Zoom — only when the camera reports zoom support */}
+            {zoomRange && zoom != null && (
+              <div className="absolute inset-x-0 bottom-4 z-10 flex items-center gap-3 px-8">
+                <span className="text-base">🔍</span>
+                <input
+                  type="range"
+                  min={zoomRange.min}
+                  max={zoomRange.max}
+                  step={zoomRange.step}
+                  value={zoom}
+                  onChange={e => applyZoom(Number(e.target.value))}
+                  aria-label="Zoom"
+                  className="flex-1 accent-emerald-300"
+                />
+              </div>
+            )}
           </>
         )}
       </div>
