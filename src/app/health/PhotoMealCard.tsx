@@ -245,6 +245,7 @@ export function PhotoMealCard({
             {' · '}
             {Math.round(Number(meal.carbs_g))}g C
             {meal.fat_g != null ? ` · ${Math.round(Number(meal.fat_g))}g F` : ''}
+            {meal.taken_at ? ` · ${new Date(meal.taken_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : ''}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
