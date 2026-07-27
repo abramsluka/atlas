@@ -1125,9 +1125,11 @@ export default function HomeClient({
     <>
       <main className="nebula-home min-h-screen px-4 pb-24 pt-14">
         {/* Header */}
-        <div className="flex items-start justify-between mb-4">
+        <div className="flex items-start justify-between gap-3 mb-4">
+          {/* Fluid size so the title never pushes the map toggle off-screen on
+              narrow phones; min-w-0 + wrapping is the fallback for long names. */}
           <h1
-            className="text-[2.7rem] font-bold tracking-tight whitespace-nowrap"
+            className="min-w-0 text-[clamp(1.9rem,8.8vw,2.7rem)] font-bold tracking-tight leading-[1.05]"
             style={{
               background: 'linear-gradient(180deg, #FFFFFF 0%, #C7C4BC 120%)',
               WebkitBackgroundClip: 'text',
@@ -1141,7 +1143,7 @@ export default function HomeClient({
             onClick={toggleMapView}
             whileTap={{ scale: 0.95 }}
             transition={{ duration: 0.2 }}
-            className="w-9 h-9 flex-shrink-0 rounded-full flex items-center justify-center mt-1"
+            className="w-9 h-9 flex-shrink-0 rounded-full flex items-center justify-center mt-0.5"
             style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
             aria-label="Switch to Atlas map"
           >
