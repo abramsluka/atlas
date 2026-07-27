@@ -58,6 +58,9 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|icon-.*\\.png|textures/).*)',
+    // emoji-data.json is a static asset fetched by <emoji-picker>; routing it
+    // through the session refresh means a stale cookie 307s it to the login
+    // HTML and the picker silently falls back to its text input.
+    '/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|emoji-data.json|icon-.*\\.png|textures/).*)',
   ],
 }

@@ -1,11 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { EMOJI_CHOICES, foodEmoji } from '@/features/food/foodEmoji'
+import EmojiPickerPanel from '@/components/EmojiPickerPanel'
 
-// Emoji override control for a food entry. Shows the currently resolved emoji
-// (auto-assigned from the name unless the user picked one); tapping opens a
-// grid plus a free-text field for any emoji the keyboard can produce.
+// Emoji override control for a food entry, in three tiers:
+//   1. Auto — resolved from the item name, no interaction (the usual case).
+//   2. Grid — one tap over the common food emoji, which covers nearly every fix.
+//   3. Search — the shared EmojiPickerPanel for anything else. Deliberately the
+//      last tier: it lazy-loads ~440KB of emoji data, so it only pays off when
+//      the user actually wants something outside the food set.
 export default function FoodEmojiPicker({
   name,
   source,
@@ -18,10 +23,15 @@ export default function FoodEmojiPicker({
   onChange: (emoji: string | null) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [searching, setSearching] = useState(false)
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+
   const shown = foodEmoji(name, { source, override: value })
 
   function pick(emoji: string | null) {
     onChange(emoji)
+    setSearching(false)
     setOpen(false)
   }
 
@@ -68,14 +78,49 @@ export default function FoodEmojiPicker({
             ))}
           </div>
 
-          <input
-            value={value ?? ''}
-            onChange={e => onChange(e.target.value.trim().slice(0, 8) || null)}
-            placeholder="or type any emoji"
-            maxLength={8}
-            className="mt-2 w-full rounded-lg border border-white/[0.12] bg-black/25 px-2.5 py-2 text-sm text-white placeholder-zinc-600 outline-none focus:border-white/40"
-          />
+          <button
+            type="button"
+            onClick={() => setSearching(true)}
+            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-white/[0.12] bg-black/25 py-2 text-xs font-semibold text-zinc-300 transition-colors hover:bg-white/[0.06]"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="7" /><path d="m20 20-3.2-3.2" />
+            </svg>
+            Search all emoji
+          </button>
         </div>
+      )}
+
+      {/* Portaled above the meal sheet: the sheet scrolls and clips, and the
+          element brings its own scrolling, so nesting it inside would fight. */}
+      {searching && mounted && createPortal(
+        <div
+          className="fixed inset-0 z-[80] flex items-end justify-center bg-black/70 p-4"
+          style={{ backdropFilter: 'blur(6px)', paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}
+          onClick={() => setSearching(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-white/[0.14] bg-[#111113] p-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setSearching(false)}
+                className="flex items-center gap-1 px-1 py-1 text-[13px] font-semibold text-white/60 active:opacity-60"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M15 18l-6-6 6-6" />
+                </svg>
+                Back
+              </button>
+              <span className="text-base font-bold text-white">Pick an emoji</span>
+              <span className="w-12" />
+            </div>
+            <EmojiPickerPanel onPick={pick} height={340} />
+          </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
