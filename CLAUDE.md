@@ -60,7 +60,7 @@ const db = createServiceClient()
 
 ### Wearables
 
-**`wearable_data`** — ONE shared table for BOTH Oura and Whoop. PK (user_id, provider, date); the whole payload is a `data` jsonb blob. There are no per-provider tables and no typed sleep/readiness columns — shapes live in `src/features/health/types.ts` (OuraData, WhoopData). OAuth tokens in **`wearable_tokens`** (PK user_id, provider).
+**`wearable_data`** — provider-agnostic table, PK (user_id, provider, date); the whole payload is a `data` jsonb blob, with no per-provider tables and no typed sleep/readiness columns. **Only Oura is actually implemented.** The `provider` key leaves room for other sources, but there is NO Whoop code anywhere in `src/` — the `WHOOP_CLIENT_ID`/`WHOOP_CLIENT_SECRET` env vars are unused leftovers and there is no `WhoopData` type. Oura's shape lives in `src/features/health/types.ts` (`OuraData`). OAuth tokens in **`wearable_tokens`** (PK user_id, provider). Apple Health also feeds in via the iOS Shortcut sync (`apple_health_logs` / `apple_workouts`), separate from this table.
 
 ### Other
 
