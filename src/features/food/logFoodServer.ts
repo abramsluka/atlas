@@ -20,6 +20,8 @@ export interface LogFoodInput {
   source: 'text' | 'drink' | 'barcode' | 'meal'
   // Composed-meal ingredient snapshot (source 'meal' only)
   ingredients?: unknown
+  // Explicit emoji override; null lets the app resolve one from the name
+  emoji?: string | null
 }
 
 export interface LogFoodResult {
@@ -58,6 +60,7 @@ export async function logFoodServer(
       barcode: input.barcode,
       volume_oz: input.volume_oz,
       ingredients: input.ingredients ?? null,
+      emoji: input.emoji ?? null,
       taken_at: now.toISOString(),
     })
     .select()
@@ -134,6 +137,7 @@ export async function logFoodServer(
       portion_desc: input.portion_desc,
       volume_oz: input.volume_oz,
       is_hydrating: input.is_hydrating,
+      emoji: input.emoji ?? null,
     })
     if (itemError) console.error('[food/log] food_items insert failed:', itemError.message)
   }

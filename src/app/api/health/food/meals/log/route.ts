@@ -35,6 +35,17 @@ export async function POST(request: NextRequest) {
   const totals = mealTotals(ingredients)
 
   const db = createServiceClient()
+
+  // Re-log of a saved meal → carry its emoji (and bump it further down)
+  const { data: savedMealRow } = saved_meal_id
+    ? await db
+        .from('saved_meals')
+        .select('id, use_count, emoji')
+        .eq('id', saved_meal_id)
+        .eq('user_id', user.id)
+        .maybeSingle()
+    : { data: null }
+
   const result = await logFoodServer(db, user.id, {
     item_name: name,
     calories: totals.cal,
@@ -50,6 +61,7 @@ export async function POST(request: NextRequest) {
     notes: null,
     source: 'meal',
     ingredients,
+    emoji: savedMealRow?.emoji ?? save_as?.emoji ?? null,
   })
 
   if (result.error || !result.entry) {
@@ -78,19 +90,11 @@ export async function POST(request: NextRequest) {
   }
 
   // Re-log of a saved meal → bump it
-  if (saved_meal_id) {
-    const { data: meal } = await db
+  if (savedMealRow) {
+    await db
       .from('saved_meals')
-      .select('id, use_count')
-      .eq('id', saved_meal_id)
-      .eq('user_id', user.id)
-      .maybeSingle()
-    if (meal) {
-      await db
-        .from('saved_meals')
-        .update({ use_count: meal.use_count + 1, last_used_at: now })
-        .eq('id', meal.id)
-    }
+      .update({ use_count: savedMealRow.use_count + 1, last_used_at: now })
+      .eq('id', savedMealRow.id)
   }
 
   // Optionally persist the composition as a reusable meal

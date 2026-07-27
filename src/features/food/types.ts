@@ -19,6 +19,8 @@ export interface FoodLog {
   volume_oz: number | null
   refine_status: 'open' | 'done' | null
   user_description: string | null
+  // User-chosen emoji. Null → resolved from the item name (see foodEmoji.ts).
+  emoji: string | null
   taken_at: string
   created_at: string
   updated_at: string
@@ -85,6 +87,7 @@ export interface FoodItem {
   portion_desc: string
   volume_oz: number | null
   is_hydrating: boolean
+  emoji: string | null
   use_count: number
   last_used_at: string
   created_at: string

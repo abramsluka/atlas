@@ -39,6 +39,8 @@ import ChatText from '@/components/ChatText'
 import { FoodWizardSheet, BarcodeFlow, FrequentsRow } from './FoodEntry'
 import { MealBuilderSheet } from './MealBuilder'
 import { PhotoMealCard } from './PhotoMealCard'
+import FoodEmojiPicker from './FoodEmojiPicker'
+import { foodEmoji } from '@/features/food/foodEmoji'
 import { FoodCoachSection } from './FoodCoachSection'
 import type { FoodLog } from '@/features/food/types'
 import type {
@@ -1934,6 +1936,7 @@ function MealEditSheet({
   const [carbs, setCarbs] = useState(String(meal.carbs_g ?? ''))
   const [fat, setFat] = useState(String(meal.fat_g ?? ''))
   const [notes, setNotes] = useState(meal.notes ?? '')
+  const [emoji, setEmoji] = useState<string | null>(meal.emoji ?? null)
 
   return (
     <div
@@ -1949,12 +1952,15 @@ function MealEditSheet({
           // eslint-disable-next-line @next/next/no-img-element
           <img src={meal.photo_url} alt={meal.item_name} className="w-full h-40 object-cover rounded-xl" />
         )}
-        <input
-          className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white placeholder-zinc-600 outline-none focus:border-white/40"
-          placeholder="Meal name"
-          value={name}
-          onChange={e => setName(e.target.value)}
-        />
+        <div className="flex items-start gap-2">
+          <FoodEmojiPicker name={name} source={meal.source} value={emoji} onChange={setEmoji} />
+          <input
+            className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white placeholder-zinc-600 outline-none focus:border-white/40"
+            placeholder="Meal name"
+            value={name}
+            onChange={e => setName(e.target.value)}
+          />
+        </div>
         <div className="grid grid-cols-4 gap-2">
           <div>
             <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Cal</label>
@@ -1993,6 +1999,7 @@ function MealEditSheet({
                 carbs_g: carbs ? parseFloat(carbs) : meal.carbs_g,
                 fat_g: fat ? parseFloat(fat) : meal.fat_g,
                 notes: notes.trim() || null,
+                emoji,
               })
             }}
             className="flex-1 rounded-xl py-3 text-sm font-bold text-[#0a0a0b]"
@@ -2668,8 +2675,8 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
                       className="flex w-full items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-white/[0.05] transition-colors"
                       onClick={() => setEditingMeal(meal)}
                     >
-                      <div className="h-10 w-10 shrink-0 rounded-lg bg-white/[0.05] flex items-center justify-center text-sm text-zinc-500">
-                        {meal.source === 'drink' ? '🥤' : meal.source === 'barcode' ? '▮▮' : meal.source === 'meal' ? '🍲' : '⌨'}
+                      <div className="h-10 w-10 shrink-0 rounded-lg bg-white/[0.05] flex items-center justify-center text-lg leading-none">
+                        {foodEmoji(meal.item_name, { source: meal.source, override: meal.emoji })}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="truncate text-sm font-semibold text-white">{meal.item_name}</p>

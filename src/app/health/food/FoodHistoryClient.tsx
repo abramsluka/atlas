@@ -4,6 +4,8 @@ import { useState, useRef } from 'react'
 import { useFoodLogs, useFoodHistory } from '@/features/food/queries'
 import { useUpdateFoodLog, useDeleteFoodLog, useRepeatFoodLog } from '@/features/food/mutations'
 import type { FoodLog } from '@/features/food/types'
+import FoodEmojiPicker from '../FoodEmojiPicker'
+import { foodEmoji } from '@/features/food/foodEmoji'
 
 function MealEditSheet({
   meal,
@@ -19,6 +21,7 @@ function MealEditSheet({
   const [protein, setProtein] = useState(String(meal.protein_g ?? ''))
   const [carbs, setCarbs] = useState(String(meal.carbs_g ?? ''))
   const [notes, setNotes] = useState(meal.notes ?? '')
+  const [emoji, setEmoji] = useState<string | null>(meal.emoji ?? null)
 
   return (
     <div
@@ -34,7 +37,10 @@ function MealEditSheet({
           // eslint-disable-next-line @next/next/no-img-element
           <img src={meal.photo_url} alt={meal.item_name} className="w-full h-40 object-cover rounded-xl" />
         )}
-        <input className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white placeholder-zinc-600 outline-none focus:border-white/40" placeholder="Meal name" value={name} onChange={e => setName(e.target.value)} />
+        <div className="flex items-start gap-2">
+          <FoodEmojiPicker name={name} source={meal.source} value={emoji} onChange={setEmoji} />
+          <input className="w-full rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2.5 text-sm text-white placeholder-zinc-600 outline-none focus:border-white/40" placeholder="Meal name" value={name} onChange={e => setName(e.target.value)} />
+        </div>
         <div className="grid grid-cols-3 gap-2">
           {[
             { label: 'Cal', val: calories, set: setCalories },
@@ -57,6 +63,7 @@ function MealEditSheet({
               protein_g: protein ? parseFloat(protein) : meal.protein_g,
               carbs_g: carbs ? parseFloat(carbs) : meal.carbs_g,
               notes: notes.trim() || null,
+              emoji,
             })}
             className="flex-1 rounded-xl py-3 text-sm font-bold text-[#0a0a0b]"
             style={{ background: 'linear-gradient(180deg, #fff 0%, #e8e5dd 100%)' }}
@@ -221,9 +228,13 @@ export default function FoodHistoryClient({
                 className="flex w-full items-center gap-3 rounded-xl bg-zinc-900 px-4 py-3 cursor-pointer hover:bg-zinc-800 transition-colors"
                 onClick={() => setEditingMeal(meal)}
               >
-                {meal.photo_url && (
+                {meal.photo_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={meal.photo_url} alt="" className="h-12 w-12 shrink-0 rounded-lg object-cover" />
+                ) : (
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-white/[0.05] text-xl leading-none">
+                    {foodEmoji(meal.item_name, { source: meal.source, override: meal.emoji })}
+                  </div>
                 )}
                 <div className="flex-1 min-w-0">
                   <p className="truncate text-sm font-semibold text-white">{meal.item_name}</p>

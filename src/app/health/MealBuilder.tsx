@@ -32,6 +32,7 @@ import {
 } from '@/features/food/mutations'
 import type { BarcodeLookup, MealIngredient, SavedMeal, UserIngredient } from '@/features/food/types'
 import { formatAmount, nextUnit, toGrams, type AmountUnit } from '@/features/food/units'
+import { foodEmoji } from '@/features/food/foodEmoji'
 import { BarcodeScannerOverlay } from './FoodEntry'
 
 // ─── Motion vocabulary ────────────────────────────────────────────────────────
@@ -228,7 +229,7 @@ function TrayRowView({
         className="relative rounded-xl border border-white/[0.09] bg-[#17171a] px-3 py-2.5"
       >
         <div className="flex items-center gap-2.5">
-          <span className="text-base leading-none">{ing.emoji ?? '📦'}</span>
+          <span className="text-base leading-none">{foodEmoji(ing.name, { override: ing.emoji })}</span>
           <button onClick={() => onEdit(!editing)} className="min-w-0 flex-1 text-left">
             <p className="truncate text-sm font-semibold text-white">{ing.name}</p>
             <p className="text-[10px] text-zinc-500 tabular-nums">
@@ -376,7 +377,9 @@ function SearchResults({
     >
       {hits.map(hit => {
         const badge = KIND_BADGE[hit.kind]
-        const emoji = hit.kind === 'library' ? hit.item.emoji : hit.kind === 'meal' ? (hit.item.emoji ?? '🍽') : '📦'
+        const emoji = hit.kind === 'library'
+          ? hit.item.emoji
+          : foodEmoji(hit.item.name, { override: hit.kind === 'meal' ? hit.item.emoji : null })
         const body = (
           <>
             <span className="text-base leading-none">{emoji}</span>
@@ -471,7 +474,7 @@ function SavedMealCard({
     >
       <button onClick={onLoad} className="block w-full text-left">
         <div className="flex items-start justify-between">
-          <span className="text-xl leading-none">{meal.emoji ?? '🍽'}</span>
+          <span className="text-xl leading-none">{foodEmoji(meal.name, { override: meal.emoji })}</span>
           <div className="-mr-1 -mt-1 flex items-center gap-0.5">
             <button
               onClick={e => {
@@ -1060,7 +1063,9 @@ export function MealBuilderSheet({
         name,
         ingredients: rows.map(r => r.ing),
         saved_meal_id: loadedMeal?.id ?? null,
-        save_as: saveAs && !loadedMeal ? { name, emoji: rows[0]?.ing.emoji ?? null } : null,
+        // Name-derived emoji beats the first ingredient's — "Protein shake"
+        // should read 🥤, not whatever powder happened to be row one.
+        save_as: saveAs && !loadedMeal ? { name, emoji: foodEmoji(name) } : null,
       })
       navigator.vibrate?.([15, 40, 25])
       setSuccess(res.calories ?? totals.cal)

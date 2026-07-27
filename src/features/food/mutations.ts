@@ -63,6 +63,8 @@ export type ManualLogInput = Omit<EstimateFinal, 'status' | 'caffeine_mg'> & {
   brand?: string | null
   // Only the drink wizard supplies this; caffeinated drinks also log a dose.
   caffeine_mg?: number
+  // Re-logging a frequent carries its saved emoji override forward.
+  emoji?: string | null
 }
 
 export function useLogManualFood() {

@@ -11,6 +11,8 @@ const UpdateSchema = z.object({
   notes: z.string().max(500).nullable().optional(),
   refine_status: z.enum(['open', 'done']).optional(),
   user_description: z.string().max(500).nullable().optional(),
+  // null resets to the auto (name-derived) emoji
+  emoji: z.string().max(8).nullable().optional(),
 })
 
 export async function PATCH(
@@ -32,7 +34,7 @@ export async function PATCH(
 
   const { data: existing } = await db
     .from('food_logs')
-    .select('user_id')
+    .select('user_id, item_name')
     .eq('id', id)
     .single()
 
@@ -48,6 +50,18 @@ export async function PATCH(
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // Picking an emoji should stick for this food, not just this entry — mirror it
+  // onto the frequents library row so re-logs keep it (non-fatal).
+  if ('emoji' in parsed.data) {
+    const { error: itemError } = await db
+      .from('food_items')
+      .update({ emoji: parsed.data.emoji ?? null })
+      .eq('user_id', user.id)
+      .eq('name', parsed.data.item_name ?? existing.item_name)
+    if (itemError) console.error('[food/patch] food_items emoji sync failed:', itemError.message)
+  }
+
   return NextResponse.json(data)
 }
 

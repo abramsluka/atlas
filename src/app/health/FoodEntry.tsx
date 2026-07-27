@@ -14,6 +14,7 @@ import type {
   FoodItem,
 } from '@/features/food/types'
 import { nextUnit, toGrams, type AmountUnit } from '@/features/food/units'
+import { foodEmoji } from '@/features/food/foodEmoji'
 
 // ─── Shared sheet chrome ──────────────────────────────────────────────────────
 
@@ -881,6 +882,7 @@ export function FrequentsRow({
         source: item.source,
         barcode: item.barcode,
         brand: item.brand,
+        emoji: item.emoji,
       })
       onSaved({ water_logged: res.water_logged, volume_oz: item.volume_oz != null ? Number(item.volume_oz) : null })
     } catch {
@@ -898,14 +900,19 @@ export function FrequentsRow({
             key={item.id}
             onClick={() => relog(item)}
             disabled={logManual.isPending}
-            className="shrink-0 rounded-xl border border-white/[0.10] bg-white/[0.03] px-3 py-2 text-left active:opacity-70 disabled:opacity-50"
+            className="flex shrink-0 items-center gap-2 rounded-xl border border-white/[0.10] bg-white/[0.03] px-3 py-2 text-left active:opacity-70 disabled:opacity-50"
           >
-            <p className="text-xs font-semibold text-white whitespace-nowrap max-w-[140px] truncate">
-              {loggingId === item.id ? 'Logging…' : item.name}
-            </p>
-            <p className="text-[10px] text-zinc-500 whitespace-nowrap">
-              {item.calories} cal · {item.portion_desc.length > 18 ? item.portion_desc.slice(0, 18) + '…' : item.portion_desc}
-            </p>
+            <span className="text-base leading-none">
+              {foodEmoji(item.name, { source: item.source, override: item.emoji })}
+            </span>
+            <span className="block">
+              <span className="block text-xs font-semibold text-white whitespace-nowrap max-w-[140px] truncate">
+                {loggingId === item.id ? 'Logging…' : item.name}
+              </span>
+              <span className="block text-[10px] text-zinc-500 whitespace-nowrap">
+                {item.calories} cal · {item.portion_desc.length > 18 ? item.portion_desc.slice(0, 18) + '…' : item.portion_desc}
+              </span>
+            </span>
           </button>
         ))}
       </div>

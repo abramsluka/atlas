@@ -6,6 +6,7 @@ import { checkNoApiKey, noApiKeyMessage, NoApiKeyClientError, AiLimitClientError
 import NoApiKeyNotice from '@/components/NoApiKeyNotice'
 import AiLimitNotice from '@/components/AiLimitNotice'
 import type { FoodLog, PhotoRefineQuestion, PhotoRefineAnswer } from '@/features/food/types'
+import { foodEmoji } from '@/features/food/foodEmoji'
 
 type AiRaw = {
   refine?: {
@@ -233,8 +234,8 @@ export function PhotoMealCard({
           // eslint-disable-next-line @next/next/no-img-element
           <img src={meal.photo_url} alt="" className="h-10 w-10 shrink-0 rounded-lg object-cover" />
         ) : (
-          <div className="h-10 w-10 shrink-0 rounded-lg bg-white/[0.05] flex items-center justify-center text-sm text-zinc-500">
-            📷
+          <div className="h-10 w-10 shrink-0 rounded-lg bg-white/[0.05] flex items-center justify-center text-lg leading-none">
+            {foodEmoji(meal.item_name, { source: meal.source, override: meal.emoji })}
           </div>
         )}
         <div className="flex-1 min-w-0">

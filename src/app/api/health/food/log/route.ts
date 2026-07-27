@@ -23,6 +23,7 @@ export async function POST(request: NextRequest) {
   const brand = body.brand ? String(body.brand).slice(0, 80) : null
   const confidence = ['low', 'medium', 'high'].includes(body.confidence) ? body.confidence : 'medium'
   const notes = body.notes ? String(body.notes) : null
+  const emoji = body.emoji ? String(body.emoji).slice(0, 8) : null
 
   if (!item_name || !Number.isFinite(calories)) {
     return NextResponse.json({ error: 'item_name and calories are required' }, { status: 400 })
@@ -43,6 +44,7 @@ export async function POST(request: NextRequest) {
     confidence,
     notes,
     source,
+    emoji,
   })
 
   if (result.error || !result.entry) {

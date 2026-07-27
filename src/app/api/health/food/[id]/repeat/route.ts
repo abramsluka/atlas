@@ -61,6 +61,7 @@ export async function POST(
       source: original.source,
       barcode: original.barcode,
       volume_oz: original.volume_oz,
+      emoji: original.emoji,
       // A repeat of an already-logged meal is settled — don't re-prompt refinement.
       refine_status: 'done',
       taken_at: now.toISOString(),
