@@ -82,6 +82,7 @@ import { loadAssistantContext, buildAssistantTools, resolveToolCall, ACTION_RULE
 import { describeAction, type AssistantStreamEvent } from '@/features/assistant/actions'
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse } from '@/lib/userKeys'
+import { isAiLimitError, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -496,7 +497,8 @@ When journal data is present: look for mood trends across entries (not just toda
         }
       } catch (e) {
         console.error('[mentor/chat] stream error:', e)
-        try { controller.enqueue(encoder.encode(JSON.stringify({ t: 'error', v: 'Mentor hit an error. Try again.' }) + '\n')) } catch {}
+        const v = isAiLimitError(e) ? AI_LIMIT_MESSAGE : 'Mentor hit an error. Try again.'
+        try { controller.enqueue(encoder.encode(JSON.stringify({ t: 'error', v }) + '\n')) } catch {}
       } finally {
         controller.close()
       }

@@ -6,6 +6,7 @@ import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse } from '@/lib/userKeys'
+import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
 
 const FALLBACK_PROMPTS = [
   'How is my week looking?',
@@ -97,6 +98,7 @@ Rules:
       }
     }
   } catch (e) {
+    if (isAiLimitError(e)) return aiLimitResponse()
     console.error('prompts generation failed', e)
   }
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse } from '@/lib/userKeys'
+import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
 
 export async function POST(req: NextRequest) {
   const authClient = await createClient()
@@ -47,7 +48,10 @@ export async function POST(req: NextRequest) {
     const text = (message.content[0] as { type: string; text: string }).text.trim()
     const parsed = JSON.parse(text)
     return NextResponse.json({ step: parsed.step, reason: parsed.reason })
-  } catch {
+  } catch (err) {
+    // A usage/spend cap or rate limit should surface to the user, not be masked
+    // by the silent default fallback below (this recommendation is user-facing).
+    if (isAiLimitError(err)) return aiLimitResponse()
     return NextResponse.json({ step: 2.5, reason: 'Default recommendation.' })
   }
 }

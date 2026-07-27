@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { ensureEntryTranscript } from '@/lib/journalAudio'
 import { noKeyResponse, NoApiKeyError } from '@/lib/userKeys'
+import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
 
 export const maxDuration = 60
 
@@ -34,6 +35,7 @@ export async function POST(
     return NextResponse.json({ transcript })
   } catch (err) {
     if (err instanceof NoApiKeyError) return noKeyResponse(err.provider)
+    if (isAiLimitError(err)) return aiLimitResponse()
     console.error('[journal/transcribe] failed:', err)
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }

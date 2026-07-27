@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getOpenAIForUser } from '@/lib/openai'
 import { noKeyResponse } from '@/lib/userKeys'
+import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
 import { toLocalDate } from '@/lib/date'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { PORTION_STYLE_RULES } from '@/features/food/portionStyle'
@@ -203,6 +204,7 @@ Set refine_question to null only when confidence is already "high" and the porti
 
     return NextResponse.json({ ...inserted, photo_url: signedData?.signedUrl ?? null }, { status: 201 })
   } catch (err) {
+    if (isAiLimitError(err)) return aiLimitResponse()
     const msg = err instanceof Error ? err.message : 'Unknown error'
     return NextResponse.json({ error: msg }, { status: 500 })
   }

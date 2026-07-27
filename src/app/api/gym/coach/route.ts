@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse } from '@/lib/userKeys'
+import { isAiLimitError, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
 import { subDays } from 'date-fns'
 import { formatInTimeZone } from 'date-fns-tz'
 import { getUserTimezone } from '@/lib/getUserTimezone'
@@ -187,7 +188,14 @@ export async function POST(request: NextRequest) {
         }
       } catch (streamErr) {
         console.error('[gym/coach] stream error:', streamErr)
-        controller.error(streamErr)
+        // A usage/spend cap or rate limit surfaces here mid-stream (the 200 is
+        // already sent), so emit the friendly message as text instead of tearing
+        // the stream — the coach bubble renders whatever text comes through.
+        if (isAiLimitError(streamErr)) {
+          controller.enqueue(new TextEncoder().encode(AI_LIMIT_MESSAGE))
+        } else {
+          controller.error(streamErr)
+        }
       } finally {
         controller.close()
       }

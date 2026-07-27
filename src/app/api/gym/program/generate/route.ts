@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse } from '@/lib/userKeys'
+import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
 import { subDays } from 'date-fns'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import type { OuraData } from '@/features/health/types'
@@ -190,6 +191,7 @@ ${catalog}`
     if (toolUse && toolUse.type === 'tool_use') parsed = toolUse.input as typeof parsed
   } catch (err) {
     console.error('[program/generate] error:', err)
+    if (isAiLimitError(err)) return aiLimitResponse()
     return NextResponse.json({ error: 'Generation failed. Try again.' }, { status: 500 })
   }
 

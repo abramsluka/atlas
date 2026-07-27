@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getOpenAIForUser } from '@/lib/openai'
 import { noKeyResponse } from '@/lib/userKeys'
+import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
 
 // Estimate grams of a known product shown in a photo. Photo is NOT stored.
 export async function POST(request: NextRequest) {
@@ -54,6 +55,7 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ grams: Math.round(grams), reasoning: String(parsed.reasoning ?? '') })
   } catch (err) {
+    if (isAiLimitError(err)) return aiLimitResponse()
     const msg = err instanceof Error ? err.message : 'Unknown error'
     return NextResponse.json({ error: msg }, { status: 500 })
   }

@@ -5,6 +5,7 @@ import { transcribeAudio, ensureEntryTranscript, entryContentForAI } from '@/lib
 import { generateTitle } from '@/lib/journalTitle'
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse, NoApiKeyError } from '@/lib/userKeys'
+import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
 
 export const maxDuration = 60
 
@@ -75,6 +76,7 @@ export async function POST(
     } catch (err) {
       await db.storage.from('journal-audio').remove([refineAudioPath])
       if (err instanceof NoApiKeyError) return noKeyResponse(err.provider)
+      if (isAiLimitError(err)) return aiLimitResponse()
       console.error('[journal/plan] transcription failed:', err)
       return NextResponse.json({ error: `Could not transcribe recording: ${err}` }, { status: 500 })
     }
@@ -92,8 +94,9 @@ export async function POST(
     } catch (err) {
       // A typed body can still be planned without the voice transcript
       if (err instanceof NoApiKeyError && !entry.body?.trim()) return noKeyResponse(err.provider)
+      if (isAiLimitError(err) && !entry.body?.trim()) return aiLimitResponse()
       console.error('[journal/plan] entry transcription failed:', err)
-      if (!(err instanceof NoApiKeyError) && !entry.body?.trim()) {
+      if (!(err instanceof NoApiKeyError) && !isAiLimitError(err) && !entry.body?.trim()) {
         return NextResponse.json({ error: `Could not transcribe recording: ${err}` }, { status: 500 })
       }
     }
@@ -126,28 +129,33 @@ ${instruction}
 
   const anthropic = await getAnthropicForUser(user.id)
   if (!anthropic) return noKeyResponse('anthropic')
-  const msg = await anthropic.messages.create({
-    model: 'claude-haiku-4-5',
-    max_tokens: 1000,
-    system: PLANNER_SYSTEM,
-    messages: [{ role: 'user', content: userMessage }],
-    // Constrain the model to a JSON object we can always parse, instead of
-    // hoping it returns a bare array we can regex out of prose. This is what
-    // eliminates the "Could not parse plan from AI response" failures.
-    output_config: {
-      format: {
-        type: 'json_schema',
-        schema: {
-          type: 'object',
-          properties: { plan: { type: 'array', items: { type: 'string' } } },
-          required: ['plan'],
-          additionalProperties: false,
+  let raw = ''
+  try {
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5',
+      max_tokens: 1000,
+      system: PLANNER_SYSTEM,
+      messages: [{ role: 'user', content: userMessage }],
+      // Constrain the model to a JSON object we can always parse, instead of
+      // hoping it returns a bare array we can regex out of prose. This is what
+      // eliminates the "Could not parse plan from AI response" failures.
+      output_config: {
+        format: {
+          type: 'json_schema',
+          schema: {
+            type: 'object',
+            properties: { plan: { type: 'array', items: { type: 'string' } } },
+            required: ['plan'],
+            additionalProperties: false,
+          },
         },
       },
-    },
-  })
-
-  const raw = msg.content[0].type === 'text' ? msg.content[0].text : ''
+    })
+    raw = msg.content[0].type === 'text' ? msg.content[0].text : ''
+  } catch (err) {
+    if (isAiLimitError(err)) return aiLimitResponse()
+    throw err
+  }
 
   // Primary path: structured output is a { plan: [...] } object. Fallback: if the
   // model ever returns a bare array (or the format is unavailable), pull it out.

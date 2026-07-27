@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse } from '@/lib/userKeys'
+import { isAiLimitError, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
 import { toLocalDate } from '@/lib/date'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 
@@ -182,7 +183,11 @@ export async function POST(request: NextRequest) {
         })
       } catch (err) {
         console.error('[food/coach] stream error:', err)
-        controller.error(err)
+        if (isAiLimitError(err)) {
+          controller.enqueue(new TextEncoder().encode(AI_LIMIT_MESSAGE))
+        } else {
+          controller.error(err)
+        }
       } finally {
         controller.close()
       }

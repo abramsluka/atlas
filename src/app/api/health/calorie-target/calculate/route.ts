@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse } from '@/lib/userKeys'
+import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
 
 type Goal = 'cut' | 'recomp' | 'lean_bulk' | 'maintain'
 
@@ -149,12 +150,18 @@ export async function POST() {
     maintain: 'Maintenance: keep current weight, stay fueled, hit protein to preserve muscle.',
   }
 
-  const reasoningRes = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 120,
-    system: `You are a nutrition coach. Write 1-2 plain sentences explaining these pre-calculated macro targets to the user. Be specific and mention the goal. ${goalContext[goal]} Do not recalculate anything.`,
-    messages: [{ role: 'user', content: contextLines }],
-  })
+  let reasoningRes
+  try {
+    reasoningRes = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 120,
+      system: `You are a nutrition coach. Write 1-2 plain sentences explaining these pre-calculated macro targets to the user. Be specific and mention the goal. ${goalContext[goal]} Do not recalculate anything.`,
+      messages: [{ role: 'user', content: contextLines }],
+    })
+  } catch (err) {
+    if (isAiLimitError(err)) return aiLimitResponse()
+    throw err
+  }
 
   const reasoning = (reasoningRes.content[0] as { text: string }).text.trim()
 

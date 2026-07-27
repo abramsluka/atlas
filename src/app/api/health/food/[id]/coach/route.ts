@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse } from '@/lib/userKeys'
+import { isAiLimitError, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
 
 export const runtime = 'nodejs'
 export const maxDuration = 15
@@ -72,7 +73,11 @@ export async function POST(
           .eq('id', id)
       } catch (err) {
         console.error('[food/[id]/coach] stream error:', err)
-        controller.error(err)
+        if (isAiLimitError(err)) {
+          controller.enqueue(new TextEncoder().encode(AI_LIMIT_MESSAGE))
+        } else {
+          controller.error(err)
+        }
       } finally {
         controller.close()
       }

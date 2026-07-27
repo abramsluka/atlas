@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse } from '@/lib/userKeys'
+import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
 import { syncOuraToday } from '@/features/health/ouraSync'
@@ -123,7 +124,14 @@ export async function POST(req: Request) {
   const anthropic = await getAnthropicForUser(user.id)
   if (!anthropic) return noKeyResponse('anthropic')
 
-  const { headline, bullets } = await generateCall(anthropic, verdict, oura)
+  let call: { headline: string; bullets: string[] }
+  try {
+    call = await generateCall(anthropic, verdict, oura)
+  } catch (err) {
+    if (isAiLimitError(err)) return aiLimitResponse()
+    throw err
+  }
+  const { headline, bullets } = call
 
   // Only cache as "today's" call when it was built from today's data. A
   // fallback-derived call is left uncached so it self-heals once today's data

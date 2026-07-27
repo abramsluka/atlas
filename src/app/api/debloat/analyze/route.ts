@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse } from '@/lib/userKeys'
+import { isAiLimitError, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
 
 export async function POST(request: NextRequest) {
   const authClient = await createClient()
@@ -60,6 +61,10 @@ When shown a selfie: describe what you notice about their facial fullness today 
           ) {
             controller.enqueue(new TextEncoder().encode(event.delta.text))
           }
+        }
+      } catch (err) {
+        if (isAiLimitError(err)) {
+          try { controller.enqueue(new TextEncoder().encode(AI_LIMIT_MESSAGE)) } catch {}
         }
       } finally {
         controller.close()

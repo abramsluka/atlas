@@ -4,6 +4,7 @@ import { getOuraForDate, summarizeOuraForDate } from '@/features/health/ouraCont
 import { ensureEntryTranscript, entryContentForAI } from '@/lib/journalAudio'
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse, NoApiKeyError } from '@/lib/userKeys'
+import { isAiLimitError, aiLimitResponse, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
 
 export const maxDuration = 60
 
@@ -33,6 +34,7 @@ export async function POST(
     transcript = await ensureEntryTranscript(db, user.id, entry)
   } catch (err) {
     if (err instanceof NoApiKeyError) return noKeyResponse(err.provider)
+    if (isAiLimitError(err)) return aiLimitResponse()
     console.error('[journal/reflect] transcription failed:', err)
     if (!entry.body?.trim()) return new Response(`Could not transcribe recording: ${err}`, { status: 500 })
   }
@@ -71,6 +73,13 @@ export async function POST(
             controller.enqueue(new TextEncoder().encode(chunk))
           }
         }
+      } catch (err) {
+        // A usage/spend cap or rate limit surfaces here mid-stream. Emit the
+        // friendly message (rendered in place of the reflection) and don't
+        // persist it; other errors keep tearing the stream as before.
+        if (!isAiLimitError(err)) throw err
+        fullText = ''
+        controller.enqueue(new TextEncoder().encode(AI_LIMIT_MESSAGE))
       } finally {
         controller.close()
       }

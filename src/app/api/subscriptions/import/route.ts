@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse } from '@/lib/userKeys'
+import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
 import { BILLING_PERIODS, CURRENCIES, CATEGORIES } from '@/features/subscriptions/types'
 import type { ImportedSubscription } from '@/features/subscriptions/types'
 
@@ -63,7 +64,9 @@ export async function POST(request: NextRequest) {
   const anthropic = await getAnthropicForUser(user.id)
   if (!anthropic) return noKeyResponse('anthropic')
 
-  const response = await anthropic.messages.create({
+  let response
+  try {
+    response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 1500,
     system: `You extract subscription details from screenshots: receipts, confirmation emails, App Store subscription pages, bank/card statements, or settings pages listing recurring charges. Today's date is ${todayISO()}.
@@ -124,7 +127,11 @@ Rules:
         ],
       },
     ],
-  })
+    })
+  } catch (err) {
+    if (isAiLimitError(err)) return aiLimitResponse()
+    throw err
+  }
 
   const toolUse = response.content.find((b) => b.type === 'tool_use')
   const rawList =

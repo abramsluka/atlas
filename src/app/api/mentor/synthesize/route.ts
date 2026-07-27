@@ -5,6 +5,7 @@ import { formatInTimeZone } from 'date-fns-tz'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse } from '@/lib/userKeys'
+import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
 
 export async function GET() {
   const authClient = await createClient()
@@ -50,17 +51,23 @@ export async function POST() {
     .map(j => `[${new Date(j.created_at).toDateString()}] ${j.content}`)
     .join('\n')
 
-  const res = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 300,
-    messages: [{
-      role: 'user',
-      content: `You are Atlas. Luka has been capturing thoughts in "The Void" over the past two weeks. Read them all and find the real patterns — not just surface themes, but what they reveal about where his head is at, what he keeps coming back to, what might be worth exploring. Be specific and honest. Write 3-5 sentences, conversational tone, no bullet points. Start directly — no preamble.
+  let res
+  try {
+    res = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 300,
+      messages: [{
+        role: 'user',
+        content: `You are Atlas. Luka has been capturing thoughts in "The Void" over the past two weeks. Read them all and find the real patterns — not just surface themes, but what they reveal about where his head is at, what he keeps coming back to, what might be worth exploring. Be specific and honest. Write 3-5 sentences, conversational tone, no bullet points. Start directly — no preamble.
 
 JOTS:
 ${jotList}`,
-    }],
-  })
+      }],
+    })
+  } catch (err) {
+    if (isAiLimitError(err)) return aiLimitResponse()
+    throw err
+  }
 
   const synthesisText = res.content[0].type === 'text' ? res.content[0].text.trim() : ''
 

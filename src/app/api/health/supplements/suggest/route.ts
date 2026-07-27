@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse } from '@/lib/userKeys'
+import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
 
 export async function POST(req: NextRequest) {
   const authClient = await createClient()
@@ -38,7 +39,8 @@ export async function POST(req: NextRequest) {
         ? parsed.times.filter((t: string) => t === 'morning' || t === 'evening')
         : ['morning'],
     })
-  } catch {
+  } catch (err) {
+    if (isAiLimitError(err)) return aiLimitResponse()
     return NextResponse.json({ dose: '', times: ['morning'] })
   }
 }

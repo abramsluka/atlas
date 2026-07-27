@@ -8,6 +8,7 @@ import { getOuraContextRange, summarizeOuraForCoach } from '@/features/health/ou
 import { fetchGymLogs, groupByDay, sessionLabel, sessionVolumeLbs } from '@/lib/gymActivity'
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse } from '@/lib/userKeys'
+import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
 
 function getMostRecentSunday(dateStr: string): string {
   const d = new Date(dateStr + 'T12:00:00')
@@ -79,13 +80,15 @@ export async function POST() {
   const prevReport = prevReportRes.data
   const prevReportSection = prevReport ? `\nPREVIOUS WEEK'S REPORT (${prevReport.week_of}):\n${prevReport.report_text.slice(0, 500)}...` : ''
 
-  const reportRes = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1200,
-    system: `You are Atlas. Generate Luka's weekly life report for the week ending ${today}. This is a real document he will read and keep. Be specific, use actual numbers, and give him genuine insight — not a summary of what happened, but what it means. Structure it exactly as shown with these sections using markdown bold headers: **The Week in Numbers**, **What Went Well**, **What to Watch**, **Goal Check-In**, **Focus for Next Week**.`,
-    messages: [{
-      role: 'user',
-      content: `Generate my weekly report.
+  let reportRes
+  try {
+    reportRes = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1200,
+      system: `You are Atlas. Generate Luka's weekly life report for the week ending ${today}. This is a real document he will read and keep. Be specific, use actual numbers, and give him genuine insight — not a summary of what happened, but what it means. Structure it exactly as shown with these sections using markdown bold headers: **The Week in Numbers**, **What Went Well**, **What to Watch**, **Goal Check-In**, **Focus for Next Week**.`,
+      messages: [{
+        role: 'user',
+        content: `Generate my weekly report.
 
 PRIMARY GOAL: ${contextRes.data?.primary_goal ?? 'not set'}
 ABOUT ME: ${contextRes.data?.about_me ?? 'No profile yet'}
@@ -108,8 +111,12 @@ ${foodSummary}
 JOTS (thoughts captured this week):
 ${jotsSummary}
 ${prevReportSection}`,
-    }],
-  })
+      }],
+    })
+  } catch (err) {
+    if (isAiLimitError(err)) return aiLimitResponse()
+    throw err
+  }
 
   const reportText = reportRes.content[0].type === 'text' ? reportRes.content[0].text : ''
 

@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse } from '@/lib/userKeys'
+import { isAiLimitError, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
 import type { OuraData } from '@/features/health/types'
 import { describeAction, type AssistantStreamEvent } from '@/features/assistant/actions'
 import { loadAssistantContext, buildAssistantTools, resolveToolCall, ACTION_RULES } from '@/features/assistant/tools'
@@ -149,7 +150,8 @@ ${ctx.catalogBlock}`
         controller.close()
       } catch (err) {
         console.error('[assistant/chat] error:', err)
-        try { send(controller, { t: 'error', v: 'Atlas hit an error. Try again.' }) } catch {}
+        const v = isAiLimitError(err) ? AI_LIMIT_MESSAGE : 'Atlas hit an error. Try again.'
+        try { send(controller, { t: 'error', v }) } catch {}
         controller.close()
       }
     },

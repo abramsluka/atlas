@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse } from '@/lib/userKeys'
+import { isAiLimitError, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
 import type { OuraData } from '@/features/health/types'
@@ -294,6 +295,10 @@ Tone: direct, warm, grounded. Like someone who has been watching your data every
             { user_id: user.id, date: today, content: fullText, updated_at: new Date().toISOString() },
             { onConflict: 'user_id,date' }
           )
+        }
+      } catch (err) {
+        if (isAiLimitError(err)) {
+          try { controller.enqueue(new TextEncoder().encode(AI_LIMIT_MESSAGE)) } catch {}
         }
       } finally {
         controller.close()

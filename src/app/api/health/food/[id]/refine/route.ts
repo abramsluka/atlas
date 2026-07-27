@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getOpenAIForUser } from '@/lib/openai'
 import { noKeyResponse } from '@/lib/userKeys'
+import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
 import { PORTION_STYLE_RULES } from '@/features/food/portionStyle'
 import type { PhotoRefineQuestion, PhotoRefineAnswer } from '@/features/food/types'
 
@@ -214,6 +215,7 @@ export async function POST(
       refine_status: 'done',
     })
   } catch (err) {
+    if (isAiLimitError(err)) return aiLimitResponse()
     const msg = err instanceof Error ? err.message : 'Unknown error'
     return NextResponse.json({ error: msg }, { status: 500 })
   }

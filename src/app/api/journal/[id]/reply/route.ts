@@ -5,6 +5,7 @@ import type { ConversationMessage } from '@/features/journal/types'
 import { transcribeAudio, ensureEntryTranscript, entryContentForAI } from '@/lib/journalAudio'
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse, NoApiKeyError } from '@/lib/userKeys'
+import { isAiLimitError, aiLimitResponse, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
 
 export const maxDuration = 60
 
@@ -58,6 +59,7 @@ export async function POST(
     } catch (err) {
       await db.storage.from('journal-audio').remove([replyAudioPath])
       if (err instanceof NoApiKeyError) return noKeyResponse(err.provider)
+      if (isAiLimitError(err)) return aiLimitResponse()
       console.error('[journal/reply] transcription failed:', err)
       return new Response(`Could not transcribe recording: ${err}`, { status: 500 })
     }
@@ -128,6 +130,11 @@ export async function POST(
                 .eq('id', id)
             }
           }
+        } catch (err) {
+          // Usage/spend cap or rate limit mid-stream: emit the friendly message
+          // as the reply text (not persisted) instead of tearing the stream.
+          if (!isAiLimitError(err)) throw err
+          controller.enqueue(new TextEncoder().encode(AI_LIMIT_MESSAGE))
         } finally {
           controller.close()
         }
@@ -153,6 +160,7 @@ export async function POST(
   } catch (err) {
     // Reply can proceed from the typed body; only block when the entry is voice-only
     if (err instanceof NoApiKeyError && !entry.body?.trim()) return noKeyResponse(err.provider)
+    if (isAiLimitError(err) && !entry.body?.trim()) return aiLimitResponse()
     console.error('[journal/reply] entry transcription failed:', err)
   }
   const entryContent = entryContentForAI(entry.body, entryTranscript)
@@ -204,6 +212,11 @@ export async function POST(
             .update({ conversation: updatedConversation, updated_at: new Date().toISOString() })
             .eq('id', id)
         }
+      } catch (err) {
+        // Usage/spend cap or rate limit mid-stream: emit the friendly message
+        // as the reply text (not persisted) instead of tearing the stream.
+        if (!isAiLimitError(err)) throw err
+        controller.enqueue(new TextEncoder().encode(AI_LIMIT_MESSAGE))
       } finally {
         controller.close()
       }
