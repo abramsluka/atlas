@@ -4,8 +4,9 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useGenerateProgram, useSaveProgram } from '@/features/gym/programQueries'
-import { NoApiKeyClientError } from '@/lib/apiKeyError'
+import { NoApiKeyClientError, AiLimitClientError } from '@/lib/apiKeyError'
 import NoApiKeyNotice from '@/components/NoApiKeyNotice'
+import AiLimitNotice from '@/components/AiLimitNotice'
 import type {
   GeneratedProgram, ProgramGoal, ProgramStructure, ProgramPhase, GenerateProgramRequest,
 } from '@/features/gym/programTypes'
@@ -151,7 +152,9 @@ export default function ProgramGenerator({ open, onClose, prefill }: { open: boo
                       {gen.isError && (
                         gen.error instanceof NoApiKeyClientError
                           ? <NoApiKeyNotice provider={gen.error.provider} />
-                          : <p className="text-[12.5px] text-red-400">{(gen.error as Error)?.message ?? 'Generation failed.'}</p>
+                          : gen.error instanceof AiLimitClientError
+                            ? <AiLimitNotice />
+                            : <p className="text-[12.5px] text-red-400">{(gen.error as Error)?.message ?? 'Generation failed.'}</p>
                       )}
                       <button onClick={() => runGenerate()} disabled={gen.isPending}
                         className="w-full py-3 rounded-xl text-[14px] font-bold" style={{ background: '#4ade80', color: '#04210f' }}>

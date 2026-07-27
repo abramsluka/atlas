@@ -2,8 +2,9 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useRefinePhotoMeal, useFavoriteFoodLog, useDeleteFoodLog, useUpdateFoodLog } from '@/features/food/mutations'
-import { checkNoApiKey, noApiKeyMessage, NoApiKeyClientError, type KeyProvider } from '@/lib/apiKeyError'
+import { checkNoApiKey, noApiKeyMessage, NoApiKeyClientError, AiLimitClientError, type KeyProvider } from '@/lib/apiKeyError'
 import NoApiKeyNotice from '@/components/NoApiKeyNotice'
+import AiLimitNotice from '@/components/AiLimitNotice'
 import type { FoodLog, PhotoRefineQuestion, PhotoRefineAnswer } from '@/features/food/types'
 
 type AiRaw = {
@@ -52,6 +53,7 @@ export function PhotoMealCard({
   const [coachFeedback, setCoachFeedback] = useState(meal.coach_feedback ?? '')
   const [coachStreaming, setCoachStreaming] = useState(false)
   const [refineNoKeyProvider, setRefineNoKeyProvider] = useState<KeyProvider | null>(null)
+  const [refineAiLimit, setRefineAiLimit] = useState(false)
   const coachFired = useRef(false)
 
   const refine = useRefinePhotoMeal()
@@ -102,6 +104,7 @@ export function PhotoMealCard({
     setOtherOpen(false)
     setOtherText('')
     setRefineNoKeyProvider(null)
+    setRefineAiLimit(false)
 
     try {
       const result = await refine.mutateAsync({
@@ -132,6 +135,7 @@ export function PhotoMealCard({
       }
     } catch (err) {
       if (err instanceof NoApiKeyClientError) setRefineNoKeyProvider(err.provider)
+      else if (err instanceof AiLimitClientError) setRefineAiLimit(true)
     } finally {
       setSubmitting(false)
     }
@@ -158,6 +162,7 @@ export function PhotoMealCard({
     setDone(false)
     setSubmitting(true)
     setRefineNoKeyProvider(null)
+    setRefineAiLimit(false)
     try {
       const result = await refine.mutateAsync({
         id: meal.id,
@@ -187,6 +192,7 @@ export function PhotoMealCard({
       }
     } catch (err) {
       if (err instanceof NoApiKeyClientError) setRefineNoKeyProvider(err.provider)
+      else if (err instanceof AiLimitClientError) setRefineAiLimit(true)
     } finally {
       setSubmitting(false)
     }
@@ -364,6 +370,7 @@ export function PhotoMealCard({
                 <p className="text-xs text-zinc-500">Estimate refined ✓</p>
               )}
               {refineNoKeyProvider && <NoApiKeyNotice provider={refineNoKeyProvider} />}
+              {refineAiLimit && <AiLimitNotice />}
             </div>
           )}
 

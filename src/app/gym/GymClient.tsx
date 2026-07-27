@@ -30,7 +30,7 @@ import NewBestBurst from './NewBestBurst'
 import { detectNewBest, type NewBest } from '@/features/gym/history'
 import { SPRING_POP } from './motion'
 import ChatText from '@/components/ChatText'
-import { checkNoApiKey } from '@/lib/apiKeyError'
+import { checkNoApiKey, checkAiLimit } from '@/lib/apiKeyError'
 
 type SetTimerState = { phase: TimerPhase; phaseStart: number | null; sessionStart: number | null }
 const GYM_LAST_KEY = 'atlas.gym.last' // last exercise + weight + reps, restored on app open
@@ -665,6 +665,11 @@ export default function GymClient({ today, initialConfig, initialExercises, init
           setCoachText(noKey.message)
           return
         }
+        const limit = await checkAiLimit(res)
+        if (limit) {
+          setCoachText(limit.message)
+          return
+        }
         const errBody = await res.text().catch(() => '')
         setCoachText(`Error ${res.status}${errBody ? ': ' + errBody.slice(0, 120) : ''}. Try again.`)
         return
@@ -992,6 +997,11 @@ export default function GymClient({ today, initialConfig, initialExercises, init
       const noKey = await checkNoApiKey(res)
       if (noKey) {
         setCoachStepRec({ step: exModal.step, reason: noKey.message })
+        return
+      }
+      const limit = await checkAiLimit(res)
+      if (limit) {
+        setCoachStepRec({ step: exModal.step, reason: limit.message })
         return
       }
       const json = await res.json()

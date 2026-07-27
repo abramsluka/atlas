@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useEstimateFood, useLogManualFood } from '@/features/food/mutations'
 import { useFoodItems } from '@/features/food/queries'
-import { NoApiKeyClientError, type KeyProvider } from '@/lib/apiKeyError'
+import { NoApiKeyClientError, AiLimitClientError, type KeyProvider } from '@/lib/apiKeyError'
 import NoApiKeyNotice from '@/components/NoApiKeyNotice'
+import AiLimitNotice from '@/components/AiLimitNotice'
 import type {
   BarcodeLookup,
   EstimateFinal,
@@ -76,10 +77,12 @@ export function FoodWizardSheet({
   const [calOverride, setCalOverride] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [noKeyProvider, setNoKeyProvider] = useState<KeyProvider | null>(null)
+  const [aiLimit, setAiLimit] = useState(false)
 
   async function runEstimate(desc: string, ans: WizardAnswer[]) {
     setError(null)
     setNoKeyProvider(null)
+    setAiLimit(false)
     try {
       const result = await estimate.mutateAsync({ description: desc, kind, answers: ans })
       setSelected(null)
@@ -95,6 +98,7 @@ export function FoodWizardSheet({
       }
     } catch (err) {
       if (err instanceof NoApiKeyClientError) setNoKeyProvider(err.provider)
+      else if (err instanceof AiLimitClientError) setAiLimit(true)
       else setError(String(err instanceof Error ? err.message : err))
     }
   }
@@ -146,6 +150,7 @@ export function FoodWizardSheet({
     if (!final) return
     setError(null)
     setNoKeyProvider(null)
+    setAiLimit(false)
     const calories = Math.round(Number(calOverride))
     try {
       const res = await logManual.mutateAsync({
@@ -185,7 +190,7 @@ export function FoodWizardSheet({
         <button onClick={onClose} className="text-zinc-500 text-sm active:opacity-60">✕</button>
       </div>
 
-      {noKeyProvider ? <NoApiKeyNotice provider={noKeyProvider} /> : error && <p className="text-xs text-red-400">{error}</p>}
+      {noKeyProvider ? <NoApiKeyNotice provider={noKeyProvider} /> : aiLimit ? <AiLimitNotice /> : error && <p className="text-xs text-red-400">{error}</p>}
 
       {phase === 'input' && (
         <div className="space-y-3">
@@ -566,6 +571,7 @@ function ServingPickerSheet({
   const [photoReasoning, setPhotoReasoning] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [noKeyProvider, setNoKeyProvider] = useState<KeyProvider | null>(null)
+  const [aiLimit, setAiLimit] = useState(false)
   const photoInputRef = useRef<HTMLInputElement>(null)
 
   const servingGrams = lookup.serving_grams
@@ -619,6 +625,7 @@ function ServingPickerSheet({
     setPhotoBusy(true)
     setError(null)
     setNoKeyProvider(null)
+    setAiLimit(false)
     try {
       const fd = new FormData()
       fd.append('photo', file)
@@ -632,12 +639,16 @@ function ServingPickerSheet({
         if (res.status === 428 && json?.code === 'no_api_key' && json?.provider) {
           throw new NoApiKeyClientError(json.provider)
         }
+        if (res.status === 429 && json?.code === 'ai_limit') {
+          throw new AiLimitClientError()
+        }
         throw new Error(json.error ?? 'Portion estimate failed')
       }
       setChoice({ kind: 'photo', grams: json.grams })
       setPhotoReasoning(json.reasoning || null)
     } catch (err) {
       if (err instanceof NoApiKeyClientError) setNoKeyProvider(err.provider)
+      else if (err instanceof AiLimitClientError) setAiLimit(true)
       else setError(String(err instanceof Error ? err.message : err))
     } finally {
       setPhotoBusy(false)
@@ -649,6 +660,7 @@ function ServingPickerSheet({
     if (!sel) return
     setError(null)
     setNoKeyProvider(null)
+    setAiLimit(false)
     try {
       const res = await logManual.mutateAsync({
         item_name: lookup.name,
@@ -683,7 +695,7 @@ function ServingPickerSheet({
         <button onClick={onClose} className="text-zinc-500 text-sm active:opacity-60 ml-3">✕</button>
       </div>
 
-      {noKeyProvider ? <NoApiKeyNotice provider={noKeyProvider} /> : error && <p className="text-xs text-red-400">{error}</p>}
+      {noKeyProvider ? <NoApiKeyNotice provider={noKeyProvider} /> : aiLimit ? <AiLimitNotice /> : error && <p className="text-xs text-red-400">{error}</p>}
 
       <div className="flex flex-wrap gap-2">
         {(lookup.per_serving || servingGrams) && (

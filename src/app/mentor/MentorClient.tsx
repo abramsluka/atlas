@@ -6,7 +6,8 @@ import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import ChatText from '@/components/ChatText'
 import NoApiKeyNotice from '@/components/NoApiKeyNotice'
-import { checkNoApiKey, noApiKeyMessage, NoApiKeyClientError } from '@/lib/apiKeyError'
+import AiLimitNotice from '@/components/AiLimitNotice'
+import { checkNoApiKey, noApiKeyMessage, NoApiKeyClientError, AiLimitClientError } from '@/lib/apiKeyError'
 import InsightsTab from './InsightsTab'
 import { useQueryClient } from '@tanstack/react-query'
 import {
@@ -435,6 +436,8 @@ function TheVoid({
       {runSynthesis.isError && (
         runSynthesis.error instanceof NoApiKeyClientError ? (
           <NoApiKeyNotice provider={runSynthesis.error.provider} className="mb-6" />
+        ) : runSynthesis.error instanceof AiLimitClientError ? (
+          <AiLimitNotice className="mb-6" />
         ) : (
           <p className="text-xs text-red-400/80 text-center mb-6">Failed to synthesize. Try again.</p>
         )
@@ -612,6 +615,8 @@ function ReportsTab() {
       {generateReport.isError && (
         generateReport.error instanceof NoApiKeyClientError ? (
           <NoApiKeyNotice provider={generateReport.error.provider} className="mb-4" />
+        ) : generateReport.error instanceof AiLimitClientError ? (
+          <AiLimitNotice className="mb-4" />
         ) : (
           <p className="text-xs text-red-400/80 text-center mb-4">Failed to generate report. Try again.</p>
         )

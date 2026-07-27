@@ -14,8 +14,9 @@ import type { Streaks } from '@/lib/home/streaks'
 import StreakStrip from './StreakStrip'
 import ApiKeyBanner from './ApiKeyBanner'
 import { computeRing, CIRC, type RingState } from '@/features/home/dayRing'
-import { checkNoApiKey, type KeyProvider } from '@/lib/apiKeyError'
+import { checkNoApiKey, checkAiLimit, type KeyProvider } from '@/lib/apiKeyError'
 import NoApiKeyNotice from '@/components/NoApiKeyNotice'
+import AiLimitNotice from '@/components/AiLimitNotice'
 import ChatText from '@/components/ChatText'
 
 // Code-split the Three.js HUD so it never enters the main bundle — loads only
@@ -608,6 +609,7 @@ function TodaysCallCard({ initial }: { initial?: TodaysCallData | null }) {
   const [noData, setNoData] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const [keyProvider, setKeyProvider] = useState<KeyProvider | null>(null)
+  const [limitReached, setLimitReached] = useState(false)
   const fetched = useRef(false)
 
   const fetch_ = useCallback(async (refresh = false) => {
@@ -619,11 +621,13 @@ function TodaysCallCard({ initial }: { initial?: TodaysCallData | null }) {
       if (!res.ok) {
         const keyErr = await checkNoApiKey(res)
         if (keyErr) setKeyProvider(keyErr.provider)
+        else if (await checkAiLimit(res)) setLimitReached(true)
         return
       }
       const json = await res.json()
       if (json.noData) { setNoData(true); return }
       setKeyProvider(null)
+      setLimitReached(false)
       setData(json)
     } finally {
       setLoading(false)
@@ -650,6 +654,7 @@ function TodaysCallCard({ initial }: { initial?: TodaysCallData | null }) {
 
   if (noData) return null
   if (keyProvider && !data) return <NoApiKeyNotice provider={keyProvider} className="mb-4" />
+  if (limitReached && !data) return <AiLimitNotice className="mb-4" />
   if (!data && !loading) return null
 
   const color = data ? VERDICT_COLOR[data.color] : 'rgba(255,255,255,0.2)'

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { checkNoApiKey } from '@/lib/apiKeyError'
+import { checkNoApiKey, checkAiLimit } from '@/lib/apiKeyError'
 import type {
   TrainingProgram, GeneratedProgram, GenerateProgramRequest, ActiveProgramResponse, ProgramDetailResponse,
 } from './programTypes'
@@ -55,6 +55,8 @@ export function useGenerateProgram() {
       if (!res.ok) {
         const noKey = await checkNoApiKey(res)
         if (noKey) throw noKey
+        const limit = await checkAiLimit(res)
+        if (limit) throw limit
         const j = await res.json().catch(() => null)
         throw new Error(j?.error ?? 'Generation failed')
       }

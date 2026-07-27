@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { checkNoApiKey } from '@/lib/apiKeyError'
+import { checkNoApiKey, checkAiLimit } from '@/lib/apiKeyError'
 import type { Jot, JotSynthesis, MentorContext, WeeklyReport, ActivitySnapshot } from './types'
 
 export function useJots() {
@@ -29,7 +29,7 @@ export function useMentorPrompts() {
     queryKey: ['mentor-prompts'],
     queryFn: async (): Promise<{ prompts: string[] }> => {
       const res = await fetch('/api/mentor/prompts')
-      if (!res.ok) throw (await checkNoApiKey(res)) ?? new Error('Failed to fetch prompts')
+      if (!res.ok) throw (await checkNoApiKey(res)) ?? (await checkAiLimit(res)) ?? new Error('Failed to fetch prompts')
       return res.json()
     },
     staleTime: 10 * 60 * 1000,

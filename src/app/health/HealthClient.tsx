@@ -31,8 +31,9 @@ import {
 import { useFoodLogs } from '@/features/food/queries'
 import { useLogFood, useUpdateFoodLog, useDeleteFoodLog, useCalculateCalorieTarget } from '@/features/food/mutations'
 import { resizeImage } from '@/features/food/resize'
-import { checkNoApiKey, noApiKeyMessage, NoApiKeyClientError, type KeyProvider } from '@/lib/apiKeyError'
+import { checkNoApiKey, checkAiLimit, noApiKeyMessage, NoApiKeyClientError, AiLimitClientError, type KeyProvider } from '@/lib/apiKeyError'
 import NoApiKeyNotice from '@/components/NoApiKeyNotice'
+import AiLimitNotice from '@/components/AiLimitNotice'
 import ChatText from '@/components/ChatText'
 import { FoodWizardSheet, BarcodeFlow, FrequentsRow } from './FoodEntry'
 import { MealBuilderSheet } from './MealBuilder'
@@ -722,6 +723,7 @@ function AddStackForm({
   const [adding, setAdding] = useState(false)
   const [aiSuggested, setAiSuggested] = useState(false)
   const [suggestNoKeyProvider, setSuggestNoKeyProvider] = useState<KeyProvider | null>(null)
+  const [suggestAiLimit, setSuggestAiLimit] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
 
   // Local DB search on every keystroke
@@ -749,9 +751,12 @@ function AddStackForm({
         if (!res.ok) {
           const noKey = await checkNoApiKey(res)
           if (noKey) setSuggestNoKeyProvider(noKey.provider)
+          const limit = await checkAiLimit(res)
+          if (limit) setSuggestAiLimit(true)
           return
         }
         setSuggestNoKeyProvider(null)
+        setSuggestAiLimit(false)
         const data = await res.json()
         if (data.dose && !dose) {
           setDose(data.dose)
@@ -819,6 +824,7 @@ function AddStackForm({
                 setName(e.target.value)
                 setAiSuggested(false)
                 setSuggestNoKeyProvider(null)
+                setSuggestAiLimit(false)
                 setPendingNote('')
               }}
               onKeyDown={e => {
@@ -892,6 +898,7 @@ function AddStackForm({
           <p className="mt-1.5 pl-1 text-[10px] text-zinc-600">✦ AI suggested</p>
         )}
         {suggestNoKeyProvider && <NoApiKeyNotice provider={suggestNoKeyProvider} className="mt-1.5" />}
+        {suggestAiLimit && <AiLimitNotice className="mt-1.5" />}
       </div>
     </div>
   )
@@ -2070,6 +2077,7 @@ function CalorieTargetSheet({
   const [editedMacros, setEditedMacros] = useState<{ cal: string; protein: string; carbs: string } | null>(null)
   const [calcError, setCalcError] = useState<string | null>(null)
   const [calcNoKeyProvider, setCalcNoKeyProvider] = useState<KeyProvider | null>(null)
+  const [calcAiLimit, setCalcAiLimit] = useState(false)
 
   const updateProfile = useUpdateHealthProfile()
   const calcTarget = useCalculateCalorieTarget()
@@ -2081,6 +2089,7 @@ function CalorieTargetSheet({
   async function handleCalculate() {
     setCalcError(null)
     setCalcNoKeyProvider(null)
+    setCalcAiLimit(false)
     const updates: Record<string, unknown> = {
       fitness_goal: goal,
     }
@@ -2102,6 +2111,7 @@ function CalorieTargetSheet({
       setEditedMacros(null)
     } catch (err) {
       if (err instanceof NoApiKeyClientError) setCalcNoKeyProvider(err.provider)
+      else if (err instanceof AiLimitClientError) setCalcAiLimit(true)
       else setCalcError(err instanceof Error ? err.message : 'Failed to calculate target')
     }
   }
@@ -2306,6 +2316,8 @@ function CalorieTargetSheet({
 
         {calcNoKeyProvider ? (
           <NoApiKeyNotice provider={calcNoKeyProvider} />
+        ) : calcAiLimit ? (
+          <AiLimitNotice />
         ) : calcError ? (
           <p className="text-xs text-red-400">{calcError}</p>
         ) : null}
@@ -2363,6 +2375,7 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
   const [caffeineNote, setCaffeineNote] = useState<number | null>(null)
   const [photoError, setPhotoError] = useState<string | null>(null)
   const [photoNoKeyProvider, setPhotoNoKeyProvider] = useState<KeyProvider | null>(null)
+  const [photoAiLimit, setPhotoAiLimit] = useState(false)
   const labelHintRef = useRef(false)
   const updateProfile = useUpdateHealthProfile()
   // Overlays must portal to document.body — the health page has ancestors with
@@ -2457,6 +2470,7 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
     setUploading(true)
     setPhotoError(null)
     setPhotoNoKeyProvider(null)
+    setPhotoAiLimit(false)
     const filesToSubmit = pendingFiles
     clearPending()
     try {
@@ -2472,6 +2486,8 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
     } catch (err) {
       if (err instanceof NoApiKeyClientError) {
         setPhotoNoKeyProvider(err.provider)
+      } else if (err instanceof AiLimitClientError) {
+        setPhotoAiLimit(true)
       } else {
         console.error('Food log error:', err)
         setPhotoError('Failed to log meal. Try again.')
@@ -2598,6 +2614,8 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
 
         {photoNoKeyProvider ? (
           <NoApiKeyNotice provider={photoNoKeyProvider} />
+        ) : photoAiLimit ? (
+          <AiLimitNotice />
         ) : photoError ? (
           <p className="text-xs text-red-400">{photoError}</p>
         ) : null}

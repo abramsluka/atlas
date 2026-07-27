@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { checkNoApiKey } from '@/lib/apiKeyError'
+import { checkNoApiKey, checkAiLimit } from '@/lib/apiKeyError'
 import type {
   FoodLog,
   EstimateResponse,
@@ -19,6 +19,8 @@ export function useLogFood() {
       if (!res.ok) {
         const noKey = await checkNoApiKey(res)
         if (noKey) throw noKey
+        const limit = await checkAiLimit(res)
+        if (limit) throw limit
         const err = await res.json().catch(() => ({ error: res.statusText }))
         throw new Error(err.error ?? 'Failed to log food')
       }
@@ -45,6 +47,8 @@ export function useEstimateFood() {
       if (!res.ok) {
         const noKey = await checkNoApiKey(res)
         if (noKey) throw noKey
+        const limit = await checkAiLimit(res)
+        if (limit) throw limit
         const err = await res.json().catch(() => ({ error: res.statusText }))
         throw new Error(err.error ?? 'Failed to estimate')
       }
@@ -331,6 +335,8 @@ export function useRefinePhotoMeal() {
       if (!res.ok) {
         const noKey = await checkNoApiKey(res)
         if (noKey) throw noKey
+        const limit = await checkAiLimit(res)
+        if (limit) throw limit
         const err = await res.json().catch(() => ({ error: res.statusText }))
         throw new Error(err.error ?? 'Failed to refine')
       }
@@ -389,6 +395,8 @@ export function useCalculateCalorieTarget() {
       if (!res.ok) {
         const noKey = await checkNoApiKey(res)
         if (noKey) throw noKey
+        const limit = await checkAiLimit(res)
+        if (limit) throw limit
         const err = await res.json().catch(() => ({ error: res.statusText }))
         throw new Error(err.error ?? 'Failed to calculate target')
       }

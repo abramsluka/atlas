@@ -9,9 +9,10 @@ import { useUpdateEntry, useDeleteEntry } from '@/features/journal/mutations'
 import type { EntryKind, JournalEntry, PlanItem } from '@/features/journal/types'
 import { useVoiceRecorder, formatElapsed } from '@/features/journal/useVoiceRecorder'
 import { uploadAudioToStorage } from '@/features/journal/uploadAudio'
-import { checkNoApiKey, NoApiKeyClientError, type KeyProvider } from '@/lib/apiKeyError'
+import { checkNoApiKey, checkAiLimit, NoApiKeyClientError, AiLimitClientError, type KeyProvider } from '@/lib/apiKeyError'
 import ChatText from '@/components/ChatText'
 import NoApiKeyNotice from '@/components/NoApiKeyNotice'
+import AiLimitNotice from '@/components/AiLimitNotice'
 
 interface Props {
   initialEntry: JournalEntry
@@ -67,6 +68,7 @@ export default function EntryDetail({ initialEntry }: Props) {
   const [streaming, setStreaming] = useState(false)
   const [streamError, setStreamError] = useState<string | null>(null)
   const [streamKeyProvider, setStreamKeyProvider] = useState<KeyProvider | null>(null)
+  const [streamLimit, setStreamLimit] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const [conversation, setConversation] = useState(entry.conversation ?? [])
@@ -75,11 +77,13 @@ export default function EntryDetail({ initialEntry }: Props) {
   const [streamingReply, setStreamingReply] = useState('')
   const [replyError, setReplyError] = useState<string | null>(null)
   const [replyKeyProvider, setReplyKeyProvider] = useState<KeyProvider | null>(null)
+  const [replyLimit, setReplyLimit] = useState(false)
 
   const [plan, setPlan] = useState<PlanItem[]>(entry.plan ?? [])
   const [planning, setPlanning] = useState(false)
   const [planError, setPlanError] = useState<string | null>(null)
   const [planKeyProvider, setPlanKeyProvider] = useState<KeyProvider | null>(null)
+  const [planLimit, setPlanLimit] = useState(false)
   const [refineText, setRefineText] = useState('')
   const [focusItemId, setFocusItemId] = useState<string | null>(null)
 
@@ -88,6 +92,7 @@ export default function EntryDetail({ initialEntry }: Props) {
   const [transcribing, setTranscribing] = useState(false)
   const [transcribeError, setTranscribeError] = useState<string | null>(null)
   const [transcribeKeyProvider, setTranscribeKeyProvider] = useState<KeyProvider | null>(null)
+  const [transcribeLimit, setTranscribeLimit] = useState(false)
   const rec = useVoiceRecorder()
 
   const bodyTextareaRef = useRef<HTMLTextAreaElement>(null)
@@ -154,6 +159,7 @@ export default function EntryDetail({ initialEntry }: Props) {
     setPlanning(true)
     setPlanError(null)
     setPlanKeyProvider(null)
+    setPlanLimit(false)
     try {
       const res = await fetch(`/api/journal/${entry.id}/plan`, {
         method: 'POST',
@@ -163,6 +169,8 @@ export default function EntryDetail({ initialEntry }: Props) {
       if (!res.ok) {
         const keyErr = await checkNoApiKey(res)
         if (keyErr) throw keyErr
+        const limitErr = await checkAiLimit(res)
+        if (limitErr) throw limitErr
         const json = await res.json().catch(() => ({}))
         throw new Error(json.error ?? 'Failed to build plan')
       }
@@ -172,6 +180,7 @@ export default function EntryDetail({ initialEntry }: Props) {
       queryClient.invalidateQueries({ queryKey: ['journal'] })
     } catch (err) {
       if (err instanceof NoApiKeyClientError) setPlanKeyProvider(err.provider)
+      else if (err instanceof AiLimitClientError) setPlanLimit(true)
       else setPlanError(err instanceof Error ? err.message : String(err))
     } finally {
       setPlanning(false)
@@ -226,6 +235,7 @@ export default function EntryDetail({ initialEntry }: Props) {
     setStreaming(true)
     setStreamError(null)
     setStreamKeyProvider(null)
+    setStreamLimit(false)
     setReflectionText('')
 
     try {
@@ -233,6 +243,8 @@ export default function EntryDetail({ initialEntry }: Props) {
       if (!res.ok || !res.body) {
         const keyErr = await checkNoApiKey(res)
         if (keyErr) throw keyErr
+        const limitErr = await checkAiLimit(res)
+        if (limitErr) throw limitErr
         const text = await res.text()
         throw new Error(text || 'Failed to get reflection')
       }
@@ -248,6 +260,7 @@ export default function EntryDetail({ initialEntry }: Props) {
       queryClient.invalidateQueries({ queryKey: ['journal', entry.id] })
     } catch (err) {
       if (err instanceof NoApiKeyClientError) setStreamKeyProvider(err.provider)
+      else if (err instanceof AiLimitClientError) setStreamLimit(true)
       else setStreamError(err instanceof Error ? err.message : String(err))
     } finally {
       setStreaming(false)
@@ -263,11 +276,14 @@ export default function EntryDetail({ initialEntry }: Props) {
     setTranscribing(true)
     setTranscribeError(null)
     setTranscribeKeyProvider(null)
+    setTranscribeLimit(false)
     try {
       const res = await fetch(`/api/journal/${entry.id}/transcribe`, { method: 'POST' })
       if (!res.ok) {
         const keyErr = await checkNoApiKey(res)
         if (keyErr) throw keyErr
+        const limitErr = await checkAiLimit(res)
+        if (limitErr) throw limitErr
         const json = await res.json().catch(() => ({}))
         throw new Error(json.error ?? 'Transcription failed')
       }
@@ -277,6 +293,7 @@ export default function EntryDetail({ initialEntry }: Props) {
       queryClient.invalidateQueries({ queryKey: ['journal', entry.id] })
     } catch (err) {
       if (err instanceof NoApiKeyClientError) setTranscribeKeyProvider(err.provider)
+      else if (err instanceof AiLimitClientError) setTranscribeLimit(true)
       else setTranscribeError(err instanceof Error ? err.message : String(err))
     } finally {
       setTranscribing(false)
@@ -300,6 +317,7 @@ export default function EntryDetail({ initialEntry }: Props) {
     setStreamingReply('')
     setReplyError(null)
     setReplyKeyProvider(null)
+    setReplyLimit(false)
 
     try {
       // Upload the audio straight to storage first (no Vercel 4.5 MB body limit),
@@ -313,6 +331,8 @@ export default function EntryDetail({ initialEntry }: Props) {
       if (!res.ok || !res.body) {
         const keyErr = await checkNoApiKey(res)
         if (keyErr) throw keyErr
+        const limitErr = await checkAiLimit(res)
+        if (limitErr) throw limitErr
         throw new Error(await res.text() || 'Failed')
       }
 
@@ -329,6 +349,7 @@ export default function EntryDetail({ initialEntry }: Props) {
       await refreshConversation()
     } catch (err) {
       if (err instanceof NoApiKeyClientError) setReplyKeyProvider(err.provider)
+      else if (err instanceof AiLimitClientError) setReplyLimit(true)
       else setReplyError(err instanceof Error ? err.message : String(err))
     } finally {
       setIsReplying(false)
@@ -343,6 +364,7 @@ export default function EntryDetail({ initialEntry }: Props) {
     setStreamingReply('')
     setReplyError(null)
     setReplyKeyProvider(null)
+    setReplyLimit(false)
 
     try {
       const res = await fetch(`/api/journal/${entry.id}/reply`, {
@@ -353,6 +375,8 @@ export default function EntryDetail({ initialEntry }: Props) {
       if (!res.ok || !res.body) {
         const keyErr = await checkNoApiKey(res)
         if (keyErr) throw keyErr
+        const limitErr = await checkAiLimit(res)
+        if (limitErr) throw limitErr
         throw new Error(await res.text() || 'Failed')
       }
 
@@ -374,6 +398,7 @@ export default function EntryDetail({ initialEntry }: Props) {
       ])
     } catch (err) {
       if (err instanceof NoApiKeyClientError) setReplyKeyProvider(err.provider)
+      else if (err instanceof AiLimitClientError) setReplyLimit(true)
       else setReplyError(err instanceof Error ? err.message : String(err))
     } finally {
       setIsReplying(false)
@@ -386,6 +411,7 @@ export default function EntryDetail({ initialEntry }: Props) {
     setStreamingReply('')
     setReplyError(null)
     setReplyKeyProvider(null)
+    setReplyLimit(false)
 
     try {
       const res = await fetch(`/api/journal/${entry.id}/reply`, {
@@ -396,6 +422,8 @@ export default function EntryDetail({ initialEntry }: Props) {
       if (!res.ok || !res.body) {
         const keyErr = await checkNoApiKey(res)
         if (keyErr) throw keyErr
+        const limitErr = await checkAiLimit(res)
+        if (limitErr) throw limitErr
         throw new Error(await res.text() || 'Failed')
       }
 
@@ -419,6 +447,7 @@ export default function EntryDetail({ initialEntry }: Props) {
       }
     } catch (err) {
       if (err instanceof NoApiKeyClientError) setReplyKeyProvider(err.provider)
+      else if (err instanceof AiLimitClientError) setReplyLimit(true)
       else setReplyError(err instanceof Error ? err.message : String(err))
     } finally {
       setIsReplying(false)
@@ -506,6 +535,8 @@ export default function EntryDetail({ initialEntry }: Props) {
             <audio controls src={entry.audio_url} className="w-full" />
             {transcribeKeyProvider ? (
               <NoApiKeyNotice provider={transcribeKeyProvider} className="mt-2" />
+            ) : transcribeLimit ? (
+              <AiLimitNotice className="mt-2" />
             ) : transcribeError ? (
               <p className="mt-2 text-xs text-red-400">{transcribeError}</p>
             ) : null}
@@ -540,6 +571,8 @@ export default function EntryDetail({ initialEntry }: Props) {
           <div>
             {planKeyProvider ? (
               <NoApiKeyNotice provider={planKeyProvider} className="mb-3" />
+            ) : planLimit ? (
+              <AiLimitNotice className="mb-3" />
             ) : planError ? (
               <p className="mb-3 text-sm text-red-400">{planError}</p>
             ) : null}
@@ -873,6 +906,8 @@ export default function EntryDetail({ initialEntry }: Props) {
 
                   {replyKeyProvider ? (
                     <NoApiKeyNotice provider={replyKeyProvider} className="mt-3" />
+                  ) : replyLimit ? (
+                    <AiLimitNotice className="mt-3" />
                   ) : replyError ? (
                     <p className="mt-3 text-sm text-red-400">{replyError}</p>
                   ) : null}
@@ -946,6 +981,8 @@ export default function EntryDetail({ initialEntry }: Props) {
                 <>
                   {streamKeyProvider ? (
                     <NoApiKeyNotice provider={streamKeyProvider} className="mb-3" />
+                  ) : streamLimit ? (
+                    <AiLimitNotice className="mb-3" />
                   ) : streamError ? (
                     <p className="mb-3 text-sm text-red-400">{streamError}</p>
                   ) : null}

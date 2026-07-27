@@ -16,8 +16,9 @@ import type {
   ImportedSubscription,
 } from '@/features/subscriptions/types'
 import { BILLING_PERIODS, CURRENCIES, CATEGORIES } from '@/features/subscriptions/types'
-import { NoApiKeyClientError, type KeyProvider } from '@/lib/apiKeyError'
+import { NoApiKeyClientError, AiLimitClientError, type KeyProvider } from '@/lib/apiKeyError'
 import NoApiKeyNotice from '@/components/NoApiKeyNotice'
+import AiLimitNotice from '@/components/AiLimitNotice'
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
 
@@ -444,6 +445,7 @@ type ImportState =
   | { status: 'review'; items: ImportedSubscription[]; included: boolean[] }
   | { status: 'error'; message: string }
   | { status: 'no-api-key'; provider: KeyProvider }
+  | { status: 'ai-limit' }
 
 function ImportSheet({
   state,
@@ -503,6 +505,18 @@ function ImportSheet({
         {state.status === 'no-api-key' && (
           <div className="space-y-4 py-4">
             <NoApiKeyNotice provider={state.provider} />
+            <button
+              onClick={onClose}
+              className="w-full rounded-xl border border-zinc-700 py-3 text-sm font-medium text-zinc-400 active:bg-zinc-800"
+            >
+              Close
+            </button>
+          </div>
+        )}
+
+        {state.status === 'ai-limit' && (
+          <div className="space-y-4 py-4">
+            <AiLimitNotice />
             <button
               onClick={onClose}
               className="w-full rounded-xl border border-zinc-700 py-3 text-sm font-medium text-zinc-400 active:bg-zinc-800"
@@ -845,6 +859,8 @@ export default function SubscriptionsClient({
     } catch (err) {
       if (err instanceof NoApiKeyClientError) {
         setImportState({ status: 'no-api-key', provider: err.provider })
+      } else if (err instanceof AiLimitClientError) {
+        setImportState({ status: 'ai-limit' })
       } else {
         setImportState({
           status: 'error',
