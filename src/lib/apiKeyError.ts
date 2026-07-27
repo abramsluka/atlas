@@ -27,3 +27,23 @@ export async function checkNoApiKey(res: Response): Promise<NoApiKeyClientError 
   if (body?.code !== 'no_api_key' || !body.provider) return null
   return new NoApiKeyClientError(body.provider)
 }
+
+// Counterpart to aiLimitResponse() (src/lib/aiErrors.ts): an AI call blocked by
+// a usage/spend cap or rate limit. Kept in sync with the backend copy.
+export const AI_LIMIT_MESSAGE =
+  'The AI usage limit for this account has been reached. Try again later.'
+
+export class AiLimitClientError extends Error {
+  constructor() {
+    super(AI_LIMIT_MESSAGE)
+    this.name = 'AiLimitClientError'
+  }
+}
+
+// Call after `!res.ok` (alongside checkNoApiKey — the two status codes are
+// disjoint, so calling both never double-reads the body). Returns an
+// AiLimitClientError for the 429 case, otherwise null.
+export async function checkAiLimit(res: Response): Promise<AiLimitClientError | null> {
+  if (res.status !== 429) return null
+  return new AiLimitClientError()
+}
