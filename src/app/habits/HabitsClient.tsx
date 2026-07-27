@@ -1,10 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { motion } from 'framer-motion'
+import { createPortal } from 'react-dom'
+import { motion, Reorder, useDragControls } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import { useHabits, useHabitHistory } from '@/features/habits/queries'
-import { useToggleHabit, useUpdateGoal, useLogAll } from '@/features/habits/mutations'
+import {
+  useToggleHabit, useUpdateGoal, useLogAll,
+  useCreateHabit, useUpdateHabit, useDeleteHabit, useReorderHabits,
+} from '@/features/habits/mutations'
 import type { HabitView, HabitHistoryWeek } from '@/features/habits/types'
 
 const GREEN = '#4ade80'
@@ -176,6 +180,150 @@ function WeekGrid({ week, isLoading, todayDate, onToggleDay }: {
   )
 }
 
+// ─── Add / edit sheet ────────────────────────────────────────────────────────
+
+const COMMON_EMOJIS = ['✅', '💪', '🏃', '📖', '💧', '🧘', '☀️', '🦷', '🛏️', '🚿', '🥗', '😴', '🧠', '✍️', '🎯', '🧴', '🏋️', '🚶', '🧊', '☕']
+
+function HabitEditSheet({ mode, habit, onClose, onSave, onDelete }: {
+  mode: 'create' | 'edit'
+  habit?: HabitView
+  onClose: () => void
+  onSave: (v: { name: string; emoji: string; perWeek: number }) => void
+  onDelete?: () => void
+}) {
+  const isAuto = habit?.kind === 'auto'
+  const [name, setName] = useState(habit?.name ?? '')
+  const [emoji, setEmoji] = useState(habit?.emoji ?? '✅')
+  const [perWeek, setPerWeek] = useState(habit?.perWeek ?? 7)
+
+  const canSave = isAuto || name.trim().length > 0
+  const save = () => { if (canSave) { onSave({ name: name.trim() || (habit?.name ?? ''), emoji: emoji.trim() || '✅', perWeek }); onClose() } }
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-black/65 p-4"
+      style={{ backdropFilter: 'blur(6px)', paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}
+      onClick={onClose}
+    >
+      <div className="w-full max-w-md rounded-2xl border border-white/[0.14] bg-[#111113] p-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-base font-bold text-white">{mode === 'create' ? 'New habit' : 'Edit habit'}</h3>
+          <button onClick={onClose} className="px-2 py-1 text-sm font-semibold text-white/40 active:opacity-60">Cancel</button>
+        </div>
+
+        {isAuto ? (
+          <div className="mb-4 flex items-center gap-3 rounded-xl border px-3 py-3" style={{ borderColor: 'var(--cosmic-border)', background: 'rgba(255,255,255,0.03)' }}>
+            <span className="grid h-10 w-10 flex-none place-items-center rounded-xl text-[18px]" style={{ background: 'rgba(255,255,255,0.05)' }}>{emoji}</span>
+            <div className="min-w-0">
+              <div className="truncate text-[15px] font-semibold text-white">{name}</div>
+              <div className="text-[11px]" style={{ color: '#52525b' }}>Auto habit — tracked from your logs. Only the goal is editable.</div>
+            </div>
+          </div>
+        ) : (
+          <>
+            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: '#52525b' }}>Icon</label>
+            <div className="mb-3 flex items-center gap-2.5">
+              <input
+                value={emoji}
+                onChange={(e) => setEmoji(e.target.value)}
+                aria-label="Habit emoji"
+                className="h-12 w-12 flex-none rounded-xl border text-center text-[22px] text-white"
+                style={{ borderColor: 'var(--cosmic-border)', background: 'rgba(255,255,255,0.05)' }}
+              />
+              <div className="flex flex-1 flex-wrap gap-1">
+                {COMMON_EMOJIS.map((e) => (
+                  <button key={e} onClick={() => setEmoji(e)} className="grid h-8 w-8 place-items-center rounded-lg text-[16px]"
+                    style={{ background: emoji === e ? 'rgba(74,222,128,0.16)' : 'rgba(255,255,255,0.04)', boxShadow: emoji === e ? 'inset 0 0 0 1px rgba(74,222,128,0.4)' : 'none' }}>{e}</button>
+                ))}
+              </div>
+            </div>
+
+            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: '#52525b' }}>Name</label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Meditate"
+              autoFocus={mode === 'create'}
+              className="mb-3 w-full rounded-xl border px-3 py-2.5 text-[15px] text-white placeholder:text-white/25"
+              style={{ borderColor: 'var(--cosmic-border)', background: 'rgba(255,255,255,0.04)' }}
+            />
+          </>
+        )}
+
+        <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: '#52525b' }}>Goal</label>
+        <div className="mb-5 flex items-center gap-3">
+          <div className="flex items-center overflow-hidden rounded-lg border" style={{ borderColor: 'var(--cosmic-border)', background: 'rgba(255,255,255,0.04)' }}>
+            <button className="h-[34px] w-[34px] text-[18px] font-semibold text-[#dffbe9] disabled:opacity-30" disabled={perWeek <= 1} onClick={() => setPerWeek((p) => Math.max(1, p - 1))}>−</button>
+            <span className="min-w-[56px] text-center text-[13px] font-bold tabular-nums">{perWeek}×/wk</span>
+            <button className="h-[34px] w-[34px] text-[18px] font-semibold text-[#dffbe9] disabled:opacity-30" disabled={perWeek >= 7} onClick={() => setPerWeek((p) => Math.min(7, p + 1))}>+</button>
+          </div>
+          <span className="text-[11.5px]" style={{ color: '#52525b' }}>{perWeek === 7 ? 'Every day' : `${perWeek} day${perWeek > 1 ? 's' : ''} a week`}</span>
+        </div>
+
+        <button onClick={save} disabled={!canSave}
+          className="w-full rounded-xl py-3 text-[14px] font-bold text-[#05130a] disabled:opacity-40"
+          style={{ background: 'radial-gradient(circle at 50% 0%, #5df08e, #3ecb74)' }}>
+          {mode === 'create' ? 'Add habit' : 'Save'}
+        </button>
+
+        {mode === 'edit' && onDelete && !isAuto && (
+          <button onClick={() => { onDelete(); onClose() }} className="mt-2 w-full rounded-xl py-2.5 text-[13px] font-semibold text-red-400/80 active:opacity-60">
+            Delete habit
+          </button>
+        )}
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+// ─── Edit-mode row (drag to reorder, tap to edit) ───────────────────────────
+
+function EditRow({ habit, onEdit, onDelete }: { habit: HabitView; onEdit: () => void; onDelete: () => void }) {
+  const controls = useDragControls()
+  return (
+    <Reorder.Item
+      value={habit.id}
+      as="div"
+      dragListener={false}
+      dragControls={controls}
+      whileDrag={{ scale: 1.02, backgroundColor: 'rgba(74,222,128,0.08)' }}
+      className="flex select-none items-center gap-2 rounded-2xl border px-2.5 py-2.5"
+      style={{ borderColor: 'var(--cosmic-border)', background: 'var(--cosmic-surface)' }}
+    >
+      <span onPointerDown={(e) => controls.start(e)} className="cursor-grab px-1 text-lg leading-none text-white/25" style={{ touchAction: 'none' }} aria-label="Drag to reorder">⠿</span>
+      <button className="flex min-w-0 flex-1 items-center gap-2.5 text-left" onClick={onEdit}>
+        <span className="grid h-9 w-9 flex-none place-items-center rounded-xl text-[17px]" style={{ background: 'rgba(255,255,255,0.05)' }}>{habit.emoji}</span>
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="truncate text-[14.5px] font-semibold text-white">{habit.name}</span>
+            {habit.kind === 'auto' && <span className="flex-none rounded-full px-1.5 py-px text-[8px] font-bold uppercase tracking-[0.1em]" style={{ color: GREEN, background: 'rgba(74,222,128,0.12)' }}>auto</span>}
+          </div>
+          <span className="text-[11px] tabular-nums" style={{ color: '#52525b' }}>{habit.perWeek}×/wk</span>
+        </div>
+      </button>
+      {habit.kind !== 'auto' && (
+        <button onClick={onDelete} className="grid h-8 w-8 flex-none place-items-center rounded-lg text-red-400/70 active:opacity-60" aria-label="Delete habit">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m2 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6" /></svg>
+        </button>
+      )}
+    </Reorder.Item>
+  )
+}
+
+// ─── "+ Add habit" card ──────────────────────────────────────────────────────
+
+function AddHabitCard({ onClick }: { onClick: () => void }) {
+  return (
+    <button onClick={onClick}
+      className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed py-3.5 text-[13.5px] font-semibold transition-colors active:opacity-70"
+      style={{ borderColor: 'rgba(255,255,255,0.14)', color: 'rgba(255,255,255,0.5)' }}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+      Add habit
+    </button>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function HabitsClient({ initial }: { initial: HabitView[] }) {
@@ -184,10 +332,28 @@ export default function HabitsClient({ initial }: { initial: HabitView[] }) {
   const toggle = useToggleHabit()
   const updateGoal = useUpdateGoal()
   const logAll = useLogAll()
+  const create = useCreateHabit()
+  const update = useUpdateHabit()
+  const del = useDeleteHabit()
+  const reorder = useReorderHabits()
 
   const [view, setView] = useState<'today' | 'week'>('today')
   const [weekIndex, setWeekIndex] = useState(0) // 0 = this week
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [editMode, setEditMode] = useState(false)
+  const [editOrder, setEditOrder] = useState<string[]>([]) // ids, drag order while editing
+  const [sheet, setSheet] = useState<{ mode: 'create' | 'edit'; habit?: HabitView } | null>(null)
+
+  // Edit mode drives visual ORDER off editOrder (ids) and CONTENT off byId, so an
+  // optimistic content refetch never disturbs a drag in progress.
+  const byId = new Map(habits.map((h) => [h.id, h]))
+  const enterEdit = () => { setEditOrder(habits.map((h) => h.id)); setEditMode(true) }
+  const exitEdit = () => {
+    const current = habits.map((h) => h.id)
+    if (editOrder.length && JSON.stringify(editOrder) !== JSON.stringify(current)) reorder.mutate(editOrder)
+    setEditMode(false)
+  }
+  const removeHabit = (id: string) => { del.mutate(id); setEditOrder((o) => o.filter((x) => x !== id)) }
 
   const { data: weeks, isLoading: histLoading } = useHabitHistory(view === 'week')
   const week = weeks?.[weekIndex]
@@ -224,41 +390,63 @@ export default function HabitsClient({ initial }: { initial: HabitView[] }) {
         </div>
       </div>
 
-      {/* toggle row: Today | Week, with Log all (today) or inline week nav (week) */}
-      <div className="mb-4 flex items-center gap-2.5">
-        <div className="flex gap-0.5 rounded-xl border p-0.5" style={{ borderColor: 'var(--cosmic-border)', background: 'rgba(255,255,255,0.03)' }}>
-          {(['today', 'week'] as const).map((v) => (
-            <button key={v} onClick={() => { setView(v); setWeekIndex(0) }} className="rounded-[9px] px-3.5 py-1.5 text-[12.5px] font-semibold capitalize transition-colors"
-              style={view === v ? { color: '#eafff2', background: 'rgba(74,222,128,0.13)', boxShadow: 'inset 0 0 0 1px rgba(74,222,128,0.32)' } : { color: 'rgba(255,255,255,0.5)' }}>{v}</button>
-          ))}
-        </div>
-
-        {view === 'today' && (
-          <button onClick={() => logAll.mutate({ date: todayDate, completed: !allManualDone })} className="ml-auto rounded-[10px] border px-3 py-2 text-[12.5px] font-semibold"
-            style={{ color: '#dffbe9', borderColor: 'rgba(74,222,128,0.4)', background: 'radial-gradient(120% 150% at 50% 0%, rgba(74,222,128,0.18), transparent)' }}>
-            {allManualDone ? '↺ Reset today' : 'Log all'}
-          </button>
-        )}
-
-        {view === 'week' && (
-          <div className="ml-auto flex items-center gap-1.5">
-            <button onClick={() => setWeekIndex((i) => Math.min((weeks?.length ?? 1) - 1, i + 1))} disabled={!weeks || weekIndex >= weeks.length - 1}
-              className="grid h-7 w-7 place-items-center rounded-full border disabled:opacity-25" style={{ borderColor: 'var(--cosmic-border)' }} aria-label="Older week">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
-            </button>
-            <span className="min-w-[86px] text-center text-[12px] font-bold tabular-nums">
-              {week ? (weekIndex === 0 ? 'This week' : `${fmtMD(week.startDate)} – ${fmtMD(week.endDate)}`) : '…'}
-            </span>
-            <button onClick={() => setWeekIndex((i) => Math.max(0, i - 1))} disabled={weekIndex <= 0}
-              className="grid h-7 w-7 place-items-center rounded-full border disabled:opacity-25" style={{ borderColor: 'var(--cosmic-border)' }} aria-label="Newer week">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
-            </button>
+      {/* toggle / edit-mode header row */}
+      {editMode ? (
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-[14px] font-bold text-white">Edit habits</h2>
+            <p className="text-[11px]" style={{ color: '#52525b' }}>Drag ⠿ to reorder · tap a habit to edit</p>
           </div>
-        )}
-      </div>
+          <button onClick={exitEdit} className="rounded-[10px] border px-3.5 py-2 text-[12.5px] font-semibold"
+            style={{ color: '#dffbe9', borderColor: 'rgba(74,222,128,0.4)', background: 'radial-gradient(120% 150% at 50% 0%, rgba(74,222,128,0.18), transparent)' }}>Done</button>
+        </div>
+      ) : (
+        <div className="mb-4 flex items-center gap-2.5">
+          <div className="flex gap-0.5 rounded-xl border p-0.5" style={{ borderColor: 'var(--cosmic-border)', background: 'rgba(255,255,255,0.03)' }}>
+            {(['today', 'week'] as const).map((v) => (
+              <button key={v} onClick={() => { setView(v); setWeekIndex(0) }} className="rounded-[9px] px-3.5 py-1.5 text-[12.5px] font-semibold capitalize transition-colors"
+                style={view === v ? { color: '#eafff2', background: 'rgba(74,222,128,0.13)', boxShadow: 'inset 0 0 0 1px rgba(74,222,128,0.32)' } : { color: 'rgba(255,255,255,0.5)' }}>{v}</button>
+            ))}
+          </div>
 
-      {view === 'today' && (
+          {view === 'today' && (
+            <div className="ml-auto flex items-center gap-2">
+              {habits.length > 0 && (
+                <button onClick={enterEdit} className="rounded-[10px] border px-3 py-2 text-[12.5px] font-semibold"
+                  style={{ color: 'rgba(255,255,255,0.6)', borderColor: 'var(--cosmic-border)', background: 'rgba(255,255,255,0.03)' }}>Edit</button>
+              )}
+              {manual.length > 0 && (
+                <button onClick={() => logAll.mutate({ date: todayDate, completed: !allManualDone })} className="rounded-[10px] border px-3 py-2 text-[12.5px] font-semibold"
+                  style={{ color: '#dffbe9', borderColor: 'rgba(74,222,128,0.4)', background: 'radial-gradient(120% 150% at 50% 0%, rgba(74,222,128,0.18), transparent)' }}>
+                  {allManualDone ? '↺ Reset today' : 'Log all'}
+                </button>
+              )}
+            </div>
+          )}
+
+          {view === 'week' && (
+            <div className="ml-auto flex items-center gap-1.5">
+              <button onClick={() => setWeekIndex((i) => Math.min((weeks?.length ?? 1) - 1, i + 1))} disabled={!weeks || weekIndex >= weeks.length - 1}
+                className="grid h-7 w-7 place-items-center rounded-full border disabled:opacity-25" style={{ borderColor: 'var(--cosmic-border)' }} aria-label="Older week">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+              </button>
+              <span className="min-w-[86px] text-center text-[12px] font-bold tabular-nums">
+                {week ? (weekIndex === 0 ? 'This week' : `${fmtMD(week.startDate)} – ${fmtMD(week.endDate)}`) : '…'}
+              </span>
+              <button onClick={() => setWeekIndex((i) => Math.max(0, i - 1))} disabled={weekIndex <= 0}
+                className="grid h-7 w-7 place-items-center rounded-full border disabled:opacity-25" style={{ borderColor: 'var(--cosmic-border)' }} aria-label="Newer week">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {view === 'today' && !editMode && (
         <div className="flex flex-col gap-2">
+          {habits.length === 0 && (
+            <p className="mb-1 text-center text-[13px]" style={{ color: '#52525b' }}>No habits yet — add your first below.</p>
+          )}
           {habits.map((h) => (
             <TodayCard
               key={h.id}
@@ -269,11 +457,50 @@ export default function HabitsClient({ initial }: { initial: HabitView[] }) {
               onGoal={(perWeek) => updateGoal.mutate({ id: h.id, perWeek })}
             />
           ))}
+          <AddHabitCard onClick={() => setSheet({ mode: 'create' })} />
+        </div>
+      )}
+
+      {view === 'today' && editMode && (
+        <div className="flex flex-col gap-2">
+          <Reorder.Group as="div" axis="y" values={editOrder} onReorder={setEditOrder} className="flex flex-col gap-2">
+            {editOrder.map((id) => {
+              const h = byId.get(id)
+              if (!h) return null
+              return (
+                <EditRow
+                  key={id}
+                  habit={h}
+                  onEdit={() => setSheet({ mode: 'edit', habit: h })}
+                  onDelete={() => removeHabit(id)}
+                />
+              )
+            })}
+          </Reorder.Group>
+          <AddHabitCard onClick={() => setSheet({ mode: 'create' })} />
         </div>
       )}
 
       {view === 'week' && (
         <WeekGrid week={week} isLoading={histLoading} todayDate={todayDate} onToggleDay={(id, date, completed) => toggle.mutate({ id, date, completed })} />
+      )}
+
+      {sheet && (
+        <HabitEditSheet
+          mode={sheet.mode}
+          habit={sheet.habit}
+          onClose={() => setSheet(null)}
+          onSave={(v) => {
+            if (sheet.mode === 'create') {
+              create.mutate(v, {
+                onSuccess: (r: { id?: string }) => { if (editMode && r?.id) setEditOrder((o) => [...o, r.id as string]) },
+              })
+            } else if (sheet.habit) {
+              update.mutate({ id: sheet.habit.id, name: v.name, emoji: v.emoji, perWeek: v.perWeek })
+            }
+          }}
+          onDelete={sheet.mode === 'edit' && sheet.habit ? () => removeHabit(sheet.habit!.id) : undefined}
+        />
       )}
     </main>
   )
