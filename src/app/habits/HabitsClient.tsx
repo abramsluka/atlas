@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, Reorder, useDragControls } from 'framer-motion'
 import { useRouter } from 'next/navigation'
@@ -182,7 +182,62 @@ function WeekGrid({ week, isLoading, todayDate, onToggleDay }: {
 
 // ─── Add / edit sheet ────────────────────────────────────────────────────────
 
-const COMMON_EMOJIS = ['✅', '💪', '🏃', '📖', '💧', '🧘', '☀️', '🦷', '🛏️', '🚿', '🥗', '😴', '🧠', '✍️', '🎯', '🧴', '🏋️', '🚶', '🧊', '☕']
+// Searchable in-app emoji picker (emoji-picker-element web component). Loaded
+// client-only — the element touches window/customElements, so a top-level
+// import would break SSR. Emoji data is self-hosted (/emoji-data.json) to avoid
+// an external CDN fetch at runtime. Falls back to a text input if it can't load.
+function EmojiPickerPanel({ onPick }: { onPick: (emoji: string) => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const onPickRef = useRef(onPick)
+  onPickRef.current = onPick
+  const [failed, setFailed] = useState(false)
+  const [manual, setManual] = useState('')
+
+  useEffect(() => {
+    let picker: HTMLElement | null = null
+    let cancelled = false
+    const handler = (e: Event) => {
+      const unicode = (e as CustomEvent<{ unicode?: string }>).detail?.unicode
+      if (unicode) onPickRef.current(unicode)
+    }
+    import('emoji-picker-element')
+      .then(() => {
+        if (cancelled || !ref.current) return
+        picker = document.createElement('emoji-picker')
+        ;(picker as unknown as { dataSource: string }).dataSource = '/emoji-data.json'
+        picker.classList.add('dark')
+        picker.style.width = '100%'
+        picker.style.height = '360px'
+        picker.style.setProperty('--background', '#111113')
+        picker.style.setProperty('--border-color', 'rgba(255,255,255,0.08)')
+        picker.style.setProperty('--input-border-color', 'rgba(255,255,255,0.14)')
+        picker.addEventListener('emoji-click', handler)
+        ref.current.appendChild(picker)
+      })
+      .catch(() => { if (!cancelled) setFailed(true) })
+    return () => {
+      cancelled = true
+      picker?.removeEventListener('emoji-click', handler)
+      picker?.remove()
+    }
+  }, [])
+
+  if (failed) {
+    return (
+      <div className="py-3">
+        <p className="mb-2 text-[12px]" style={{ color: '#52525b' }}>Type or paste an emoji:</p>
+        <div className="flex gap-2">
+          <input value={manual} onChange={(e) => setManual(e.target.value)} autoFocus aria-label="Emoji"
+            className="h-12 w-16 flex-none rounded-xl border text-center text-[22px] text-white"
+            style={{ borderColor: 'var(--cosmic-border)', background: 'rgba(255,255,255,0.05)' }} />
+          <button onClick={() => { if (manual.trim()) onPickRef.current(manual.trim()) }}
+            className="rounded-xl px-4 text-[13px] font-bold text-[#05130a]" style={{ background: '#4ade80' }}>Use</button>
+        </div>
+      </div>
+    )
+  }
+  return <div ref={ref} className="overflow-hidden rounded-xl" />
+}
 
 function HabitEditSheet({ mode, habit, onClose, onSave, onDelete }: {
   mode: 'create' | 'edit'
@@ -195,6 +250,7 @@ function HabitEditSheet({ mode, habit, onClose, onSave, onDelete }: {
   const [name, setName] = useState(habit?.name ?? '')
   const [emoji, setEmoji] = useState(habit?.emoji ?? '✅')
   const [perWeek, setPerWeek] = useState(habit?.perWeek ?? 7)
+  const [pickingIcon, setPickingIcon] = useState(false)
 
   const canSave = isAuto || name.trim().length > 0
   const save = () => { if (canSave) { onSave({ name: name.trim() || (habit?.name ?? ''), emoji: emoji.trim() || '✅', perWeek }); onClose() } }
@@ -206,70 +262,81 @@ function HabitEditSheet({ mode, habit, onClose, onSave, onDelete }: {
       onClick={onClose}
     >
       <div className="w-full max-w-md rounded-2xl border border-white/[0.14] bg-[#111113] p-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-base font-bold text-white">{mode === 'create' ? 'New habit' : 'Edit habit'}</h3>
-          <button onClick={onClose} className="px-2 py-1 text-sm font-semibold text-white/40 active:opacity-60">Cancel</button>
-        </div>
-
-        {isAuto ? (
-          <div className="mb-4 flex items-center gap-3 rounded-xl border px-3 py-3" style={{ borderColor: 'var(--cosmic-border)', background: 'rgba(255,255,255,0.03)' }}>
-            <span className="grid h-10 w-10 flex-none place-items-center rounded-xl text-[18px]" style={{ background: 'rgba(255,255,255,0.05)' }}>{emoji}</span>
-            <div className="min-w-0">
-              <div className="truncate text-[15px] font-semibold text-white">{name}</div>
-              <div className="text-[11px]" style={{ color: '#52525b' }}>Auto habit — tracked from your logs. Only the goal is editable.</div>
+        {pickingIcon ? (
+          <>
+            <div className="mb-3 flex items-center justify-between">
+              <button onClick={() => setPickingIcon(false)} className="flex items-center gap-1 px-1 py-1 text-[13px] font-semibold text-white/60 active:opacity-60">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+                Back
+              </button>
+              <span className="text-base font-bold text-white">Pick an icon</span>
+              <span className="w-12" />
             </div>
-          </div>
+            <EmojiPickerPanel onPick={(em) => { setEmoji(em); setPickingIcon(false) }} />
+          </>
         ) : (
           <>
-            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: '#52525b' }}>Icon</label>
-            <div className="mb-3 flex items-center gap-2.5">
-              <input
-                value={emoji}
-                onChange={(e) => setEmoji(e.target.value)}
-                aria-label="Habit emoji"
-                className="h-12 w-12 flex-none rounded-xl border text-center text-[22px] text-white"
-                style={{ borderColor: 'var(--cosmic-border)', background: 'rgba(255,255,255,0.05)' }}
-              />
-              <div className="flex flex-1 flex-wrap gap-1">
-                {COMMON_EMOJIS.map((e) => (
-                  <button key={e} onClick={() => setEmoji(e)} className="grid h-8 w-8 place-items-center rounded-lg text-[16px]"
-                    style={{ background: emoji === e ? 'rgba(74,222,128,0.16)' : 'rgba(255,255,255,0.04)', boxShadow: emoji === e ? 'inset 0 0 0 1px rgba(74,222,128,0.4)' : 'none' }}>{e}</button>
-                ))}
-              </div>
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-base font-bold text-white">{mode === 'create' ? 'New habit' : 'Edit habit'}</h3>
+              <button onClick={onClose} className="px-2 py-1 text-sm font-semibold text-white/40 active:opacity-60">Cancel</button>
             </div>
 
-            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: '#52525b' }}>Name</label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Meditate"
-              autoFocus={mode === 'create'}
-              className="mb-3 w-full rounded-xl border px-3 py-2.5 text-[15px] text-white placeholder:text-white/25"
-              style={{ borderColor: 'var(--cosmic-border)', background: 'rgba(255,255,255,0.04)' }}
-            />
+            {isAuto ? (
+              <div className="mb-4 flex items-center gap-3 rounded-xl border px-3 py-3" style={{ borderColor: 'var(--cosmic-border)', background: 'rgba(255,255,255,0.03)' }}>
+                <span className="grid h-10 w-10 flex-none place-items-center rounded-xl text-[18px]" style={{ background: 'rgba(255,255,255,0.05)' }}>{emoji}</span>
+                <div className="min-w-0">
+                  <div className="truncate text-[15px] font-semibold text-white">{name}</div>
+                  <div className="text-[11px]" style={{ color: '#52525b' }}>Auto habit — tracked from your logs. Only the goal is editable.</div>
+                </div>
+              </div>
+            ) : (
+              <>
+                <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: '#52525b' }}>Icon</label>
+                <div className="mb-3">
+                  <button onClick={() => setPickingIcon(true)} aria-label="Change icon"
+                    className="relative grid h-14 w-14 place-items-center rounded-xl border text-[26px] active:opacity-70"
+                    style={{ borderColor: 'var(--cosmic-border)', background: 'rgba(255,255,255,0.05)' }}>
+                    {emoji}
+                    <span className="absolute -bottom-1 -right-1 grid h-5 w-5 place-items-center rounded-full" style={{ background: '#4ade80', color: '#05130a' }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" /></svg>
+                    </span>
+                  </button>
+                </div>
+
+                <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: '#52525b' }}>Name</label>
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Meditate"
+                  autoFocus={mode === 'create'}
+                  className="mb-3 w-full rounded-xl border px-3 py-2.5 text-[15px] text-white placeholder:text-white/25"
+                  style={{ borderColor: 'var(--cosmic-border)', background: 'rgba(255,255,255,0.04)' }}
+                />
+              </>
+            )}
+
+            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: '#52525b' }}>Goal</label>
+            <div className="mb-5 flex items-center gap-3">
+              <div className="flex items-center overflow-hidden rounded-lg border" style={{ borderColor: 'var(--cosmic-border)', background: 'rgba(255,255,255,0.04)' }}>
+                <button className="h-[34px] w-[34px] text-[18px] font-semibold text-[#dffbe9] disabled:opacity-30" disabled={perWeek <= 1} onClick={() => setPerWeek((p) => Math.max(1, p - 1))}>−</button>
+                <span className="min-w-[56px] text-center text-[13px] font-bold tabular-nums">{perWeek}×/wk</span>
+                <button className="h-[34px] w-[34px] text-[18px] font-semibold text-[#dffbe9] disabled:opacity-30" disabled={perWeek >= 7} onClick={() => setPerWeek((p) => Math.min(7, p + 1))}>+</button>
+              </div>
+              <span className="text-[11.5px]" style={{ color: '#52525b' }}>{perWeek === 7 ? 'Every day' : `${perWeek} day${perWeek > 1 ? 's' : ''} a week`}</span>
+            </div>
+
+            <button onClick={save} disabled={!canSave}
+              className="w-full rounded-xl py-3 text-[14px] font-bold text-[#05130a] disabled:opacity-40"
+              style={{ background: 'radial-gradient(circle at 50% 0%, #5df08e, #3ecb74)' }}>
+              {mode === 'create' ? 'Add habit' : 'Save'}
+            </button>
+
+            {mode === 'edit' && onDelete && !isAuto && (
+              <button onClick={() => { onDelete(); onClose() }} className="mt-2 w-full rounded-xl py-2.5 text-[13px] font-semibold text-red-400/80 active:opacity-60">
+                Delete habit
+              </button>
+            )}
           </>
-        )}
-
-        <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: '#52525b' }}>Goal</label>
-        <div className="mb-5 flex items-center gap-3">
-          <div className="flex items-center overflow-hidden rounded-lg border" style={{ borderColor: 'var(--cosmic-border)', background: 'rgba(255,255,255,0.04)' }}>
-            <button className="h-[34px] w-[34px] text-[18px] font-semibold text-[#dffbe9] disabled:opacity-30" disabled={perWeek <= 1} onClick={() => setPerWeek((p) => Math.max(1, p - 1))}>−</button>
-            <span className="min-w-[56px] text-center text-[13px] font-bold tabular-nums">{perWeek}×/wk</span>
-            <button className="h-[34px] w-[34px] text-[18px] font-semibold text-[#dffbe9] disabled:opacity-30" disabled={perWeek >= 7} onClick={() => setPerWeek((p) => Math.min(7, p + 1))}>+</button>
-          </div>
-          <span className="text-[11.5px]" style={{ color: '#52525b' }}>{perWeek === 7 ? 'Every day' : `${perWeek} day${perWeek > 1 ? 's' : ''} a week`}</span>
-        </div>
-
-        <button onClick={save} disabled={!canSave}
-          className="w-full rounded-xl py-3 text-[14px] font-bold text-[#05130a] disabled:opacity-40"
-          style={{ background: 'radial-gradient(circle at 50% 0%, #5df08e, #3ecb74)' }}>
-          {mode === 'create' ? 'Add habit' : 'Save'}
-        </button>
-
-        {mode === 'edit' && onDelete && !isAuto && (
-          <button onClick={() => { onDelete(); onClose() }} className="mt-2 w-full rounded-xl py-2.5 text-[13px] font-semibold text-red-400/80 active:opacity-60">
-            Delete habit
-          </button>
         )}
       </div>
     </div>,

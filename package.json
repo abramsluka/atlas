@@ -23,6 +23,8 @@
     "barcode-detector": "^3.2.0",
     "date-fns": "^4.2.1",
     "date-fns-tz": "^3.2.0",
+    "emoji-picker-element": "^1.29.1",
+    "emoji-picker-element-data": "^1.8.0",
     "framer-motion": "^12.40.0",
     "mcp-handler": "^1.1.0",
     "next": "16.2.6",
