@@ -2535,12 +2535,22 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
             <p className="text-[10px] text-zinc-600">{(meals ?? []).length} meal{(meals ?? []).length !== 1 ? 's' : ''} today</p>
           </div>
         ) : (
-          <div className="space-y-1">
+          <div className="space-y-2.5">
             <p className="text-sm text-zinc-300">
               {totals.calories.toLocaleString()} cal · {Math.round(totals.protein_g)}g P · {Math.round(totals.carbs_g)}g C · {(meals ?? []).length} meal{(meals ?? []).length !== 1 ? 's' : ''}
             </p>
-            <button onClick={() => setTargetSheetOpen(true)} className="text-xs text-zinc-500 underline underline-offset-2">
-              Set a calorie target
+            {/* Onboarding nudge — only shows until a target is set, then it's
+                replaced by the macro bars + "Edit target" below. */}
+            <button
+              onClick={() => setTargetSheetOpen(true)}
+              className="w-full flex items-center gap-3 rounded-xl border border-emerald-300/30 bg-emerald-300/[0.06] px-3.5 py-3 text-left active:opacity-70 transition-colors"
+            >
+              <span className="text-lg leading-none">🎯</span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-sm font-semibold text-emerald-200">Set a calorie target</span>
+                <span className="block text-xs text-zinc-400">Track your daily calories and macros against a goal.</span>
+              </span>
+              <span className="shrink-0 text-lg text-emerald-300">→</span>
             </button>
           </div>
         )}
