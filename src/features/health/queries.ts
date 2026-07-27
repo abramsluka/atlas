@@ -118,9 +118,13 @@ export function useOuraData(today: string, enabled: boolean, initialData?: OuraD
     queryKey: ['health', 'oura', today],
     enabled,
     initialData: initialData !== undefined ? initialData ?? undefined : undefined,
+    // Keep the last good value on a transient failure (Oura's API/DNS blips)
+    // instead of returning null — a hiccup shouldn't blank the card to
+    // "No data yet". Throwing lets TanStack Query retain prior data + retry.
+    placeholderData: prev => prev,
     queryFn: async (): Promise<OuraData | null> => {
       const res = await fetch('/api/health/oura/data')
-      if (!res.ok) return null
+      if (!res.ok) throw new Error(`oura data ${res.status}`)
       return res.json()
     },
   })
