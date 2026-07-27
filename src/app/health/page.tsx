@@ -33,6 +33,8 @@ export default async function HealthPage() {
     workoutsResult,
     foodResult,
     typicalWakeHour,
+    savedMealsResult,
+    userIngredientsResult,
   ] = await Promise.all([
     db.from('supplements').select('*').eq('user_id', user.id).eq('active', true).order('created_at', { ascending: true }),
     db.from('supplement_logs').select('*').eq('user_id', user.id).eq('date', today),
@@ -55,6 +57,14 @@ export default async function HealthPage() {
       .lt('taken_at', dayEnd)
       .order('taken_at', { ascending: true }),
     getTypicalWakeHour(db, user.id, tz),
+    // Meal-builder data, loaded here rather than when the sheet mounts: it used
+    // to fire two client fetches on open, so saved meals popped in after the
+    // sheet had already animated up. Free wall-clock — this Promise.all is
+    // already waiting on slower queries.
+    // Limits mirror the GET routes exactly, so a later refetch returns the
+    // same rows as the seeded cache.
+    db.from('saved_meals').select('*').eq('user_id', user.id).order('last_used_at', { ascending: false }).limit(100),
+    db.from('user_ingredients').select('*').eq('user_id', user.id).order('last_used_at', { ascending: false }).limit(200),
   ])
 
   const hasOura = !!ouraTokenResult.data
@@ -106,6 +116,8 @@ export default async function HealthPage() {
       hasOura={hasOura}
       today={today}
       typicalWakeHour={typicalWakeHour}
+      savedMeals={savedMealsResult.data ?? []}
+      userIngredients={userIngredientsResult.data ?? []}
     />
   )
 }

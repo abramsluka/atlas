@@ -470,44 +470,41 @@ function SavedMealCard({
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={SPRING}
-      className="w-44 shrink-0 rounded-2xl border border-white/[0.09] bg-white/[0.035] p-3"
+      className="relative w-44 shrink-0 rounded-2xl border border-white/[0.09] bg-white/[0.035] p-3"
     >
       <button onClick={onLoad} className="block w-full text-left">
-        <div className="flex items-start justify-between">
-          <span className="text-xl leading-none">{foodEmoji(meal.name, { override: meal.emoji })}</span>
-          <div className="-mr-1 -mt-1 flex items-center gap-0.5">
-            <button
-              onClick={e => {
-                e.stopPropagation()
-                onEdit()
-              }}
-              aria-label={`Edit ${meal.name}`}
-              className="px-1 py-0.5 text-zinc-600 active:text-zinc-300"
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-              </svg>
-            </button>
-            <button
-              onClick={e => {
-                e.stopPropagation()
-                if (confirm) onDelete()
-                else {
-                  setConfirm(true)
-                  setTimeout(() => setConfirm(false), 2500)
-                }
-              }}
-              className={`px-1.5 py-0.5 text-xs transition-colors ${confirm ? 'text-red-400' : 'text-zinc-600'}`}
-            >
-              {confirm ? 'sure?' : '×'}
-            </button>
-          </div>
-        </div>
+        <span className="block text-xl leading-none">{foodEmoji(meal.name, { override: meal.emoji })}</span>
         <p className="mt-1.5 truncate text-sm font-semibold text-white">{meal.name}</p>
         <p className="text-[10px] text-zinc-500 tabular-nums">
           {meal.calories} cal · {Math.round(Number(meal.protein_g))}g P · {meal.ingredients.length} items
         </p>
       </button>
+      {/* Overlaid rather than nested — a button inside the load button is
+          invalid HTML and trips a hydration error. */}
+      <div className="absolute right-2 top-2 z-10 flex items-center gap-0.5">
+        <button
+          onClick={onEdit}
+          aria-label={`Edit ${meal.name}`}
+          className="px-1 py-0.5 text-zinc-600 active:text-zinc-300"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+          </svg>
+        </button>
+        <button
+          onClick={() => {
+            if (confirm) onDelete()
+            else {
+              setConfirm(true)
+              setTimeout(() => setConfirm(false), 2500)
+            }
+          }}
+          aria-label={confirm ? `Confirm delete ${meal.name}` : `Delete ${meal.name}`}
+          className={`px-1.5 py-0.5 text-xs transition-colors ${confirm ? 'text-red-400' : 'text-zinc-600'}`}
+        >
+          {confirm ? 'sure?' : '×'}
+        </button>
+      </div>
       <motion.button
         whileTap={{ scale: 0.95 }}
         onClick={onQuickLog}

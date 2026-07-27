@@ -42,7 +42,7 @@ import { PhotoMealCard } from './PhotoMealCard'
 import FoodEmojiPicker from './FoodEmojiPicker'
 import { foodEmoji } from '@/features/food/foodEmoji'
 import { FoodCoachSection } from './FoodCoachSection'
-import type { FoodLog } from '@/features/food/types'
+import type { FoodLog, SavedMeal, UserIngredient } from '@/features/food/types'
 import type {
   Supplement,
   SupplementLog,
@@ -84,6 +84,8 @@ interface Props {
   workouts: WorkoutPoint[]
   meals: MealPoint[]
   typicalWakeHour: number | null
+  savedMeals: SavedMeal[]
+  userIngredients: UserIngredient[]
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -2918,11 +2920,25 @@ export default function HealthClient({
   workouts,
   meals,
   typicalWakeHour,
+  savedMeals,
+  userIngredients,
 }: Props) {
   const { data: profileData } = useHealthProfile(profile)
   const [settingsOpen, setSettingsOpen] = useState(false)
   // /health#water, #supplements, #food, … land directly on that section
   useHashScroll()
+
+  // Seed the meal-builder queries from the server render. Those hooks live
+  // inside MealBuilderSheet, which only mounts on "Add food" — without this the
+  // sheet animates up and *then* fetches, so saved meals arrive late. Seeding
+  // here (rather than threading initialData through three components) marks
+  // them fresh, so the sheet opens fully populated and the 60s staleTime plus
+  // the existing mutation invalidations still keep them current.
+  const qc = useQueryClient()
+  useEffect(() => {
+    qc.setQueryData(['saved-meals'], savedMeals)
+    qc.setQueryData(['user-ingredients'], userIngredients)
+  }, [qc, savedMeals, userIngredients])
 
   return (
     <main className="nebula-health page-rise min-h-screen space-y-5 px-4 pb-24 pt-14">
