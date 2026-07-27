@@ -488,7 +488,7 @@ function BentoGrid({ initial }: { initial?: BentoStats }) {
         visual={<TrainVisual color="#4ade80" />}
       />
       <BentoCard
-        href="/health" color="#22d3ee" label="Fuel"
+        href="/health#food" color="#22d3ee" label="Fuel"
         headline={fuelHeadline} sub={fuelSub}
         loading={loading} dim={fuelDim}
         visual={<FuelOrb calories={stats?.todayCalories ?? 0} color="#22d3ee" />}

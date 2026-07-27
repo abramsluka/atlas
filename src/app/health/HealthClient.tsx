@@ -15,6 +15,7 @@ import {
   useAppleHealth,
 } from '@/features/health/queries'
 import { useQueryClient } from '@tanstack/react-query'
+import { useHashScroll } from '@/lib/useHashScroll'
 import {
   useCreateSupplement,
   useUpdateSupplement,
@@ -177,7 +178,7 @@ function WearablesSection({
   if (!showOura && !appleVisible) return null
 
   return (
-    <section>
+    <section id="wearables" className="scroll-mt-6">
       <div className="flex items-center gap-4 mb-3.5">
         <div className="flex-1 h-px bg-white/[0.10]" />
         <span className="text-[11px] font-semibold tracking-[0.22em] text-white/85">WEARABLES</span>
@@ -1026,7 +1027,7 @@ function StackTracker({
   const deletePending = deleteSupplement.isPending
 
   return (
-    <section className="relative" style={{ zIndex: 2, isolation: 'isolate' }}>
+    <section id="supplements" className="relative scroll-mt-6" style={{ zIndex: 2, isolation: 'isolate' }}>
       <StackTicker supplements={allSupplements} logs={allLogs} />
 
       {/* Header */}
@@ -1402,7 +1403,7 @@ function WaterSection({
   const displayCount = count.toFixed(1).replace(/\.0$/, '')
 
   return (
-    <section>
+    <section id="water" className="scroll-mt-6">
       {/* Divider */}
       <div className="flex items-center gap-4 mb-3.5">
         <div className="flex-1 h-px bg-white/[0.10]" />
@@ -1851,7 +1852,7 @@ function CaffeineSection({
   const energyStateLabel = energyLabelShared(energy)
 
   return (
-    <section>
+    <section id="caffeine" className="scroll-mt-6">
       <div className="flex items-center gap-4 mb-3.5">
         <div className="flex-1 h-px bg-white/[0.10]" />
         <span className="text-[11px] font-semibold tracking-[0.22em] text-white/85">CAFFEINE</span>
@@ -2500,7 +2501,7 @@ function FoodSection({ profile }: { profile: ReturnType<typeof useHealthProfile>
 
   return (
     <>
-    <section>
+    <section id="food" className="scroll-mt-6">
       <div className="flex items-center gap-4 mb-3.5">
         <div className="flex-1 h-px bg-white/[0.10]" />
         <span className="text-[11px] font-semibold tracking-[0.22em] text-white/85">FOOD</span>
@@ -2913,6 +2914,8 @@ export default function HealthClient({
 }: Props) {
   const { data: profileData } = useHealthProfile(profile)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // /health#water, #supplements, #food, … land directly on that section
+  useHashScroll()
 
   return (
     <main className="nebula-health min-h-screen space-y-5 px-4 pb-24 pt-14">

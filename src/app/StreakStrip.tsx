@@ -38,16 +38,15 @@ const MODULES: ModuleDef[] = [
     ),
   },
   {
-    key: 'food', label: 'Food', href: '/health/food', color: '#22d3ee',
+    key: 'water', label: 'Water', href: '/health#water', color: '#7DD3FC',
     icon: ({ color }) => (
       <svg width="18" height="18" viewBox="0 0 24 24" stroke={color} {...stroke}>
-        <path d="M6 3v7M9 3v7M6 10a3 3 0 0 0 3-3M7.5 10v11" />
-        <path d="M16.5 3c-1.4 0-2.5 2-2.5 5s1.1 4 2.5 4 2.5-1 2.5-4-1.1-5-2.5-5zM16.5 16v5" />
+        <path d="M12 2.8c3.4 4 5.6 6.9 5.6 9.7a5.6 5.6 0 0 1-11.2 0c0-2.8 2.2-5.7 5.6-9.7z" />
       </svg>
     ),
   },
   {
-    key: 'supplements', label: 'Supps', href: '/health', color: '#a78bfa',
+    key: 'supplements', label: 'Supps', href: '/health#supplements', color: '#a78bfa',
     icon: ({ color }) => (
       <svg width="18" height="18" viewBox="0 0 24 24" stroke={color} {...stroke}>
         <rect x="3" y="8" width="18" height="8" rx="4" />
@@ -55,8 +54,8 @@ const MODULES: ModuleDef[] = [
       </svg>
     ),
   },
-  // Water lives on the Habits page now (see MoreButton) — one auto habit there
-  // among the manual ones, keeping the strip at five slots on mobile.
+  // Food lives on the Health page (top section) and the Habits page (see
+  // MoreButton) — keeping the strip at four streaks + More on mobile.
 ]
 
 // ─── Cell ─────────────────────────────────────────────────────────────────────
