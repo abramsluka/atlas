@@ -1,6 +1,114 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { HabitView, HabitHistoryWeek, ToggleInput } from './types'
 
+// Create a manual habit. No optimistic insert — a HabitView needs a server-built
+// week array, so we just refetch on settle.
+export function useCreateHabit() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { name: string; emoji: string; perWeek: number }) => {
+      const res = await fetch('/api/habits', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      })
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}))
+        throw new Error(b.error ?? `Create failed (${res.status})`)
+      }
+      return res.json()
+    },
+    onSettled: () => { qc.invalidateQueries({ queryKey: ['habits'] }) },
+  })
+}
+
+// Edit a habit's name / emoji / weekly goal. Optimistic on all three.
+export function useUpdateHabit() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, ...patch }: { id: string; name?: string; emoji?: string; perWeek?: number }) => {
+      const res = await fetch(`/api/habits/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}))
+        throw new Error(b.error ?? `Update failed (${res.status})`)
+      }
+      return res.json()
+    },
+    onMutate: async ({ id, name, emoji, perWeek }) => {
+      await qc.cancelQueries({ queryKey: ['habits'] })
+      const prev = qc.getQueryData<HabitView[]>(['habits'])
+      qc.setQueryData<HabitView[]>(['habits'], (old) =>
+        old?.map((h) => (h.id === id ? {
+          ...h,
+          ...(name !== undefined ? { name } : {}),
+          ...(emoji !== undefined ? { emoji } : {}),
+          ...(perWeek !== undefined ? { perWeek } : {}),
+        } : h))
+      )
+      return { prev }
+    },
+    onError: (_e, _v, ctx) => { if (ctx?.prev) qc.setQueryData(['habits'], ctx.prev) },
+    onSettled: () => { qc.invalidateQueries({ queryKey: ['habits'] }) },
+  })
+}
+
+// Remove (archive) a habit. Optimistically drops it from the list.
+export function useDeleteHabit() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/habits/${id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}))
+        throw new Error(b.error ?? `Delete failed (${res.status})`)
+      }
+      return res.json()
+    },
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: ['habits'] })
+      const prev = qc.getQueryData<HabitView[]>(['habits'])
+      qc.setQueryData<HabitView[]>(['habits'], (old) => old?.filter((h) => h.id !== id))
+      return { prev }
+    },
+    onError: (_e, _v, ctx) => { if (ctx?.prev) qc.setQueryData(['habits'], ctx.prev) },
+    onSettled: () => { qc.invalidateQueries({ queryKey: ['habits'] }) },
+  })
+}
+
+// Persist a new order. Optimistically reorders the cached list by id.
+export function useReorderHabits() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      const res = await fetch('/api/habits/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      })
+      if (!res.ok) throw new Error('Failed to reorder habits')
+      return res.json()
+    },
+    onMutate: async (ids: string[]) => {
+      await qc.cancelQueries({ queryKey: ['habits'] })
+      const prev = qc.getQueryData<HabitView[]>(['habits'])
+      if (prev) {
+        const byId = new Map(prev.map((h) => [h.id, h]))
+        const next = ids
+          .map((id, i) => { const h = byId.get(id); return h ? { ...h, order: i } : null })
+          .filter((h): h is HabitView => h !== null)
+        qc.setQueryData<HabitView[]>(['habits'], next)
+      }
+      return { prev }
+    },
+    onError: (_e, _v, ctx) => { if (ctx?.prev) qc.setQueryData(['habits'], ctx.prev) },
+    onSettled: () => { qc.invalidateQueries({ queryKey: ['habits'] }) },
+  })
+}
+
 // Edit a habit's weekly goal (X times/week). Optimistic on perWeek.
 export function useUpdateGoal() {
   const qc = useQueryClient()
