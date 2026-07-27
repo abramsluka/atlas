@@ -65,6 +65,8 @@ export interface HealthProfile {
   target_calc_weight_lbs: number | null
   target_calculated_at: string | null
   linked_target_goal_id: string | null
+  show_oura: boolean
+  show_apple_watch: boolean
   updated_at: string
 }
 

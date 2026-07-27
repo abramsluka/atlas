@@ -8,7 +8,7 @@ const ALLOWED_FIELDS = [
   'target_weight_lbs', 'cut_pace', 'fitness_goal', 'activity_level',
   'daily_calorie_target', 'daily_protein_target_g', 'daily_carbs_target_g',
   'target_reasoning', 'target_calc_weight_lbs', 'target_calculated_at',
-  'linked_target_goal_id',
+  'linked_target_goal_id', 'show_oura', 'show_apple_watch',
 ]
 
 export async function PATCH(req: NextRequest) {

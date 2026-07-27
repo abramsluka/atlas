@@ -126,6 +126,10 @@ function WearablesSection({
 }) {
   const { data: oura, isPending: ouraPending } = useOuraData(today, hasOura, initialOura)
   const { data: apple } = useAppleHealth(today)
+  const { data: profile } = useHealthProfile()
+  // Per-user card visibility (Health → Settings → Wearables). Default on.
+  const showOura = profile?.show_oura ?? true
+  const showAppleWatch = profile?.show_apple_watch ?? true
   const appleLatest = apple?.latest ?? null
   // Only treat Apple data as live if it synced within the last few days. A
   // stale one-off sync shouldn't leave a dead card lingering (or feed the Oura
@@ -134,6 +138,7 @@ function WearablesSection({
     !!appleLatest?.date &&
     (new Date(today).getTime() - new Date(appleLatest.date).getTime()) / 86_400_000 <= 3
   const hasApple = appleFresh && (apple?.daysOfData ?? 0) > 0
+  const appleVisible = showAppleWatch && hasApple
   // Steps for the Oura card: prefer a source whose count is definitely TODAY's
   // (Apple syncs live from the phone; Oura only finalizes today in the evening),
   // else fall back to the latest available count and label it "yesterday".
@@ -167,6 +172,9 @@ function WearablesSection({
     setRefreshing(false)
   }, [hasOura, qc, today])
 
+  // Both cards hidden (or nothing to show) → drop the whole section, header too.
+  if (!showOura && !appleVisible) return null
+
   return (
     <section>
       <div className="flex items-center gap-4 mb-3.5">
@@ -175,6 +183,7 @@ function WearablesSection({
         <div className="flex-1 h-px bg-white/[0.10]" />
       </div>
       <div className="space-y-3">
+        {showOura && (
         <div className="bg-[#111113] border border-white/[0.06] rounded-[18px] p-4">
           <p className="mb-3 text-xs font-medium text-zinc-500">Oura Ring</p>
           {!hasOura ? (
@@ -214,9 +223,10 @@ function WearablesSection({
             </div>
           )}
         </div>
+        )}
 
-        {/* Apple Watch — only shown when Apple Health synced within the last few days */}
-        {hasApple && (
+        {/* Apple Watch — synced within the last few days AND not hidden in settings */}
+        {appleVisible && (
           <div className="bg-[#111113] border border-white/[0.06] rounded-[18px] p-4">
             <div className="mb-3 flex items-center justify-between">
               <p className="text-xs font-medium text-zinc-500">Apple Watch</p>
@@ -247,7 +257,7 @@ function WearablesSection({
       </div>
 
       {/* Freshness footer */}
-      {hasOura && (
+      {showOura && hasOura && (
         <div className="flex items-center justify-between mt-2 px-1">
           <span className="text-[11px] text-zinc-600">
             {lastUpdated
@@ -1096,6 +1106,8 @@ interface WaterProfile {
   weight_unit: 'lb' | 'kg'
   substances: SubstanceEntry[]
   daily_water_target_oz: number | null
+  show_oura: boolean
+  show_apple_watch: boolean
 }
 
 function defaultWaterProfile(): WaterProfile {
@@ -1104,6 +1116,7 @@ function defaultWaterProfile(): WaterProfile {
     activity_hrs_per_week: 0, caffeine_mg_per_day: 200,
     water_unit: 'bottle', bottle_ml: 500, glass_ml: 250,
     weight_unit: 'lb', substances: [], daily_water_target_oz: null,
+    show_oura: true, show_apple_watch: true,
   }
 }
 
@@ -1123,6 +1136,8 @@ function mergeProfile(p: HealthProfile | null | undefined): WaterProfile {
     weight_unit: p.weight_unit ?? d.weight_unit,
     substances: p.substances ?? d.substances,
     daily_water_target_oz: p.daily_water_target_oz ?? d.daily_water_target_oz,
+    show_oura: p.show_oura ?? d.show_oura,
+    show_apple_watch: p.show_apple_watch ?? d.show_apple_watch,
   }
 }
 
@@ -1245,6 +1260,36 @@ function WSegControl<T extends string>({ value, options, onChange }: {
           {opt.label}
         </button>
       ))}
+    </div>
+  )
+}
+
+function WToggleRow({ label, hint, checked, onChange }: {
+  label: string
+  hint?: string
+  checked: boolean
+  onChange: (v: boolean) => void
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-2">
+      <div className="min-w-0">
+        <div className="text-[13px] font-semibold text-white">{label}</div>
+        {hint && <div className="text-[11px] text-white/40 mt-0.5 leading-relaxed">{hint}</div>}
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        onClick={() => onChange(!checked)}
+        className="relative shrink-0 inline-flex h-[26px] w-[46px] items-center rounded-full transition-colors"
+        style={{ background: checked ? 'rgba(74,222,128,0.55)' : 'rgba(255,255,255,0.12)' }}
+      >
+        <span
+          className="inline-block h-[20px] w-[20px] rounded-full bg-white transition-transform"
+          style={{ transform: checked ? 'translateX(23px)' : 'translateX(3px)' }}
+        />
+      </button>
     </div>
   )
 }
@@ -1715,6 +1760,21 @@ function WaterSection({
                     ))
                 }
               </div>
+            </WSettingSection>
+
+            <WSettingSection title="Wearables">
+              <WToggleRow
+                label="Oura Ring card"
+                hint="Show the Oura card on the Health page."
+                checked={localProfile.show_oura}
+                onChange={v => updateLocal({ show_oura: v })}
+              />
+              <WToggleRow
+                label="Apple Watch card"
+                hint="Show the Apple Watch card (only appears when Apple Health has synced recently)."
+                checked={localProfile.show_apple_watch}
+                onChange={v => updateLocal({ show_apple_watch: v })}
+              />
             </WSettingSection>
 
             <WSettingSection title="Apple Health">
