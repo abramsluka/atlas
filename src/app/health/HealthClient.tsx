@@ -134,9 +134,15 @@ function WearablesSection({
     !!appleLatest?.date &&
     (new Date(today).getTime() - new Date(appleLatest.date).getTime()) / 86_400_000 <= 3
   const hasApple = appleFresh && (apple?.daysOfData ?? 0) > 0
-  // Steps for the Oura card: Oura's own activity steps, falling back to a fresh
-  // Apple Watch sync when Oura hasn't reported them.
-  const ouraSteps = oura?.activity?.steps ?? (hasApple ? appleLatest?.steps ?? null : null)
+  // Steps for the Oura card: prefer a source whose count is definitely TODAY's
+  // (Apple syncs live from the phone; Oura only finalizes today in the evening),
+  // else fall back to the latest available count and label it "yesterday".
+  const appleToday = hasApple && appleLatest?.date === today ? appleLatest.steps ?? null : null
+  const ouraStepsToday = oura?.activity?.steps_day === today ? oura?.activity?.steps ?? null : null
+  const stepsToday = appleToday ?? ouraStepsToday
+  const stepsValue =
+    stepsToday ?? oura?.activity?.steps ?? (hasApple ? appleLatest?.steps ?? null : null)
+  const stepsAreToday = stepsToday != null
   const qc = useQueryClient()
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -197,7 +203,12 @@ function WearablesSection({
                 </div>
                 <div>
                   <p className="text-[10px] uppercase tracking-wide text-zinc-500">Steps</p>
-                  <p className="text-sm font-semibold text-white">{fmtInt(ouraSteps)}</p>
+                  <p className="text-sm font-semibold text-white">
+                    {fmtInt(stepsValue)}
+                    {!stepsAreToday && stepsValue != null && (
+                      <span className="ml-1.5 text-[10px] font-normal text-zinc-600">yesterday</span>
+                    )}
+                  </p>
                 </div>
               </div>
             </div>

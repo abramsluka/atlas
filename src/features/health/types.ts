@@ -110,6 +110,10 @@ export interface OuraData {
     steps: number | null
     active_calories: number | null
     total_calories: number | null
+    // YYYY-MM-DD the steps/calories belong to. Activity is picked
+    // latest-available (Oura finalizes it on a lag), so this may be yesterday;
+    // the UI uses it to label non-today counts honestly.
+    steps_day?: string | null
   }
 }
 

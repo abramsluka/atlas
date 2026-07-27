@@ -169,6 +169,7 @@ export async function syncOuraToday(
       steps: num(activity?.steps),
       active_calories: num(activity?.active_calories),
       total_calories: num(activity?.total_calories),
+      steps_day: typeof activity?.day === 'string' ? activity.day : null,
     },
   }
 

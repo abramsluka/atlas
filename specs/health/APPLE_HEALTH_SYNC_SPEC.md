@@ -1,6 +1,10 @@
 # Apple Health Sync — Easy Onboarding + Scheduled Steps
 
-**Status:** Planned, not built. Written 2026-07-26.
+**Status:** §6 code built + shipped 2026-07-26 (steps_day, steps-tile priority +
+"yesterday" caption, AppleHealthCard simple/advanced flow). Waiting on Luka for
+§8: the master Shortcut's iCloud link → `APPLE_SYNC_SHORTCUT_URL` in
+[AppleHealthCard.tsx](../../src/app/health/AppleHealthCard.tsx) (the "Add to
+iPhone" button stays hidden until the link is set).
 
 Make Apple Health sync (steps, active energy, VO₂ max) something a non-technical
 family member — Luka's dad — can turn on in a few taps, and keep it running on a
