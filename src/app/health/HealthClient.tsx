@@ -2918,7 +2918,7 @@ export default function HealthClient({
   useHashScroll()
 
   return (
-    <main className="nebula-health min-h-screen space-y-5 px-4 pb-24 pt-14">
+    <main className="nebula-health page-rise min-h-screen space-y-5 px-4 pb-24 pt-14">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-white">Health</h1>
         <button

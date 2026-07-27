@@ -136,6 +136,40 @@ body {
   z-index: 1;
 }
 
+/* ── Page entrance — sections rise in, staggered ────────────────────────────
+   Put .page-rise on the scroll container and every direct child flows up on
+   load. Home and Gym do this with Framer; these pages use CSS for one reason:
+   fill mode. A settled `translateY(0)` is still a transform, which makes the
+   element a containing block and would strand the position:fixed modals nested
+   inside the Health sections at the bottom of the page. `backwards` holds the
+   `from` frame through the delay and then hands the element back to its own
+   styles with no transform left behind — `forwards`/`both` would not. */
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.page-rise > *,
+.rise-in {
+  animation: riseIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.page-rise > *:nth-child(1) { animation-delay: 0.02s; }
+.page-rise > *:nth-child(2) { animation-delay: 0.08s; }
+.page-rise > *:nth-child(3) { animation-delay: 0.14s; }
+.page-rise > *:nth-child(4) { animation-delay: 0.20s; }
+.page-rise > *:nth-child(5) { animation-delay: 0.26s; }
+.page-rise > *:nth-child(6) { animation-delay: 0.32s; }
+.page-rise > *:nth-child(7) { animation-delay: 0.38s; }
+.page-rise > *:nth-child(n + 8) { animation-delay: 0.44s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .page-rise > *,
+  .rise-in {
+    animation: none;
+  }
+}
+
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;

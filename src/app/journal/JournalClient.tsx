@@ -48,9 +48,15 @@ export default function JournalClient({ initialData }: Props) {
 
   const groups = groupByMonth(list)
 
+  // One running index across every month so the entries cascade continuously
+  // down the page instead of restarting the stagger at each divider. Reset per
+  // render; re-renders don't restart CSS animations on elements already mounted.
+  let rise = 0
+  const riseIn = () => ({ animationDelay: `${Math.min(rise++ * 45, 600)}ms` })
+
   return (
     <main className="nebula-journal min-h-screen px-6 pb-24 pt-14">
-      <div className="mb-8 flex items-center justify-between">
+      <div className="rise-in mb-8 flex items-center justify-between" style={riseIn()}>
         <div>
           <h1 className="text-4xl font-bold italic tracking-tight text-white leading-tight">Journal</h1>
           <p className="text-xs text-zinc-600 mt-0.5">thoughts · moods · reflections</p>
@@ -65,19 +71,19 @@ export default function JournalClient({ initialData }: Props) {
       </div>
 
       {list.length === 0 && (
-        <p className="text-zinc-600 italic text-sm">Nothing here yet. Write your first entry.</p>
+        <p className="rise-in text-zinc-600 italic text-sm" style={riseIn()}>Nothing here yet. Write your first entry.</p>
       )}
 
       {groups.map((group) => (
         <section key={group.key} className="mb-8">
-          <div className="flex items-center gap-3 mb-4">
+          <div className="rise-in flex items-center gap-3 mb-4" style={riseIn()}>
             <div className="h-px flex-1" style={{ background: 'rgba(255,255,255,0.06)' }} />
             <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-zinc-600">{group.label}</span>
             <div className="h-px flex-1" style={{ background: 'rgba(255,255,255,0.06)' }} />
           </div>
           <div className="flex flex-col gap-2">
             {group.items.map((entry) => (
-              <div key={entry.id}>
+              <div key={entry.id} className="rise-in" style={riseIn()}>
                 <div className="flex items-center gap-2">
                   {/* min-w-0 + overflow-hidden: without them iOS ignores the nested
                       truncate and a long line stretches the whole page sideways */}

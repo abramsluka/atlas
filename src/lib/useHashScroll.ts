@@ -15,9 +15,25 @@ import { useEffect, useLayoutEffect } from 'react'
 // no jitter. Any manual scroll input cancels immediately: never fight the user.
 
 const SETTLE_MS = 2500
+const ANCHOR_GAP = 24  // breathing room above the section — matches scroll-mt-6
 
 // Client components are still SSR'd, and useLayoutEffect warns there.
 const useIsoLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
+
+// Layout position, walking offsetParents. Deliberately NOT
+// getBoundingClientRect: that reports the *visual* box, so the .page-rise
+// entrance (translateY 18px → 0) would make the target look like it's drifting
+// upward and the loop below would scroll to chase it, dragging the whole page
+// along for the ride. offsetTop ignores transforms.
+function layoutTop(el: HTMLElement): number {
+  let y = 0
+  let node: HTMLElement | null = el
+  while (node) {
+    y += node.offsetTop
+    node = node.offsetParent as HTMLElement | null
+  }
+  return y
+}
 
 export function useHashScroll() {
   useIsoLayoutEffect(() => {
@@ -39,9 +55,9 @@ export function useHashScroll() {
     const align = () => {
       const el = document.getElementById(id)
       if (!el) return
-      // Document-space offset — stable under our own scrolling, so it only
-      // moves when content above the target grows or shrinks.
-      const top = el.getBoundingClientRect().top + window.scrollY
+      // Only changes when content above the target grows or shrinks — our own
+      // scrolling and the entrance transform both leave it alone.
+      const top = layoutTop(el)
       const moved = Math.abs(top - lastTop) >= 1
       // The router's own scroll restoration can yank us back to the top after
       // we've already aligned. Manual scrolling has cancelled us by now, so any
@@ -49,7 +65,7 @@ export function useHashScroll() {
       const drifted = Number.isFinite(expectedY) && Math.abs(window.scrollY - expectedY) >= 1
       if (!moved && !drifted) return
       lastTop = top
-      el.scrollIntoView({ behavior: 'auto', block: 'start' })  // scroll-mt-* sets the gap
+      window.scrollTo({ top: Math.max(0, top - ANCHOR_GAP), behavior: 'auto' })
       expectedY = window.scrollY
     }
 
