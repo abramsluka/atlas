@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse } from '@/lib/userKeys'
 import { isAiLimitError, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
+import { getProfileBlock } from '@/lib/profile/getProfileBlock'
 
 export const runtime = 'nodejs'
 export const maxDuration = 15
@@ -45,10 +46,12 @@ export async function POST(
   const anthropic = await getAnthropicForUser(user.id)
   if (!anthropic) return noKeyResponse('anthropic')
 
+  const profileBlock = await getProfileBlock(db, user.id, 'food')
+
   const stream = anthropic.messages.stream({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 100,
-    system: SYSTEM_PROMPT,
+    system: profileBlock ? `${SYSTEM_PROMPT}\n\n${profileBlock}` : SYSTEM_PROMPT,
     messages: [{ role: 'user', content: parts }],
   })
 

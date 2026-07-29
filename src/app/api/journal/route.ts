@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { CreateEntrySchema } from '@/features/journal/types'
 import { generateTitle } from '@/lib/journalTitle'
+import { ingestJournalEntry } from '@/lib/profile/ingestJournalEntry'
 
 export const maxDuration = 30
 
@@ -57,5 +58,12 @@ export async function POST(request: NextRequest) {
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // Feed the profile. Voice-only entries have no body yet — the transcribe and
+  // reflect hooks pick those up once there's a transcript.
+  if (data && parsed.data.body.trim()) {
+    after(() => ingestJournalEntry(db, user.id, data.id))
+  }
+
   return NextResponse.json(data, { status: 201 })
 }

@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { UpdateEntrySchema } from '@/features/journal/types'
 import { withAudioUrls } from '@/lib/journalAudio'
+import { ingestJournalEntry } from '@/lib/profile/ingestJournalEntry'
 
 export async function GET(
   _request: NextRequest,
@@ -62,6 +63,10 @@ export async function PATCH(
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // The edit moved updated_at past profile_ingested_at, so this re-extracts.
+  after(() => ingestJournalEntry(db, user.id, id))
+
   return NextResponse.json(data)
 }
 

@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { ensureEntryTranscript } from '@/lib/journalAudio'
+import { ingestJournalEntry } from '@/lib/profile/ingestJournalEntry'
 import { noKeyResponse, NoApiKeyError } from '@/lib/userKeys'
 import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
 
@@ -32,6 +33,8 @@ export async function POST(
 
   try {
     const transcript = await ensureEntryTranscript(db, user.id, entry)
+    // Now that there's text, the entry can feed the profile.
+    after(() => ingestJournalEntry(db, user.id, id))
     return NextResponse.json({ transcript })
   } catch (err) {
     if (err instanceof NoApiKeyError) return noKeyResponse(err.provider)

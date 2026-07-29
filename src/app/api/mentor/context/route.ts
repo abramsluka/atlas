@@ -9,9 +9,9 @@ export async function GET() {
   const db = createServiceClient()
   const { data } = await db
     .from('mentor_context')
-    .select('primary_goal, about_me, goal_last_comment')
+    .select('primary_goal, goal_last_comment')
     .eq('user_id', user.id)
     .maybeSingle()
 
-  return NextResponse.json(data ?? { primary_goal: null, about_me: null, goal_last_comment: null })
+  return NextResponse.json(data ?? { primary_goal: null, goal_last_comment: null })
 }

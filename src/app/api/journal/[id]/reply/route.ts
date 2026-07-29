@@ -6,6 +6,7 @@ import { transcribeAudio, ensureEntryTranscript, entryContentForAI } from '@/lib
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse, NoApiKeyError } from '@/lib/userKeys'
 import { isAiLimitError, aiLimitResponse, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
+import { getProfileBlock } from '@/lib/profile/getProfileBlock'
 
 export const maxDuration = 60
 
@@ -79,6 +80,9 @@ export async function POST(
   const anthropic = await getAnthropicForUser(user.id)
   if (!anthropic) return noKeyResponse('anthropic')
 
+  const profileBlock = await getProfileBlock(db, user.id, 'journal')
+  const profileSuffix = profileBlock ? `\n\n${profileBlock}` : ''
+
   let stream: ReturnType<Anthropic['messages']['stream']>
 
   if (makeLonger) {
@@ -90,7 +94,7 @@ export async function POST(
     stream = anthropic.messages.stream({
       model: 'claude-sonnet-4-6',
       max_tokens: 800,
-      system: `You are Atlas, a personal AI coach and journal companion. The user wrote this journal entry on ${entry.date}: "${entry.body}". You are expanding one of your previous responses to give the user more depth.`,
+      system: `You are Atlas, a personal AI coach and journal companion. The user wrote this journal entry on ${entry.date}: "${entry.body}". You are expanding one of your previous responses to give the user more depth.${profileSuffix}`,
       messages: [
         {
           role: 'user',
@@ -181,7 +185,7 @@ export async function POST(
   stream = anthropic.messages.stream({
     model: 'claude-sonnet-4-6',
     max_tokens: 400,
-    system: `You are Atlas, a personal AI coach and journal companion. The user wrote a journal entry and you already gave an initial reflection. Now you're continuing the conversation. Be thoughtful, direct, and push them to go deeper. Don't summarize what they said back to them — just engage with it. Keep responses concise but substantive. Never use bullet points or headers.`,
+    system: `You are Atlas, a personal AI coach and journal companion. The user wrote a journal entry and you already gave an initial reflection. Now you're continuing the conversation. Be thoughtful, direct, and push them to go deeper. Don't summarize what they said back to them — just engage with it. Keep responses concise but substantive. Never use bullet points or headers.${profileSuffix}`,
     messages: historyMessages,
   })
 

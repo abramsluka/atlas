@@ -8,6 +8,7 @@ import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
 import { syncOuraToday } from '@/features/health/ouraSync'
 import type { OuraData } from '@/features/health/types'
+import { getProfileBlock } from '@/lib/profile/getProfileBlock'
 
 type Verdict = 'GREEN' | 'YELLOW' | 'RED'
 
@@ -32,6 +33,7 @@ async function generateCall(
   anthropic: Anthropic,
   verdict: Verdict,
   oura: OuraData | null,
+  profileBlock: string,
 ): Promise<{ headline: string; bullets: string[] }> {
   const lines: string[] = [`Readiness verdict: ${verdict}`]
 
@@ -55,6 +57,7 @@ No hedging, no "consider", no "might". Direct statements only.`
   const msg = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 200,
+    ...(profileBlock ? { system: profileBlock } : {}),
     messages: [{ role: 'user', content: prompt }],
   })
 
@@ -124,9 +127,11 @@ export async function POST(req: Request) {
   const anthropic = await getAnthropicForUser(user.id)
   if (!anthropic) return noKeyResponse('anthropic')
 
+  const profileBlock = await getProfileBlock(db, user.id, 'home')
+
   let call: { headline: string; bullets: string[] }
   try {
-    call = await generateCall(anthropic, verdict, oura)
+    call = await generateCall(anthropic, verdict, oura, profileBlock)
   } catch (err) {
     if (isAiLimitError(err)) return aiLimitResponse()
     throw err

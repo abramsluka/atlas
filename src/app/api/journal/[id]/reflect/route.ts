@@ -1,8 +1,10 @@
-import { NextRequest } from 'next/server'
+import { NextRequest, after } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getOuraForDate, summarizeOuraForDate } from '@/features/health/ouraContext'
 import { ensureEntryTranscript, entryContentForAI } from '@/lib/journalAudio'
 import { getAnthropicForUser } from '@/lib/anthropic'
+import { getProfileBlock } from '@/lib/profile/getProfileBlock'
+import { ingestJournalEntry } from '@/lib/profile/ingestJournalEntry'
 import { noKeyResponse, NoApiKeyError } from '@/lib/userKeys'
 import { isAiLimitError, aiLimitResponse, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
 
@@ -42,8 +44,11 @@ export async function POST(
   const content = entryContentForAI(entry.body, transcript)
   if (!content) return new Response('Entry has no content', { status: 400 })
 
-  // Pull Oura data for the entry's date (if any)
-  const ouraForDay = await getOuraForDate(db, user.id, entry.date)
+  // Pull Oura data for the entry's date (if any), plus what Atlas knows about them
+  const [ouraForDay, profileBlock] = await Promise.all([
+    getOuraForDate(db, user.id, entry.date),
+    getProfileBlock(db, user.id, 'journal'),
+  ])
   const bodySummary = summarizeOuraForDate(ouraForDay)
 
   const userMessage = `Here is my journal entry for ${entry.date}:\n\n${entry.title ? `Title: ${entry.title}\n\n` : ''}${content}${bodySummary ? `\n\n[Body data for this day: ${bodySummary}]` : ''}`
@@ -54,7 +59,7 @@ export async function POST(
   const stream = anthropic.messages.stream({
     model: 'claude-sonnet-4-6',
     max_tokens: 300,
-    system: `You are Atlas, a personal AI coach. The user has just written a journal entry. Read it carefully and give a short, honest reflection — 2–3 sentences, no more. You are not a therapist. Sound like a thoughtful friend who actually read what they wrote. Be direct. If something stands out, say so. If body data (sleep, readiness, HRV) is provided and it's notable — low sleep, big HRV drop, low readiness — weave it into your reflection naturally where it's relevant, but don't list it out. End with one open question that might be worth sitting with. Never use bullet points or headers.`,
+    system: `You are Atlas, a personal AI coach. The user has just written a journal entry. Read it carefully and give a short, honest reflection — 2–3 sentences, no more. You are not a therapist. Sound like a thoughtful friend who actually read what they wrote. Be direct. If something stands out, say so. If body data (sleep, readiness, HRV) is provided and it's notable — low sleep, big HRV drop, low readiness — weave it into your reflection naturally where it's relevant, but don't list it out. End with one open question that might be worth sitting with. Never use bullet points or headers.${profileBlock ? `\n\n${profileBlock}\n\nUse what you know about them to make the reflection specific rather than generic. Don't recite it back at them.` : ''}`,
     messages: [{ role: 'user', content: userMessage }],
   })
 
@@ -90,6 +95,10 @@ export async function POST(
           .update({ ai_reflection: fullText, updated_at: new Date().toISOString() })
           .eq('id', id)
       }
+
+      // Catches voice entries reflected without an explicit transcribe call.
+      // No-ops if the transcribe hook already ingested this one.
+      after(() => ingestJournalEntry(db, user.id, id))
     },
   })
 

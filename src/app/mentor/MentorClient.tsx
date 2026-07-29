@@ -9,6 +9,7 @@ import NoApiKeyNotice from '@/components/NoApiKeyNotice'
 import AiLimitNotice from '@/components/AiLimitNotice'
 import { checkNoApiKey, noApiKeyMessage, NoApiKeyClientError, AiLimitClientError } from '@/lib/apiKeyError'
 import InsightsTab from './InsightsTab'
+import ProfileTab from './ProfileTab'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   useJots,
@@ -668,7 +669,7 @@ export default function MentorClient() {
   const searchParams = useSearchParams()
   const urlConvId = searchParams.get('c')
 
-  const [tab, setTab] = useState<'chat' | 'insights' | 'reports'>('chat')
+  const [tab, setTab] = useState<'chat' | 'insights' | 'reports' | 'profile'>('chat')
 
   // ── Thread state (DB-backed; URL ?c=<id> is the source of truth) ──
   // Bare /mentor = a fresh chat. /mentor?c=<id> resumes that conversation.
@@ -978,7 +979,7 @@ export default function MentorClient() {
 
         {/* Tabs */}
         <div className="flex gap-4 mb-4 items-baseline" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-          {(['chat', 'insights', 'reports'] as const).map(t => (
+          {(['chat', 'insights', 'reports', 'profile'] as const).map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -1004,6 +1005,8 @@ export default function MentorClient() {
         {tab === 'reports' && <ReportsTab />}
 
         {tab === 'insights' && <InsightsTab />}
+
+        {tab === 'profile' && <ProfileTab />}
 
         {tab === 'chat' && (
           <>

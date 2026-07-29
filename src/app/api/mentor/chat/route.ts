@@ -1,74 +1,3 @@
-/*
--- ============================================================
--- MENTOR MIGRATION — run in Supabase SQL editor (or via supabase db push)
--- ============================================================
-
--- Quick-capture thoughts ("The Void")
-create table if not exists jots (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  content text not null,
-  created_at timestamptz default now()
-);
-alter table jots enable row level security;
-create policy "Users access own jots" on jots
-  for all using (auth.uid() = user_id);
-
--- Per-session memory summaries (rolling, capped at 20)
-create table if not exists mentor_memories (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  summary text not null,
-  created_at timestamptz default now()
-);
-alter table mentor_memories enable row level security;
-create policy "Users access own memories" on mentor_memories
-  for all using (auth.uid() = user_id);
-
--- Living user profile (one row per user, upserted after each session)
-create table if not exists mentor_context (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade unique,
-  primary_goal text,
-  about_me text,
-  goal_last_comment text,
-  last_synthesized_at timestamptz,
-  updated_at timestamptz default now()
-);
-alter table mentor_context enable row level security;
-create policy "Users access own context" on mentor_context
-  for all using (auth.uid() = user_id);
-
--- Weekly synthesis reports
-create table if not exists weekly_reports (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  week_of date not null,
-  report_text text not null,
-  created_at timestamptz default now(),
-  unique(user_id, week_of)
-);
-alter table weekly_reports enable row level security;
-create policy "Users access own weekly reports" on weekly_reports
-  for all using (auth.uid() = user_id);
-
--- Jot synthesis cards
-create table if not exists jot_syntheses (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  synthesis_text text not null,
-  jot_count integer not null,
-  created_at timestamptz default now()
-);
-alter table jot_syntheses enable row level security;
-create policy "Users access own syntheses" on jot_syntheses
-  for all using (auth.uid() = user_id);
-
--- NOTE: goals table NOT dropped — health_profile.linked_target_goal_id references it.
--- To clean up fully: ALTER TABLE health_profile DROP COLUMN linked_target_goal_id;
---                    DROP TABLE IF EXISTS habit_logs; DROP TABLE IF EXISTS goals;
-*/
-
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
@@ -83,6 +12,8 @@ import { describeAction, type AssistantStreamEvent } from '@/features/assistant/
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse } from '@/lib/userKeys'
 import { isAiLimitError, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
+import { getProfileBlock } from '@/lib/profile/getProfileBlock'
+import { extractFacts } from '@/lib/profile/extractFacts'
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -243,9 +174,10 @@ export async function POST(req: NextRequest) {
 
   // Step 1 — load persistent context in parallel (incl. the assistant action
   // context: exercise/supplement catalogs the logging tools resolve against)
-  const [contextResult, memoriesResult, actionCtx] = await Promise.all([
+  const [contextResult, recentConvosResult, profileBlock, actionCtx] = await Promise.all([
     db.from('mentor_context').select('*').eq('user_id', user.id).maybeSingle(),
-    db.from('mentor_memories').select('summary').eq('user_id', user.id).order('created_at', { ascending: false }).limit(5),
+    db.from('mentor_conversations').select('title, updated_at').eq('user_id', user.id).order('updated_at', { ascending: false }).limit(3),
+    getProfileBlock(db, user.id, 'mentor'),
     loadAssistantContext(db, user.id),
   ])
 
@@ -261,8 +193,8 @@ export async function POST(req: NextRequest) {
     if (convo) { conversationId = convo.id; isNewConversation = true }
   }
 
-  const mentorCtx = contextResult.data as { primary_goal: string | null; about_me: string | null; goal_last_comment: string | null } | null
-  const memories = (memoriesResult.data ?? []).map(m => m.summary)
+  const mentorCtx = contextResult.data as { primary_goal: string | null; goal_last_comment: string | null } | null
+  const recentConvos = (recentConvosResult.data ?? []) as Array<{ title: string | null; updated_at: string }>
 
   // Step 2 — date windows
   const fourWeeksAgo = subWeeks(new Date(), 4).toISOString()
@@ -319,8 +251,8 @@ Shift naturally between these as the conversation evolves. Do not announce the m
 When journal data is present: look for mood trends across entries (not just today's), recurring themes or words, and whether what he's writing about lines up with what he's doing physically. If his mood has been trending down, or the same thing keeps showing up across multiple entries, name it — don't wait for him to connect the dots.`,
   ]
 
-  if (mentorCtx?.about_me) {
-    parts.push(`WHO LUKA IS:\n${mentorCtx.about_me}`)
+  if (profileBlock) {
+    parts.push(profileBlock)
   }
   if (mentorCtx?.primary_goal) {
     parts.push(`Luka's current primary goal: ${mentorCtx.primary_goal}`)
@@ -328,8 +260,13 @@ When journal data is present: look for mood trends across entries (not just toda
   if (mentorCtx?.goal_last_comment) {
     parts.push(`Last thing you told him about this goal: ${mentorCtx.goal_last_comment}`)
   }
-  if (memories.length > 0) {
-    parts.push(`CONTEXT FROM RECENT SESSIONS:\n${memories.map(m => `- ${m}`).join('\n')}`)
+  if (recentConvos.length > 0) {
+    // Conversational recency only — what he's been bringing to you lately. The
+    // durable content lives in the profile block above.
+    const lines = recentConvos
+      .filter(c => c.title)
+      .map(c => `- "${c.title}" (${formatInTimeZone(new Date(c.updated_at), TZ, 'MMM d')})`)
+    if (lines.length) parts.push(`RECENT CONVERSATIONS WITH HIM:\n${lines.join('\n')}`)
   }
 
   const patternText = await patternPromise
@@ -525,82 +462,49 @@ When journal data is present: look for mood trends across entries (not just toda
 
       // Step 7 — background processing (no await before returning)
       if (fullText.length > 150) {
-        // Operation A — memory summary
+        // Feed the profile. Same extractor the journal uses, so both sources
+        // reconcile against one fact set instead of two competing writers.
+        after(() => extractFacts(db, user.id, {
+          sourceKind: 'mentor',
+          sourceId: conversationId,
+          content: `Luka: ${message}\n\nAtlas: ${fullText}`,
+          occurredAt: new Date().toISOString(),
+        }))
+
+        // primary_goal / goal_last_comment still drive the goal card in the UI.
         after(async () => {
           try {
-            const summaryRes = await anthropic.messages.create({
-              model: 'claude-haiku-4-5-20251001',
-              max_tokens: 200,
-              messages: [{
-                role: 'user',
-                content: `Summarize this mentor conversation in 2-3 sentences. Focus on: what Luka asked about, what Atlas told him, any goals or intentions Luka expressed, and any notable patterns or insights. Be specific — include actual numbers or facts if they appeared. This will be used as long-term memory.\n\nUSER: ${message}\nATLAS: ${fullText}`,
-              }],
-            })
-            const summary = summaryRes.content[0].type === 'text' ? summaryRes.content[0].text : ''
-            if (summary) {
-              await db.from('mentor_memories').insert({ user_id: user.id, summary })
-              // Cap at 20
-              const { data: allMemories } = await db.from('mentor_memories').select('id').eq('user_id', user.id).order('created_at', { ascending: false })
-              if (allMemories && allMemories.length > 20) {
-                const idsToDelete = allMemories.slice(20).map(m => m.id)
-                await db.from('mentor_memories').delete().in('id', idsToDelete)
-              }
+            const hasGoalStatement = /my goal is|i want to|i'm trying to|i'm aiming for|i am trying to|i am aiming for/.test(message.toLowerCase())
+
+            const lowerReply = fullText.toLowerCase()
+            const hasGoalProgress = mentorCtx?.primary_goal != null && (lowerReply.includes('goal') || lowerReply.includes('progress') || lowerReply.includes('track'))
+
+            const goalLastComment = hasGoalProgress
+              ? fullText.split(/[.!?]+/).filter(s => s.trim().length > 20).find(s => /goal|progress|track|aim|target/i.test(s))?.trim() ?? null
+              : null
+
+            let newGoal: string | null = null
+            if (hasGoalStatement) {
+              const goalExtract = await anthropic.messages.create({
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 60,
+                messages: [{
+                  role: 'user',
+                  content: `Extract Luka's goal from this message in 3-8 words. Return ONLY the goal phrase, nothing else.\n\n"${message}"`,
+                }],
+              })
+              newGoal = goalExtract.content[0].type === 'text' ? goalExtract.content[0].text.trim() : null
             }
-          } catch (e) { console.error('memory op failed', e) }
-        })
 
-        // Operation B — update living profile
-        after(async () => {
-          try {
-            const currentProfile = mentorCtx?.about_me || 'No profile yet — this is the first session.'
-            const profileRes = await anthropic.messages.create({
-              model: 'claude-haiku-4-5-20251001',
-              max_tokens: 600,
-              messages: [{
-                role: 'user',
-                content: `You are updating a living profile document about Luka. Below is the current profile and a conversation that just happened. Rewrite the profile to incorporate anything new you learned — new goals, new patterns, new context, new struggles, new wins. Keep everything that's still accurate. Make it richer and more specific. The profile should read like a well-informed advisor's notes about someone they know well. Aim for 10-18 sentences. Write in third person.\n\nCURRENT PROFILE:\n${currentProfile}\n\nCONVERSATION:\nUSER: ${message}\nATLAS: ${fullText}\n\nWrite the updated profile now:`,
-              }],
-            })
-            const newProfile = profileRes.content[0].type === 'text' ? profileRes.content[0].text.trim() : ''
-            if (newProfile) {
-              // Check for goal statement
-              const lowerMsg = message.toLowerCase()
-              const hasGoalStatement = /my goal is|i want to|i'm trying to|i'm aiming for|i am trying to|i am aiming for/.test(lowerMsg)
-
-              // Check if goal progress was discussed
-              const lowerReply = fullText.toLowerCase()
-              const hasGoalProgress = mentorCtx?.primary_goal != null && (lowerReply.includes('goal') || lowerReply.includes('progress') || lowerReply.includes('track'))
-
-              const goalLastComment = hasGoalProgress
-                ? (() => {
-                    const sentences = fullText.split(/[.!?]+/).filter(s => s.trim().length > 20)
-                    const goalSentence = sentences.find(s => /goal|progress|track|aim|target/i.test(s))
-                    return goalSentence?.trim() ?? null
-                  })()
-                : null
-
-              let newGoal: string | null = null
-              if (hasGoalStatement) {
-                const goalExtract = await anthropic.messages.create({
-                  model: 'claude-haiku-4-5-20251001',
-                  max_tokens: 60,
-                  messages: [{
-                    role: 'user',
-                    content: `Extract Luka's goal from this message in 3-8 words. Return ONLY the goal phrase, nothing else.\n\n"${message}"`,
-                  }],
-                })
-                newGoal = goalExtract.content[0].type === 'text' ? goalExtract.content[0].text.trim() : null
-              }
-
+            if (newGoal || goalLastComment) {
               await db.from('mentor_context').upsert({
                 user_id: user.id,
-                about_me: newProfile,
                 ...(newGoal ? { primary_goal: newGoal } : {}),
                 ...(goalLastComment ? { goal_last_comment: goalLastComment } : {}),
                 updated_at: new Date().toISOString(),
               }, { onConflict: 'user_id' })
             }
-          } catch (e) { console.error('profile op failed', e) }
+          } catch (e) { console.error('goal op failed', e) }
         })
       }
     },

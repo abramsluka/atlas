@@ -10,6 +10,7 @@ import { toLocalDate } from '@/lib/date'
 import { getOuraContextRange } from '@/features/health/ouraContext'
 import { syncOuraToday } from '@/features/health/ouraSync'
 import type { OuraData } from '@/features/health/types'
+import { getProfileBlock } from '@/lib/profile/getProfileBlock'
 
 function avg(values: Array<number | null | undefined>): number | null {
   const nums = values.filter((v): v is number => typeof v === 'number')
@@ -195,6 +196,8 @@ export async function POST(_request: NextRequest) {
   const anthropic = await getAnthropicForUser(user.id)
   if (!anthropic) return noKeyResponse('anthropic')
 
+  const profileBlock = await getProfileBlock(db, user.id, 'food')
+
   const stream = anthropic.messages.stream({
     model: 'claude-sonnet-4-6',
     max_tokens: 500,
@@ -207,7 +210,7 @@ export async function POST(_request: NextRequest) {
 5. Recently added supplements: compare body data before and after the addition. Honest read — is it doing anything visible yet?
 6. Hydration only if there's a clear pattern.
 
-Be specific with numbers. Don't list — write a tight paragraph. No bullet points, no headers. Don't cheerlead. If the data is too thin to draw conclusions, say that.`,
+Be specific with numbers. Don't list — write a tight paragraph. No bullet points, no headers. Don't cheerlead. If the data is too thin to draw conclusions, say that.${profileBlock ? `\n\n${profileBlock}` : ''}`,
     messages: [{ role: 'user', content: userMessage }],
   })
 

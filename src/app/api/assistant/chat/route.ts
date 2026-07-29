@@ -7,6 +7,7 @@ import { isAiLimitError, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
 import type { OuraData } from '@/features/health/types'
 import { describeAction, type AssistantStreamEvent } from '@/features/assistant/actions'
 import { loadAssistantContext, buildAssistantTools, resolveToolCall, ACTION_RULES } from '@/features/assistant/tools'
+import { getProfileBlock } from '@/lib/profile/getProfileBlock'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -31,10 +32,11 @@ export async function POST(req: NextRequest) {
   if (!message?.trim()) return new Response('message is required', { status: 400 })
 
   const db = createServiceClient()
-  const [ctx, wearableRes, profileRes] = await Promise.all([
+  const [ctx, wearableRes, profileRes, profileBlock] = await Promise.all([
     loadAssistantContext(db, user.id),
     createServiceClient().from('wearable_data').select('data, provider').eq('user_id', user.id).eq('provider', 'oura').order('date', { ascending: false }).limit(2),
     createServiceClient().from('health_profile').select('age, weight_lbs, fitness_goal, target_weight_lbs').eq('user_id', user.id).maybeSingle(),
+    getProfileBlock(db, user.id, 'assistant'),
   ])
 
   // ── Recovery today (from Oura) ──
@@ -73,7 +75,7 @@ When he asks for a multi-week PROGRAM or periodized plan ("build me a program", 
 — TODAY'S RECOVERY: ${recoveryLine}
 — PROFILE: ${profileLine}
 
-${ctx.catalogBlock}`
+${ctx.catalogBlock}${profileBlock ? `\n\n${profileBlock}` : ''}`
 
   const tools = buildAssistantTools(ctx.units)
 

@@ -6,6 +6,7 @@ import { isAiLimitError, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
 import { subDays } from 'date-fns'
 import { formatInTimeZone } from 'date-fns-tz'
 import { getUserTimezone } from '@/lib/getUserTimezone'
+import { getProfileBlock } from '@/lib/profile/getProfileBlock'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -166,10 +167,13 @@ export async function POST(request: NextRequest) {
   const anthropic = await getAnthropicForUser(user.id)
   if (!anthropic) return noKeyResponse('anthropic')
 
+  const profileBlock = await getProfileBlock(db, user.id, 'gym')
+  const baseSystem = mode === 'devil' ? devilSystem : angelSystem
+
   const stream = anthropic.messages.stream({
     model: 'claude-sonnet-4-6',
     max_tokens: 450,
-    system: mode === 'devil' ? devilSystem : angelSystem,
+    system: profileBlock ? `${baseSystem}\n\n${profileBlock}` : baseSystem,
     messages: [
       { role: 'user', content: `My training data:\n\n${context}` },
     ],

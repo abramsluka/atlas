@@ -6,6 +6,7 @@ import { generateTitle } from '@/lib/journalTitle'
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse, NoApiKeyError } from '@/lib/userKeys'
 import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
+import { getProfileBlock } from '@/lib/profile/getProfileBlock'
 
 export const maxDuration = 60
 
@@ -129,12 +130,15 @@ ${instruction}
 
   const anthropic = await getAnthropicForUser(user.id)
   if (!anthropic) return noKeyResponse('anthropic')
+
+  const profileBlock = await getProfileBlock(db, user.id, 'journal')
+
   let raw = ''
   try {
     const msg = await anthropic.messages.create({
       model: 'claude-haiku-4-5',
       max_tokens: 1000,
-      system: PLANNER_SYSTEM,
+      system: profileBlock ? `${PLANNER_SYSTEM}\n\n${profileBlock}` : PLANNER_SYSTEM,
       messages: [{ role: 'user', content: userMessage }],
       // Constrain the model to a JSON object we can always parse, instead of
       // hoping it returns a bare array we can regex out of prose. This is what

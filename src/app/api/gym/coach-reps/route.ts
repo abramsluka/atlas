@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse } from '@/lib/userKeys'
+import { getProfileBlock } from '@/lib/profile/getProfileBlock'
 
 export async function POST() {
   const authClient = await createClient()
@@ -76,11 +77,13 @@ export async function POST() {
   const anthropic = await getAnthropicForUser(user.id)
   if (!anthropic) return noKeyResponse('anthropic')
 
+  const profileBlock = await getProfileBlock(db, user.id, 'gym')
+
   try {
     const message = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 150,
-      system: `You are an expert strength and conditioning coach. Given a user's training data and their training preset, recommend a single "upgrade_at_reps" number — the rep ceiling at which they should increase weight. Match the ceiling to their training goal: Strength preset → ceiling around 5–6; Hypertrophy preset → ceiling around 10–12; Endurance preset → ceiling around 20–25. Progressions should happen roughly every 2–4 weeks. Return ONLY valid JSON with no markdown: { "reps": number, "reason": string }. The reason must be 1 concise sentence, specific to their data and preset.`,
+      system: `You are an expert strength and conditioning coach. Given a user's training data and their training preset, recommend a single "upgrade_at_reps" number — the rep ceiling at which they should increase weight. Match the ceiling to their training goal: Strength preset → ceiling around 5–6; Hypertrophy preset → ceiling around 10–12; Endurance preset → ceiling around 20–25. Progressions should happen roughly every 2–4 weeks. Return ONLY valid JSON with no markdown: { "reps": number, "reason": string }. The reason must be 1 concise sentence, specific to their data and preset.${profileBlock ? `\n\n${profileBlock}` : ''}`,
       messages: [{
         role: 'user',
         content: `Here is my training data:\n\n${contextLines}\n\nWhat should my upgrade_at_reps be?`,

@@ -7,6 +7,7 @@ import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
 import { subDays } from 'date-fns'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import type { OuraData } from '@/features/health/types'
+import { getProfileBlock } from '@/lib/profile/getProfileBlock'
 import type { GymConfig, GymExercise } from '@/features/gym/types'
 import type {
   GeneratedProgram, GenerateProgramRequest, ProgramGoal, ProgramStructure, ProgramSession, ProgramPhase,
@@ -88,6 +89,8 @@ export async function POST(req: NextRequest) {
     ? [profile.age && `age ${profile.age}`, profile.weight_lbs && `${profile.weight_lbs} lbs`, profile.fitness_goal && `goal: ${profile.fitness_goal}`].filter(Boolean).join(', ')
     : 'not set'
 
+  const profileBlock = await getProfileBlock(db, user.id, 'gym')
+
   const structureGuide = structure === 'overlay'
     ? `STRUCTURE = OVERLAY: map each of the ${days_per_week} sessions onto the user's EXISTING days below — set day_id to the day's [id] and label to its name. Use that day's existing exercises (their [id]s) as the movements. You may add ONE new movement per session if the goal genuinely needs it (exercise_id=null, is_new=true, but still assign it the session's day_id is implied by the session).`
     : `STRUCTURE = STANDALONE: invent ${days_per_week} session labels appropriate to the goal and days/week (e.g. Push/Pull/Legs, Upper/Lower, Full Body A/B). Set day_id=null. Pull movements from the catalog by [id] where they fit, and add new movements (exercise_id=null, is_new=true) freely where the program needs them.`
@@ -113,7 +116,7 @@ CONTEXT
 ${dayList}
 
 — EXERCISE CATALOG (use these [id]s as exercise_id):
-${catalog}`
+${catalog}${profileBlock ? `\n\n${profileBlock}` : ''}`
 
   const tools: Anthropic.Tool[] = [{
     name: 'emit_program',

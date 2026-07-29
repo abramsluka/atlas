@@ -15,7 +15,6 @@ export interface JotSynthesis {
 
 export interface MentorContext {
   primary_goal: string | null
-  about_me: string | null
   goal_last_comment: string | null
 }
 

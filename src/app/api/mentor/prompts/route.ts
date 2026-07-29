@@ -7,6 +7,7 @@ import { toLocalDate } from '@/lib/date'
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse } from '@/lib/userKeys'
 import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
+import { getProfileBlock } from '@/lib/profile/getProfileBlock'
 
 const FALLBACK_PROMPTS = [
   'How is my week looking?',
@@ -37,11 +38,12 @@ export async function GET() {
   const today = toLocalDate(TZ)
   const sevenDaysAgo = formatInTimeZone(subDays(new Date(), 7), TZ, 'yyyy-MM-dd')
 
-  const [gymLogsRes, contextRes, jotsCountRes] = await Promise.all([
+  const [gymLogsRes, contextRes, jotsCountRes, profileBlock] = await Promise.all([
     // Recent sets, newest first — the latest day's logs describe the last workout
     db.from('gym_logs').select('logged_at, gym_exercises(name)').eq('user_id', user.id).order('logged_at', { ascending: false }).limit(20),
     db.from('mentor_context').select('primary_goal').eq('user_id', user.id).maybeSingle(),
     db.from('jots').select('id', { count: 'exact' }).eq('user_id', user.id).gte('created_at', sevenDaysAgo),
+    getProfileBlock(db, user.id, 'mentor'),
   ])
 
   const gymLogs = (gymLogsRes.data ?? []) as unknown as Array<{ logged_at: string; gym_exercises: { name: string } | null }>
@@ -65,7 +67,8 @@ export async function GET() {
     `Primary goal: ${primaryGoal ?? 'not set'}`,
     `Jots captured in last 7 days: ${recentJotCount}`,
     `Today: ${today}`,
-  ].join('\n')
+    profileBlock,
+  ].filter(Boolean).join('\n')
 
   try {
     const res = await anthropic.messages.create({

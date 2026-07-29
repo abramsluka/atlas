@@ -6,6 +6,7 @@ import { NextResponse, after } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { getAnthropicForUser } from '@/lib/anthropic'
+import { getProfileBlock } from '@/lib/profile/getProfileBlock'
 
 export const runtime = 'nodejs'
 
@@ -104,10 +105,13 @@ async function recomputeChips(userId: string) {
 
   const anthropic = await getAnthropicForUser(userId)
   if (!anthropic) return
+
+  const profileBlock = await getProfileBlock(db, userId, 'assistant')
+
   const res = await anthropic.messages.create({
     model: CLUSTER_MODEL,
     max_tokens: 400,
-    system: CLUSTER_SYSTEM,
+    system: profileBlock ? `${CLUSTER_SYSTEM}\n\n${profileBlock}` : CLUSTER_SYSTEM,
     tools: [SET_CHIPS_TOOL],
     tool_choice: { type: 'tool', name: 'set_chips' },
     messages: [{ role: 'user', content: `<commands>\n${lines}\n</commands>\nProduce the chips.` }],

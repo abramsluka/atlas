@@ -15,7 +15,9 @@ export async function GET() {
   const [gymLogsRes, journalRes, mentorRes] = await Promise.all([
     db.from('gym_logs').select('logged_at').eq('user_id', user.id).gte('logged_at', sevenDaysAgoISO),
     db.from('journal_entries').select('id', { count: 'exact', head: true }).eq('user_id', user.id).gte('created_at', sevenDaysAgoISO),
-    db.from('mentor_memories').select('id', { count: 'exact', head: true }).eq('user_id', user.id).gte('created_at', sevenDaysAgoISO),
+    // Conversations touched this week — mentor_memories used to back this stat,
+    // and this is closer to what it was trying to say anyway.
+    db.from('mentor_conversations').select('id', { count: 'exact', head: true }).eq('user_id', user.id).gte('updated_at', sevenDaysAgoISO),
   ])
 
   // Count distinct training days (a day with any gym sets = 1 session)

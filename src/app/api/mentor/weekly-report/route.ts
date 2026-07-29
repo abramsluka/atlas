@@ -9,6 +9,7 @@ import { fetchGymLogs, groupByDay, sessionLabel, sessionVolumeLbs } from '@/lib/
 import { getAnthropicForUser } from '@/lib/anthropic'
 import { noKeyResponse } from '@/lib/userKeys'
 import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
+import { getProfileBlock } from '@/lib/profile/getProfileBlock'
 
 function getMostRecentSunday(dateStr: string): string {
   const d = new Date(dateStr + 'T12:00:00')
@@ -36,15 +37,16 @@ export async function POST() {
   if (!anthropic) return noKeyResponse('anthropic')
 
   // Fetch all data in parallel
-  const [workoutsRes, ouraData, waterRes, weightRes, foodRes, jotsRes, contextRes, prevReportRes] = await Promise.all([
+  const [workoutsRes, ouraData, waterRes, weightRes, foodRes, jotsRes, contextRes, prevReportRes, profileBlock] = await Promise.all([
     fetchGymLogs(db, user.id, new Date(sevenDaysAgo).toISOString()),
     getOuraContextRange(db, user.id, sevenDaysAgo, today),
     db.from('water_logs').select('date, amount_oz').eq('user_id', user.id).gte('date', sevenDaysAgo).order('date', { ascending: false }),
     db.from('body_weights').select('date_key, weight').eq('user_id', user.id).gte('date_key', sevenDaysAgo).order('date_key', { ascending: false }),
     db.from('food_logs').select('date, item_name, calories, protein_g').eq('user_id', user.id).gte('date', sevenDaysAgo).order('date', { ascending: false }),
     db.from('jots').select('content, created_at').eq('user_id', user.id).gte('created_at', new Date(sevenDaysAgo).toISOString()).order('created_at', { ascending: false }),
-    db.from('mentor_context').select('primary_goal, about_me').eq('user_id', user.id).maybeSingle(),
+    db.from('mentor_context').select('primary_goal').eq('user_id', user.id).maybeSingle(),
     db.from('weekly_reports').select('report_text, week_of').eq('user_id', user.id).order('week_of', { ascending: false }).limit(1).maybeSingle(),
+    getProfileBlock(db, user.id, 'mentor'),
   ])
 
   // Format data
@@ -91,7 +93,7 @@ export async function POST() {
         content: `Generate my weekly report.
 
 PRIMARY GOAL: ${contextRes.data?.primary_goal ?? 'not set'}
-ABOUT ME: ${contextRes.data?.about_me ?? 'No profile yet'}
+${profileBlock || 'ABOUT ME: no profile yet'}
 
 WORKOUTS:
 ${workoutSummary}

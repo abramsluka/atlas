@@ -5,6 +5,7 @@ import { noKeyResponse } from '@/lib/userKeys'
 import { isAiLimitError, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
 import { toLocalDate } from '@/lib/date'
 import { getUserTimezone } from '@/lib/getUserTimezone'
+import { getProfileBlock } from '@/lib/profile/getProfileBlock'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -151,10 +152,13 @@ export async function POST(request: NextRequest) {
     ? context
     : `${context}\n\nUser question: ${question}`
 
+  const profileBlock = await getProfileBlock(db, user.id, 'food')
+  const baseSystem = isSummary ? SUMMARY_SYSTEM : ASK_SYSTEM
+
   const stream = anthropic.messages.stream({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 150,
-    system: isSummary ? SUMMARY_SYSTEM : ASK_SYSTEM,
+    system: profileBlock ? `${baseSystem}\n\n${profileBlock}` : baseSystem,
     messages: [{ role: 'user', content: userContent }],
   })
 

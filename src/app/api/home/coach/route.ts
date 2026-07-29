@@ -6,6 +6,7 @@ import { isAiLimitError, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
 import type { OuraData } from '@/features/health/types'
+import { getProfileBlock } from '@/lib/profile/getProfileBlock'
 
 export async function POST(_request: NextRequest) {
   const authClient = await createClient()
@@ -32,6 +33,7 @@ export async function POST(_request: NextRequest) {
     ouraWearableRes,
     foodTodayRes,
     healthProfileRes,
+    profileBlock,
   ] = await Promise.all([
     db.from('daily_checkins')
       .select('*')
@@ -108,6 +110,8 @@ export async function POST(_request: NextRequest) {
       .select('daily_calorie_target, daily_protein_target_g')
       .eq('user_id', user.id)
       .maybeSingle(),
+
+    getProfileBlock(db, user.id, 'home'),
   ])
 
   const checkin = checkinRes.data
@@ -263,7 +267,7 @@ export async function POST(_request: NextRequest) {
 
 Your job: give him a real daily briefing in 4–6 sentences. Be specific to his actual data. Call out what's going well, what needs attention, and one concrete thing to focus on. If something has been slipping (habits not done, no gym in 4+ days, poor sleep, skipped journaling), name it plainly. If something is going really well (long streak, consistent training, trending weight), acknowledge it genuinely.
 
-Tone: direct, warm, grounded. Like someone who has been watching your data every day and isn't going to bullshit you. No hollow phrases like "great job keeping up with your habits" — be specific. No bullet points, no headers — just a flowing paragraph or two that feels like a voice memo from someone who knows your life.`
+Tone: direct, warm, grounded. Like someone who has been watching your data every day and isn't going to bullshit you. No hollow phrases like "great job keeping up with your habits" — be specific. No bullet points, no headers — just a flowing paragraph or two that feels like a voice memo from someone who knows your life.${profileBlock ? `\n\n${profileBlock}` : ''}`
 
   const anthropic = await getAnthropicForUser(user.id)
   if (!anthropic) return noKeyResponse('anthropic')
