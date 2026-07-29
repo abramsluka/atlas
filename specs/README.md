@@ -22,6 +22,7 @@ iterated on, then implemented ("run the spec").
 ## mentor/
 - [MENTOR_SPEC.md](mentor/MENTOR_SPEC.md) — Mentor page full build spec.
 - [LONGITUDINAL_PATTERNS_SPEC.md](mentor/LONGITUDINAL_PATTERNS_SPEC.md) — longitudinal pattern recognition for the Mentor.
+- [USER_PROFILE_MEMORY_SPEC.md](mentor/USER_PROFILE_MEMORY_SPEC.md) — fact-based user profile built from journal + mentor writes, injected into every AI surface; replaces `mentor_context.about_me` and `mentor_memories`. **Planned, not built.**
 
 ## voice/
 - [VOICE_SPEC.md](voice/VOICE_SPEC.md) — Atlas voice logging ("The Orb").
