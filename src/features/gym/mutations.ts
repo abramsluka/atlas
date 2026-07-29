@@ -118,8 +118,13 @@ export function useLogSet() {
       return res.json() as Promise<GymLog>
     },
     onSuccess: (data) => {
-      qc.setQueryData<GymLog[]>(['gym-logs', data.exercise_id], (old = []) => [...old, data])
-      qc.setQueryData<GymLog[]>(['gym-logs-all'], (old = []) => [...old, data])
+      // Only patch caches that were actually fetched. Seeding ['gym-logs', id]
+      // from `old = []` here would leave the History sheet (staleTime 30s, the
+      // sole consumer of this key) serving just this session's sets as the whole
+      // history — the flaky "history didn't load". Absent → the sheet fetches the
+      // full history fresh on open.
+      qc.setQueryData<GymLog[]>(['gym-logs', data.exercise_id], (old) => old ? [...old, data] : undefined)
+      qc.setQueryData<GymLog[]>(['gym-logs-all'], (old) => old ? [...old, data] : undefined)
       // Session start/end is server-derived from the logs — refetch it.
       qc.invalidateQueries({ queryKey: ['gym-sessions'] })
     },
@@ -135,11 +140,14 @@ export function useDeleteLog() {
       return exerciseId
     },
     onSuccess: (exerciseId, { id }) => {
-      qc.setQueryData<GymLog[]>(['gym-logs', exerciseId], (old = []) =>
-        old.filter(l => l.id !== id)
+      // Same guard as useLogSet: only touch caches already fetched, so a delete
+      // can't seed an empty ['gym-logs', id] that the History sheet would then
+      // show as "No history yet" for the 30s stale window.
+      qc.setQueryData<GymLog[]>(['gym-logs', exerciseId], (old) =>
+        old ? old.filter(l => l.id !== id) : undefined
       )
-      qc.setQueryData<GymLog[]>(['gym-logs-all'], (old = []) =>
-        old.filter(l => l.id !== id)
+      qc.setQueryData<GymLog[]>(['gym-logs-all'], (old) =>
+        old ? old.filter(l => l.id !== id) : undefined
       )
       qc.invalidateQueries({ queryKey: ['gym-sessions'] })
     },
