@@ -34,8 +34,24 @@ import { checkNoApiKey, checkAiLimit } from '@/lib/apiKeyError'
 
 type SetTimerState = { phase: TimerPhase; phaseStart: number | null; sessionStart: number | null }
 const GYM_LAST_KEY = 'atlas.gym.last' // last exercise + weight + reps, restored on app open
+const GYM_ENTERED_KEY = 'atlas.gym.entered' // per-exercise last *typed* weight/reps — what you entered, not what you logged
 
 // ─── helpers ────────────────────────────────────────────────────────────────
+
+// Per-exercise memory of the last weight/reps typed into the stepper. Preferred
+// over the last logged set when selecting an exercise, so a backoff/dropset (or
+// any set logged at a different weight) never becomes the prefill.
+type EnteredEntry = { weight: string; reps: number }
+function readEntered(): Record<string, EnteredEntry> {
+  try { return JSON.parse(localStorage.getItem(GYM_ENTERED_KEY) || '{}') || {} } catch { return {} }
+}
+function writeEntered(exId: string, entry: EnteredEntry) {
+  try {
+    const map = readEntered()
+    map[exId] = entry
+    localStorage.setItem(GYM_ENTERED_KEY, JSON.stringify(map))
+  } catch {}
+}
 
 function toPSTDate(): Date {
   const now = new Date()
@@ -769,6 +785,9 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     try {
       localStorage.setItem(GYM_LAST_KEY, JSON.stringify({ exId: currentEx.id, weight: weightInput, reps: selectedReps }))
     } catch {}
+    // Remember what was typed for THIS exercise so re-selecting it restores the
+    // entered weight, not the last logged set.
+    writeEntered(currentEx.id, { weight: weightInput, reps: selectedReps })
   }, [currentEx, weightInput, selectedReps])
 
   // Reorder via the bottom sheet — opened by the "reorder" button or a chip long-press.
@@ -858,6 +877,14 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     const ex = exercises.find(e => e.id === id)
     if (!ex) return
     setCurrentExId(id)
+    // Prefer the last weight/reps you TYPED for this exercise; only fall back to
+    // the last logged set when you've never entered one.
+    const entered = readEntered()[id]
+    if (entered && entered.weight !== '' && entered.weight != null) {
+      setWeightInput(entered.weight)
+      setSelectedReps(entered.reps ?? ex.rep_max)
+      return
+    }
     const logs = allLogs.filter(l => l.exercise_id === id).sort((a, b) => a.logged_at.localeCompare(b.logged_at))
     const lastLog = logs[logs.length - 1]
     setWeightInput(String(lastLog?.weight ?? 0))
