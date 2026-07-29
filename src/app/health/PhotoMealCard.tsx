@@ -25,8 +25,13 @@ const chipIdle = 'border-white/[0.12] bg-white/[0.03] text-zinc-300 active:opaci
 const chipAnswered = 'border-white/[0.06] bg-white/[0.02] text-zinc-600'
 const chipAnsweredSelected = 'border-emerald-300/30 bg-emerald-300/[0.06] text-zinc-400'
 
+// `meal` is rendered straight from the prop — never copied into local state.
+// A local snapshot froze the row: editing calories/macros in the edit sheet
+// patched the food-logs cache, but this card kept showing the old numbers
+// until a navigation remounted it. Every mutation here (refine, note, edit)
+// writes the authoritative row back into the cache, so the prop is the truth.
 export function PhotoMealCard({
-  meal: initialMeal,
+  meal,
   today,
   onEdit,
   isNew = false,
@@ -36,7 +41,6 @@ export function PhotoMealCard({
   onEdit: () => void
   isNew?: boolean
 }) {
-  const [meal, setMeal] = useState(initialMeal)
   const refineData = getRefineData(meal)
   const isOpen = meal.refine_status === 'open'
 
@@ -119,17 +123,9 @@ export function PhotoMealCard({
         setAnswers(prev => [...prev, { question: currentQuestion.question, answer }])
         setQuestions(prev => [...prev, result.question])
       } else {
+        // The mutation's onSuccess writes the refined macros into the
+        // food-logs cache, which flows back down as `meal`.
         setAnswers(prev => [...prev, { question: currentQuestion.question, answer }])
-        setMeal(prev => ({
-          ...prev,
-          calories: result.calories,
-          protein_g: result.protein_g,
-          carbs_g: result.carbs_g,
-          fat_g: result.fat_g,
-          confidence: result.confidence as FoodLog['confidence'],
-          notes: result.notes,
-          refine_status: 'done',
-        }))
         setDone(true)
         // Fire coach feedback now that refine is complete
         streamCoachFeedback(meal.id)
@@ -177,16 +173,6 @@ export function PhotoMealCard({
         setQuestions(prev => [...prev, result.question])
       } else {
         setAnswers(prev => [...prev, { question: q.question, answer: opt }])
-        setMeal(prev => ({
-          ...prev,
-          calories: result.calories,
-          protein_g: result.protein_g,
-          carbs_g: result.carbs_g,
-          fat_g: result.fat_g,
-          confidence: result.confidence as FoodLog['confidence'],
-          notes: result.notes,
-          refine_status: 'done',
-        }))
         setDone(true)
         coachFired.current = false
         streamCoachFeedback(meal.id)
@@ -206,7 +192,6 @@ export function PhotoMealCard({
         date: today,
         updates: { notes: noteText.trim() || null },
       })
-      setMeal(prev => ({ ...prev, notes: noteText.trim() || null }))
       setNoteOpen(false)
     } catch {
       // silent
