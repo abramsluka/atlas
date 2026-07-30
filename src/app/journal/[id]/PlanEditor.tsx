@@ -9,14 +9,42 @@ interface Props {
   onChange: (next: PlanItem[]) => void
 }
 
+interface FocusPoint { id: string; caret: number }
+interface Snapshot { plan: PlanItem[]; focus: FocusPoint | null }
+
+// A run of typing folds into one undo step until this much idle time passes,
+// so Cmd+Z clears a burst of typing instead of a single character.
+const COALESCE_MS = 600
+const HISTORY_LIMIT = 100
+
 // The plan renders as one textarea per item (needed so long tasks wrap under
 // their own checkbox), but the keyboard makes them behave like lines of a single
 // document: Enter splits at the caret, Backspace at position 0 merges into the
 // line above, forward Delete at the end merges the line below up, and the arrow
 // keys walk between lines.
+//
+// Undo/redo runs on whole-plan snapshots rather than the browser's native
+// textarea history, which can only see text inside one box — it has no idea a
+// row was added or merged away, so structural edits used to be unundoable.
 export default function PlanEditor({ plan, planning, onChange }: Props) {
   const itemRefs = useRef(new Map<string, HTMLTextAreaElement>())
-  const [focusRequest, setFocusRequest] = useState<{ id: string; caret: number } | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [focusRequest, setFocusRequest] = useState<FocusPoint | null>(null)
+
+  const past = useRef<Snapshot[]>([])
+  const future = useRef<Snapshot[]>([])
+  const coalesce = useRef<{ key: string | null; at: number }>({ key: null, at: 0 })
+  const lastEmitted = useRef<PlanItem[] | null>(null)
+
+  // A plan that didn't come from this editor (first load, AI generation, a voice
+  // refine) starts a fresh history — undo should never rewind across a plan the
+  // model just rebuilt.
+  useEffect(() => {
+    if (plan === lastEmitted.current) return
+    past.current = []
+    future.current = []
+    coalesce.current = { key: null, at: 0 }
+  }, [plan])
 
   useEffect(() => {
     if (!focusRequest) return
@@ -33,22 +61,75 @@ export default function PlanEditor({ plan, planning, onChange }: Props) {
     el.style.height = el.scrollHeight + 'px'
   }
 
+  function currentFocus(): FocusPoint | null {
+    const active = document.activeElement
+    for (const [id, node] of itemRefs.current) {
+      if (node === active) return { id, caret: node.selectionStart ?? 0 }
+    }
+    return null
+  }
+
+  // Every edit goes through here so it lands in the undo stack. `coalesceKey`
+  // groups consecutive edits of the same kind (typing in one line); structural
+  // edits pass null and always get their own step.
+  function commit(next: PlanItem[], focusAfter: FocusPoint | null, coalesceKey: string | null) {
+    const now = Date.now()
+    const groupWithPrevious =
+      coalesceKey !== null &&
+      coalesceKey === coalesce.current.key &&
+      now - coalesce.current.at < COALESCE_MS
+
+    if (!groupWithPrevious) {
+      past.current.push({ plan, focus: currentFocus() })
+      if (past.current.length > HISTORY_LIMIT) past.current.shift()
+    }
+    coalesce.current = { key: coalesceKey, at: now }
+    future.current = []
+
+    lastEmitted.current = next
+    onChange(next)
+    if (focusAfter) setFocusRequest(focusAfter)
+  }
+
+  function undo() {
+    const prev = past.current.pop()
+    if (!prev) return
+    future.current.push({ plan, focus: currentFocus() })
+    coalesce.current = { key: null, at: 0 }
+    lastEmitted.current = prev.plan
+    onChange(prev.plan)
+    if (prev.focus) setFocusRequest(prev.focus)
+  }
+
+  function redo() {
+    const restored = future.current.pop()
+    if (!restored) return
+    past.current.push({ plan, focus: currentFocus() })
+    coalesce.current = { key: null, at: 0 }
+    lastEmitted.current = restored.plan
+    onChange(restored.plan)
+    if (restored.focus) setFocusRequest(restored.focus)
+  }
+
   function toggleItem(id: string) {
-    onChange(plan.map(p => (p.id === id ? { ...p, done: !p.done } : p)))
+    commit(plan.map(p => (p.id === id ? { ...p, done: !p.done } : p)), null, null)
   }
 
   function editItem(id: string, text: string) {
-    onChange(plan.map(p => (p.id === id ? { ...p, text } : p)))
+    commit(plan.map(p => (p.id === id ? { ...p, text } : p)), null, `type:${id}`)
   }
 
   function deleteItem(id: string) {
-    onChange(plan.filter(p => p.id !== id))
+    commit(plan.filter(p => p.id !== id), null, null)
+    // Tapping × blurs the line, which would put Cmd+Z out of this editor's
+    // reach. Park focus on the container (a div, so no mobile keyboard) so the
+    // delete stays undoable.
+    containerRef.current?.focus({ preventScroll: true })
   }
 
   function addItem() {
     const item: PlanItem = { id: crypto.randomUUID(), text: '', done: false }
-    onChange([...plan, item])
-    setFocusRequest({ id: item.id, caret: 0 })
+    commit([...plan, item], { id: item.id, caret: 0 }, null)
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>, index: number) {
@@ -67,8 +148,7 @@ export default function PlanEditor({ plan, planning, onChange }: Props) {
       const next = [...plan]
       next[index] = { ...item, text: value.slice(0, selectionStart) }
       next.splice(index + 1, 0, newItem)
-      onChange(next)
-      setFocusRequest({ id: newItem.id, caret: 0 })
+      commit(next, { id: newItem.id, caret: 0 }, null)
       return
     }
 
@@ -79,8 +159,7 @@ export default function PlanEditor({ plan, planning, onChange }: Props) {
       const next = [...plan]
       next[index - 1] = { ...prev, text: prev.text + value }
       next.splice(index, 1)
-      onChange(next)
-      setFocusRequest({ id: prev.id, caret: prev.text.length })
+      commit(next, { id: prev.id, caret: prev.text.length }, null)
       return
     }
 
@@ -91,8 +170,7 @@ export default function PlanEditor({ plan, planning, onChange }: Props) {
       const next = [...plan]
       next[index] = { ...item, text: value + below.text }
       next.splice(index + 1, 1)
-      onChange(next)
-      setFocusRequest({ id: item.id, caret: value.length })
+      commit(next, { id: item.id, caret: value.length }, null)
       return
     }
 
@@ -110,8 +188,23 @@ export default function PlanEditor({ plan, planning, onChange }: Props) {
     }
   }
 
+  // Undo/redo lives on the container so it works from any line and from the
+  // container itself after an × delete. Cmd/Ctrl+Z undo, Cmd/Ctrl+Shift+Z redo
+  // (Ctrl+Y too, for Windows habits).
+  function handleHistoryKeys(e: React.KeyboardEvent) {
+    if (!e.metaKey && !e.ctrlKey) return
+    const key = e.key.toLowerCase()
+    if (key === 'z' && !e.shiftKey) {
+      e.preventDefault()
+      undo()
+    } else if ((key === 'z' && e.shiftKey) || key === 'y') {
+      e.preventDefault()
+      redo()
+    }
+  }
+
   return (
-    <div>
+    <div ref={containerRef} tabIndex={-1} onKeyDown={handleHistoryKeys} className="outline-none">
       <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-600">
         ☀️ Today&apos;s plan
       </p>

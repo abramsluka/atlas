@@ -71,6 +71,18 @@ but the textareas behave like lines of one document:
    "+ Add a line" all stay. The keyboard behaviors are additive; on iOS the Enter
    split and backspace-at-0 merge work from the software keyboard too.
 
+6. **Undo / redo across structural edits.** The browser's native textarea undo
+   only knows about text inside one box, so adding, splitting, merging, or
+   deleting a row cannot be undone with it (a new line "sticks"). PlanEditor keeps
+   its own history of whole-plan snapshots. Cmd/Ctrl+Z undoes, Cmd/Ctrl+Shift+Z
+   redoes (Ctrl+Y also redoes). Every edit — typing, checkbox toggle, ×, split,
+   merge, add line — goes through one `commit()` that records a snapshot, so all
+   of them are undoable. Consecutive typing in one line folds into a single undo
+   step (600 ms idle gap starts a new one), and each snapshot restores the caret
+   to where it was. History is capped at 100 steps and resets when a plan arrives
+   from outside the editor (first load, AI generation, voice refine), so undo
+   never rewinds across a plan the model just rebuilt.
+
 ### Implementation notes
 
 - Replace `focusItemId: string | null` with a focus request `{ id: string, caret: number } | null`.
@@ -130,6 +142,9 @@ fetch-into-state pattern instead of TanStack Query.
    backspace-through-empty deletes the row, fn+Delete at end merges upward, arrows
    walk the list, caret lands where expected after every op.
 3. Long wrapped item: arrows move within the wrap first, then across items.
+3b. Undo: Enter a new line then Cmd+Z removes it and rejoins the text; × delete
+   then Cmd+Z brings the row back; a burst of typing undoes as one step;
+   Cmd+Shift+Z redoes each. Generating a plan clears the history.
 4. iPhone PWA: toggle, x delete, add line, Enter split, backspace merge all work.
 5. Refine flow still preserves done state; blank mid-edit rows never hit the DB.
 6. Create a morning entry with a plan, hit back to Home: the Day Plan card shows the
