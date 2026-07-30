@@ -54,11 +54,13 @@ export async function POST() {
 
   const goal: Goal = (profile.fitness_goal as Goal) ?? 'cut'
 
-  // Resolve activity hrs — prefer new activity_level field, fall back to legacy activity_hrs_per_week
+  // Resolve activity hrs — activity_hrs_per_week is the field the Health
+  // settings modal edits (and the water target reads), so it wins. The
+  // activity_level enum is legacy: no UI writes it, kept only as a fallback.
   const activityHrs: number =
-    profile.activity_level != null
-      ? (ACTIVITY_HOURS[profile.activity_level as string] ?? 3)
-      : (profile.activity_hrs_per_week ?? 3)
+    profile.activity_hrs_per_week != null
+      ? profile.activity_hrs_per_week
+      : (ACTIVITY_HOURS[profile.activity_level as string] ?? 3)
 
   const currentWeight: number = latestWeightResult.data?.weight_lbs ?? profile.weight_lbs
   if (!currentWeight) return NextResponse.json({ error: 'No weight data found' }, { status: 400 })
@@ -140,7 +142,7 @@ export async function POST() {
     `Pace: ${paceLabel}`,
     `Estimated TDEE: ${tdee} kcal`,
     `Daily target: ${dailyCalories} kcal, ${protein_g}g protein, ${carbs_g}g carbs, ${fat_g}g fat`,
-    `Activity: ${profile.activity_level ?? 'moderate'} (${activityHrs} hrs/week estimated)`,
+    `Activity: ${activityHrs} hrs/week training`,
   ].filter(Boolean).join('. ')
 
   const goalContext: Record<Goal, string> = {

@@ -2045,11 +2045,13 @@ const GOAL_META: Record<FitnessGoal, { label: string; sub: string }> = {
   maintain:  { label: 'Maintain',  sub: 'Stay where you are, stay fueled' },
 }
 
-const ACTIVITY_LEVEL_LABELS: Record<string, string> = {
-  sedentary:   'Sedentary',
-  light:       'Lightly Active',
-  moderate:    'Moderately Active',
-  very_active: 'Very Active',
+// Same hrs/week buckets the calorie-target route uses for its TDEE multiplier,
+// so the label here always matches what Calculate will actually assume.
+function activityLabel(hrs: number): string {
+  if (hrs < 2) return 'Sedentary'
+  if (hrs < 5) return 'Lightly Active'
+  if (hrs < 10) return 'Moderately Active'
+  return 'Very Active'
 }
 
 function SegmentedControl<T extends string>({
@@ -2088,7 +2090,7 @@ function CalorieTargetSheet({
     fitness_goal?: string | null
     target_weight_lbs?: number | null
     cut_pace?: string | null
-    activity_level?: string | null
+    activity_hrs_per_week?: number | null
     target_reasoning?: string | null
     daily_calorie_target?: number | null
     daily_protein_target_g?: number | null
@@ -2212,8 +2214,8 @@ function CalorieTargetSheet({
         <div className="flex items-center justify-between rounded-[10px] border border-white/[0.08] bg-white/[0.02] px-3 py-2.5">
           <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Activity level</span>
           <span className="text-xs text-zinc-400">
-            {profile.activity_level
-              ? ACTIVITY_LEVEL_LABELS[profile.activity_level] ?? profile.activity_level
+            {profile.activity_hrs_per_week != null
+              ? `${activityLabel(profile.activity_hrs_per_week)} · ${profile.activity_hrs_per_week} hrs/wk`
               : 'Not set'}{' '}
             <span className="text-zinc-600">(from settings)</span>
           </span>
