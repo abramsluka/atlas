@@ -1,7 +1,8 @@
 // Amount units for food entry. Everything is stored as grams (ml treated 1:1
 // for liquids) — these helpers only convert at the input/display edge.
 
-export const AMOUNT_UNITS = ['g', 'ml', 'oz', 'lb'] as const
+// Order here is the tap-through cycle: g → oz → ml → lb → g.
+export const AMOUNT_UNITS = ['g', 'oz', 'ml', 'lb'] as const
 export type AmountUnit = (typeof AMOUNT_UNITS)[number]
 
 export const UNIT_GRAMS: Record<AmountUnit, number> = {
