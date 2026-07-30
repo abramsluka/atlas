@@ -257,7 +257,7 @@ export default function PlanEditor({ plan, planning, onChange }: Props) {
         onClick={addItem}
         className="mt-2 px-1 text-sm text-zinc-600 active:text-zinc-400"
       >
-        + Add a line
+        + Add a task
       </button>
     </div>
   )

@@ -71,6 +71,8 @@ export default function EntryDetail({ initialEntry }: Props) {
   const [streamKeyProvider, setStreamKeyProvider] = useState<KeyProvider | null>(null)
   const [streamLimit, setStreamLimit] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  // An edit is typed but its debounce hasn't fired yet — Back flushes it
+  const [pendingEdit, setPendingEdit] = useState(false)
 
   const [conversation, setConversation] = useState(entry.conversation ?? [])
   const [replyText, setReplyText] = useState('')
@@ -108,14 +110,19 @@ export default function EntryDetail({ initialEntry }: Props) {
 
   function scheduleAutoSave(title: string, body: string, mood: number | null) {
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+    setPendingEdit(true)
     autoSaveTimer.current = setTimeout(() => {
-      if (!body.trim() && !entry.audio_path && !isMorning) return
+      if (!body.trim() && !entry.audio_path && !isMorning) {
+        setPendingEdit(false)
+        return
+      }
       updateEntry.mutate({
         id: entry.id,
         title: title.trim() || undefined,
         body: body.trim(),
         mood,
       })
+      setPendingEdit(false)
     }, 1000)
   }
 
@@ -124,9 +131,11 @@ export default function EntryDetail({ initialEntry }: Props) {
   function setPlanAndSave(next: PlanItem[]) {
     setPlan(next)
     if (planSaveTimer.current) clearTimeout(planSaveTimer.current)
+    setPendingEdit(true)
     planSaveTimer.current = setTimeout(() => {
       // Blank rows stay local (mid-edit) but never persist
       updateEntry.mutate({ id: entry.id, plan: next.filter(p => p.text.trim()) })
+      setPendingEdit(false)
     }, 1000)
   }
 
@@ -194,16 +203,23 @@ export default function EntryDetail({ initialEntry }: Props) {
     updateEntry.mutate({ id: entry.id, kind: next })
   }
 
-  async function handleSave() {
+  // The entry auto-saves, so Back just flushes anything still sitting in a
+  // debounce before leaving — no Save button to forget to press.
+  async function handleBack() {
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     if (planSaveTimer.current) clearTimeout(planSaveTimer.current)
-    await updateEntry.mutateAsync({
-      id: entry.id,
-      title: editTitle.trim() || undefined,
-      body: editBody.trim(),
-      mood: editMood,
-      ...(isMorning ? { plan: plan.filter(p => p.text.trim()) } : {}),
-    })
+    if (pendingEdit) {
+      setPendingEdit(false)
+      try {
+        await updateEntry.mutateAsync({
+          id: entry.id,
+          title: editTitle.trim() || undefined,
+          body: editBody.trim(),
+          mood: editMood,
+          ...(isMorning ? { plan: plan.filter(p => p.text.trim()) } : {}),
+        })
+      } catch { /* leaving anyway; the entry keeps its last saved state */ }
+    }
     router.back()
   }
 
@@ -437,9 +453,6 @@ export default function EntryDetail({ initialEntry }: Props) {
   // Morning: can generate a plan when there's source material to plan from
   const canPlanFromEntry = !!entry.audio_path || !!editBody.trim() || !!entry.body?.trim()
   const hasPlanItems = plan.length > 0
-  const canSaveEntry = isMorning
-    ? (hasPlanItems || !!entry.audio_path || !!editBody.trim()) && !updateEntry.isPending
-    : !updateEntry.isPending && (!!editBody.trim() || !!entry.audio_path)
 
   return (
     <div className="flex min-h-screen flex-col bg-black">
@@ -455,7 +468,7 @@ export default function EntryDetail({ initialEntry }: Props) {
       >
         <div className="flex items-center justify-between px-4 py-3">
           <button
-            onClick={() => router.back()}
+            onClick={handleBack}
             className="px-1 py-2 text-sm text-zinc-400 active:text-zinc-200"
           >
             ← Back
@@ -474,18 +487,19 @@ export default function EntryDetail({ initialEntry }: Props) {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Auto-save status stands in for the old Save button */}
+            <span className="text-[11px] text-zinc-600 tabular-nums">
+              {pendingEdit || updateEntry.isPending
+                ? 'Saving…'
+                : updateEntry.isSuccess
+                  ? 'Saved'
+                  : ''}
+            </span>
             <button
               onClick={() => setConfirmDelete(true)}
               className="p-2 text-zinc-600 active:text-zinc-400"
             >
               <TrashIcon />
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={!canSaveEntry}
-              className="px-1 py-2 text-sm font-semibold text-white disabled:text-zinc-600 active:opacity-70"
-            >
-              {updateEntry.isPending ? 'Saving…' : 'Save'}
             </button>
           </div>
         </div>

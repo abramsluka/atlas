@@ -39,7 +39,7 @@ export async function computeBentoStats(db: DB, userId: string, today: string): 
       .eq('provider', 'oura'),
 
     db.from('journal_entries')
-      .select('body, audio_transcript, created_at, mood')
+      .select('title, body, audio_transcript, created_at, mood')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -102,10 +102,13 @@ export async function computeBentoStats(db: DB, userId: string, today: string): 
   }
 
   // Last journal entry snippet
-  const je = journalRes.data as { body: string; audio_transcript: string | null; created_at: string; mood: number | null } | null
+  const je = journalRes.data as { title: string | null; body: string; audio_transcript: string | null; created_at: string; mood: number | null } | null
   let lastJournal: BentoStats['lastJournal'] = null
   if (je) {
-    const text = (je.body?.trim() || je.audio_transcript?.trim() || '')
+    // Prefer the entry's title once it has one — a plan's raw body is the whole
+    // brain-dump, which reads as noise on a card this small.
+    const title = je.title?.trim()
+    const text = title || (je.body?.trim() || je.audio_transcript?.trim() || '')
     lastJournal = {
       snippet: text.slice(0, 80) + (text.length > 80 ? '…' : ''),
       createdAt: je.created_at,

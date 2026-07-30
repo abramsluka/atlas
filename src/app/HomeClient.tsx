@@ -670,9 +670,13 @@ function TodaysCallCard({ initial }: { initial?: TodaysCallData | null }) {
         className="flex items-center justify-between cursor-pointer select-none"
         onClick={toggleCollapsed}
       >
-        <span className="flex items-center gap-2 text-[10px] font-bold tracking-[0.18em] uppercase text-white/40">
+        {/* Header carries the verdict colour so the card reads at a glance */}
+        <span
+          className="flex items-center gap-2 text-[10px] font-bold tracking-[0.18em] uppercase"
+          style={{ color: data ? color : 'rgba(255,255,255,0.4)' }}
+        >
           <span
-            className="inline-block text-white/25 transition-transform duration-200"
+            className="inline-block transition-transform duration-200 opacity-70"
             style={{ transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}
           >▾</span>
           Today&apos;s Call
@@ -725,6 +729,10 @@ function TodaysCallCard({ initial }: { initial?: TodaysCallData | null }) {
 // ─── Day Plan ─────────────────────────────────────────────────────────────────
 
 const DAY_PLAN_PREVIEW_COUNT = 3
+// Warm amber wash + lit sun, so the card reads as today's headline rather than
+// another dim panel
+const DAY_PLAN_BG = 'linear-gradient(180deg, rgba(251,191,36,0.07), rgba(251,191,36,0.015)), #0e0e10'
+const SUN_GLOW = 'drop-shadow(0 0 6px rgba(251,191,36,0.6))'
 
 function DayPlanCard({ initial }: { initial?: DayPlanData | null }) {
   const router = useRouter()
@@ -769,13 +777,13 @@ function DayPlanCard({ initial }: { initial?: DayPlanData | null }) {
       <button
         onClick={() => router.push(href)}
         className="w-full rounded-2xl px-5 py-4 mb-4 flex items-center justify-between active:opacity-80 transition-opacity"
-        style={{ background: '#0e0e10', border: '1px solid rgba(251,191,36,0.15)' }}
+        style={{ background: DAY_PLAN_BG, border: '1px solid rgba(251,191,36,0.28)' }}
       >
-        <span className="flex items-center gap-2 text-sm text-zinc-400">
-          <span>☀️</span>
+        <span className="flex items-center gap-2 text-sm text-zinc-300">
+          <span style={{ filter: SUN_GLOW }}>☀️</span>
           Plan your day
         </span>
-        <span className="text-zinc-600 text-sm">→</span>
+        <span className="text-amber-300/50 text-sm">→</span>
       </button>
     )
   }
@@ -786,54 +794,53 @@ function DayPlanCard({ initial }: { initial?: DayPlanData | null }) {
     .slice(0, DAY_PLAN_PREVIEW_COUNT)
   const moreCount = unchecked.length - preview.filter(p => !p.done).length
 
+  // The whole card opens the plan — header, task text, counter, empty space.
+  // Only the checkboxes opt out (they stopPropagation).
   return (
     <div
-      className="rounded-2xl px-5 py-4 mb-4"
-      style={{ background: '#0e0e10', border: '1px solid rgba(251,191,36,0.15)', borderLeft: '3px solid rgba(251,191,36,0.45)' }}
+      onClick={() => router.push(`/journal/${data.entryId}`)}
+      className="rounded-2xl px-5 py-4 mb-4 cursor-pointer active:opacity-90 transition-opacity"
+      style={{ background: DAY_PLAN_BG, border: '1px solid rgba(251,191,36,0.28)', borderLeft: '3px solid rgba(251,191,36,0.75)' }}
     >
       <div className="flex items-center justify-between mb-3">
-        <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/40">☀️ Day Plan</span>
-        <button
-          onClick={() => router.push(`/journal/${data.entryId}`)}
-          className="text-[11px] text-white/25 active:text-white/50 transition-colors"
-        >
+        <span className="flex items-center gap-1.5 text-[10px] font-bold tracking-[0.18em] uppercase text-amber-300/85">
+          <span style={{ filter: SUN_GLOW }}>☀️</span>
+          Day Plan
+        </span>
+        <span className="text-[11px] text-amber-200/45">
           {unchecked.length}/{data.plan.length} left →
-        </button>
+        </span>
       </div>
 
       {preview.length === 0 ? (
-        <p className="text-sm text-zinc-500">Day planned ✓ — all done</p>
+        <p className="text-sm text-zinc-400">Day planned ✓ — all done</p>
       ) : (
         <div className="space-y-1.5">
           {preview.map(item => (
             <div key={item.id} className="flex items-start gap-3">
               <button
-                onClick={() => toggleItem(item.id)}
+                onClick={(e) => { e.stopPropagation(); toggleItem(item.id) }}
                 className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md transition-colors"
                 style={{
-                  background: item.done ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.06)',
-                  border: item.done ? '1px solid rgba(251,191,36,0.4)' : '1px solid rgba(255,255,255,0.15)',
+                  background: item.done ? 'rgba(251,191,36,0.3)' : 'rgba(255,255,255,0.06)',
+                  border: item.done ? '1px solid rgba(251,191,36,0.5)' : '1px solid rgba(251,191,36,0.28)',
                 }}
               >
                 {item.done && <span className="text-[11px] leading-none text-amber-300">✓</span>}
               </button>
-              <button
-                onClick={() => router.push(`/journal/${data.entryId}`)}
+              <span
                 className={`min-w-0 flex-1 text-left text-sm leading-snug transition-all duration-300 ${
-                  item.done ? 'text-zinc-600 line-through decoration-zinc-600' : 'text-zinc-200'
+                  item.done ? 'text-zinc-600 line-through decoration-zinc-600' : 'text-white/90'
                 }`}
               >
                 {item.text}
-              </button>
+              </span>
             </div>
           ))}
           {moreCount > 0 && (
-            <button
-              onClick={() => router.push(`/journal/${data.entryId}`)}
-              className="pl-8 text-xs text-zinc-600 active:text-zinc-400"
-            >
+            <p className="pl-8 text-xs text-amber-200/40">
               +{moreCount} more →
-            </button>
+            </p>
           )}
         </div>
       )}
