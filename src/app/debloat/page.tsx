@@ -1,15 +1,14 @@
 export const dynamic = 'force-dynamic'
 
 import { redirect } from 'next/navigation'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient, getPageUser } from '@/lib/supabase/server'
 import DebloatClient from './DebloatClient'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate, daysAgoLocal } from '@/lib/date'
 import type { DebloatLog } from '@/features/debloat/types'
 
 export default async function DebloatPage() {
-  const authClient = await createClient()
-  const { data: { user } } = await authClient.auth.getUser()
+  const user = await getPageUser()
   if (!user) redirect('/login')
 
   const db = createServiceClient()

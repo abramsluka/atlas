@@ -1,4 +1,4 @@
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient, getPageUser } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import SubscriptionsClient from './SubscriptionsClient'
 import type { Subscription } from '@/features/subscriptions/types'
@@ -6,8 +6,7 @@ import type { Subscription } from '@/features/subscriptions/types'
 export const dynamic = 'force-dynamic'
 
 export default async function SubscriptionsPage() {
-  const authClient = await createClient()
-  const { data: { user } } = await authClient.auth.getUser()
+  const user = await getPageUser()
   if (!user) redirect('/login')
 
   const db = createServiceClient()

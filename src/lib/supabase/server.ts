@@ -27,6 +27,21 @@ export async function createClient() {
   )
 }
 
+// Fast auth check for server components: verifies the session JWT locally
+// (ES256 signature against Supabase's JWKS, cached in-memory) instead of the
+// network round-trip auth.getUser() makes on every call. The proxy already
+// refreshed an expired token before the page ran, and getClaims still verifies
+// the signature cryptographically — a forged cookie fails here just like it
+// would against getUser. Use this in pages; API routes doing writes can keep
+// getUser if they want the extra server-side revocation check.
+export async function getPageUser(): Promise<{ id: string; email: string | null } | null> {
+  const supabase = await createClient()
+  const { data } = await supabase.auth.getClaims()
+  const claims = data?.claims
+  if (!claims?.sub) return null
+  return { id: claims.sub, email: (claims.email as string | undefined) ?? null }
+}
+
 export function createServiceClient() {
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

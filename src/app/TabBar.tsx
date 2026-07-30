@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useEffect } from 'react'
 
 const HIDDEN_ON = ['/login', '/journal/new']
 
@@ -67,6 +68,16 @@ const tabs = [
 
 export default function TabBar() {
   const pathname = usePathname()
+
+  // Server pages read this cookie to resolve the user's timezone without a
+  // blocking DB round-trip (see getUserTimezone). Device tz, refreshed on
+  // every mount so it tracks travel.
+  useEffect(() => {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+      if (tz) document.cookie = `atlas-tz=${tz}; path=/; max-age=31536000; samesite=lax`
+    } catch {}
+  }, [])
 
   if (HIDDEN_ON.includes(pathname)) return null
 

@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient, getPageUser } from '@/lib/supabase/server'
 import HealthClient from './HealthClient'
 import type { OuraData } from '@/features/health/types'
 import { toEnergyDate, nextCalendarDate, isoToEnergyDayHour, energyDayUtcWindow, type WorkoutPoint, type MealPoint } from '@/features/health/energyModel'
@@ -10,8 +10,7 @@ import { sessionLabel, sessionVolumeLbs, type GymActivityLog } from '@/lib/gymAc
 export const dynamic = 'force-dynamic'
 
 export default async function HealthPage() {
-  const authClient = await createClient()
-  const { data: { user } } = await authClient.auth.getUser()
+  const user = await getPageUser()
   if (!user) redirect('/login')
 
   const db = createServiceClient()
@@ -30,6 +29,7 @@ export default async function HealthPage() {
     caffeineResult,
     profileResult,
     ouraTokenResult,
+    ouraCacheResult,
     workoutsResult,
     foodResult,
     typicalWakeHour,
@@ -42,6 +42,10 @@ export default async function HealthPage() {
     db.from('caffeine_logs').select('*').eq('user_id', user.id).in('date', [today, nextCalendarDate(today)]).order('logged_at', { ascending: true }),
     db.from('health_profile').select('*').eq('user_id', user.id).maybeSingle(),
     db.from('wearable_tokens').select('provider').eq('user_id', user.id).eq('provider', 'oura').maybeSingle(),
+    // Cached Oura payload fetched unconditionally (PK lookup) so it rides this
+    // Promise.all instead of adding a serial round-trip after it; only used
+    // when a token row exists.
+    db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'oura').eq('date', today).maybeSingle(),
     // Training + food feed the same energy model the caffeine page uses, so the
     // compact card reads identically to Today's Curve.
     db.from('gym_logs')
@@ -69,14 +73,11 @@ export default async function HealthPage() {
 
   const hasOura = !!ouraTokenResult.data
 
-  // Load cached wearable data if a token exists
+  // Use the cached wearable data only if a token exists
   let ouraData: OuraData | null = null
 
   if (hasOura) {
-    const ouraCache = await db
-      .from('wearable_data').select('data')
-      .eq('user_id', user.id).eq('provider', 'oura').eq('date', today).maybeSingle()
-    const rawOura = (ouraCache.data?.data as OuraData) ?? null
+    const rawOura = (ouraCacheResult.data?.data as OuraData) ?? null
     const ouraHasData =
       rawOura &&
       (rawOura.sleep?.score != null ||

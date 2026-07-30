@@ -1,4 +1,4 @@
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient, getPageUser } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import HomeClient from './HomeClient'
 import { getUserTimezone } from '@/lib/getUserTimezone'
@@ -6,8 +6,7 @@ import { toLocalDate } from '@/lib/date'
 import { getHomeInitialData } from '@/lib/home/getHomeInitialData'
 
 export default async function HomePage() {
-  const authClient = await createClient()
-  const { data: { user } } = await authClient.auth.getUser()
+  const user = await getPageUser()
   if (!user) redirect('/login')
 
   const db = createServiceClient()

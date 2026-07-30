@@ -23,9 +23,12 @@ export async function proxy(request: NextRequest) {
     }
   )
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // getClaims verifies the session JWT locally (ES256 + cached JWKS) — no
+  // Supabase round-trip on the hot path, unlike getUser which is a network
+  // call on EVERY request. An expired token still refreshes: getClaims goes
+  // through getSession first, which rotates cookies via setAll above.
+  const { data: claimsData } = await supabase.auth.getClaims()
+  const user = claimsData?.claims ?? null
 
   const { pathname } = request.nextUrl
 

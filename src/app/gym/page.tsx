@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic'
 
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient, getPageUser } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import GymClient from './GymClient'
 import type { GymConfig, GymExercise, BodyWeight } from '@/features/gym/types'
@@ -8,8 +8,7 @@ import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
 
 export default async function GymPage() {
-  const authClient = await createClient()
-  const { data: { user } } = await authClient.auth.getUser()
+  const user = await getPageUser()
   if (!user) redirect('/login')
 
   const db = createServiceClient()
