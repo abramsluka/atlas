@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 type KeyProvider = 'anthropic' | 'openai'
@@ -160,7 +161,10 @@ export default function SettingsClient({ email }: { email: string }) {
 
   return (
     <main className="max-w-lg mx-auto px-4 pt-6 pb-24">
-      <h1 className="text-[17px] font-bold text-white">Settings</h1>
+      <Link href="/" className="-ml-1 inline-block px-1 py-2 text-sm text-zinc-400 active:text-zinc-200">
+        ← Back
+      </Link>
+      <h1 className="mt-1 text-[17px] font-bold text-white">Settings</h1>
       <p className="mt-0.5 text-[11.5px] text-zinc-500">{email}</p>
 
       <h2 className="mt-6 mb-2 font-mono text-[9.5px] font-extrabold tracking-[0.16em] uppercase text-zinc-500">

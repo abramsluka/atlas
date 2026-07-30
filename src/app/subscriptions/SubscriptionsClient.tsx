@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import Link from 'next/link'
 import { useSubscriptions } from '@/features/subscriptions/queries'
 import {
   useCreateSubscription,
@@ -955,7 +956,10 @@ export default function SubscriptionsClient({
   return (
     <div className="min-h-screen bg-black pb-24">
       <div className="mx-auto max-w-md px-4 pt-12">
-        <h1 className="mb-4 text-2xl font-bold text-white">Subscriptions</h1>
+        <Link href="/" className="-ml-1 inline-block px-1 py-2 text-sm text-zinc-400 active:text-zinc-200">
+          ← Back
+        </Link>
+        <h1 className="mb-4 mt-1 text-2xl font-bold text-white">Subscriptions</h1>
 
         {!showAddForm && (
           <div className="mb-4 flex gap-2">
