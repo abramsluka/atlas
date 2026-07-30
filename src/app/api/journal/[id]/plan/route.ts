@@ -17,13 +17,18 @@ Rules:
 - Preserve the order they intend. If they imply sequence ("first… then… after that…"), order accordingly. Otherwise keep the order they said things.
 - Obey spoken corrections. Treat "scratch that", "actually", "no wait", "instead", "change that to", "never mind", "remove", "delete" as edits — apply them and do NOT include the retracted version. If they replace X with Y, output Y only.
 - Merge duplicates. If they mention the same task twice, keep it once.
-- Strip filler, hedging, and self-talk ("um", "I guess", "I think maybe I should"). Keep only the action.
-- Each line is short and action-first: "Morning run", "Gym — push day", "Deep work: Atlas planner", "Lunch with Alex". Imperative or noun phrase, not a sentence.
+- Every line starts with a verb and is roughly 2–8 words: "Go to the range", "Work out at 11:00", "Eat pre-workout carbs". Bare noun fragments ("Range", "Climbing") are too terse. Full sentences with reasoning attached are too long.
+- Keep their specifics — times, durations, places, named people, food options. Alternatives stay on one line: "Post-workout food: burrito, sushi, or sandwich".
+- Rewrite their phrasing freely into a short action line. When they ramble, justify, or tell a story around a task, extract only the action and drop the story, filler, and self-talk ("um", "I guess", "I think maybe I should").
 - Do NOT invent tasks, times, or detail they didn't say. Do NOT add commentary, encouragement, headers, numbering, or bullet characters.
-- Keep their own wording where reasonable; you are tidying, not rewriting their day.
+
+Example brain-dump:
+"Okay so today, um, I really need to finally get to that customer work for Fido, probably like 30 or 45 minutes of it. Then I was thinking I'd eat something before the gym, maybe cereal, because last time I trained fasted it was terrible. Gym at 11. And after, I don't know, I've been meaning to try that new burrito place, or maybe sushi. Oh and at some point tonight maybe the range, or climbing if Jake is down."
+
+Example output:
+{ "plan": ["Do Fido customer work for 30–45 min","Eat pre-workout cereal","Work out at 11:00","Get post-workout food: burrito or sushi","Go to the range or climbing with Jake"] }
 
 Return a JSON object shaped { "plan": [...] } — the value is an array of strings, one string per plan item, in order.
-Example: { "plan": ["Morning run","Gym — push day","Deep work: Atlas planner","Lunch with Alex"] }
 If there is no actionable content, return { "plan": [] }.`
 
 export async function POST(

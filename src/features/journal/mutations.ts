@@ -19,6 +19,7 @@ export function useCreateEntry() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['journal'] })
+      queryClient.invalidateQueries({ queryKey: ['home', 'day-plan'] })
     },
   })
 }
@@ -45,6 +46,7 @@ export function useUpdateEntry() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['journal'] })
       queryClient.invalidateQueries({ queryKey: ['journal', data.id] })
+      queryClient.invalidateQueries({ queryKey: ['home', 'day-plan'] })
     },
   })
 }
@@ -75,6 +77,7 @@ export function usePlanItemOp() {
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ['journal'] })
       queryClient.invalidateQueries({ queryKey: ['journal', vars.entryId] })
+      queryClient.invalidateQueries({ queryKey: ['home', 'day-plan'] })
     },
   })
 }
@@ -92,6 +95,7 @@ export function useDeleteEntry() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['journal'] })
+      queryClient.invalidateQueries({ queryKey: ['home', 'day-plan'] })
     },
   })
 }

@@ -13,6 +13,7 @@ import { checkNoApiKey, checkAiLimit, NoApiKeyClientError, AiLimitClientError, t
 import ChatText from '@/components/ChatText'
 import NoApiKeyNotice from '@/components/NoApiKeyNotice'
 import AiLimitNotice from '@/components/AiLimitNotice'
+import PlanEditor from './PlanEditor'
 
 interface Props {
   initialEntry: JournalEntry
@@ -85,7 +86,6 @@ export default function EntryDetail({ initialEntry }: Props) {
   const [planKeyProvider, setPlanKeyProvider] = useState<KeyProvider | null>(null)
   const [planLimit, setPlanLimit] = useState(false)
   const [refineText, setRefineText] = useState('')
-  const [focusItemId, setFocusItemId] = useState<string | null>(null)
 
   const [transcript, setTranscript] = useState(entry.audio_transcript)
   const [showTranscript, setShowTranscript] = useState(false)
@@ -130,31 +130,6 @@ export default function EntryDetail({ initialEntry }: Props) {
     }, 1000)
   }
 
-  function togglePlanItem(id: string) {
-    setPlanAndSave(plan.map(p => (p.id === id ? { ...p, done: !p.done } : p)))
-  }
-
-  function editPlanItem(id: string, text: string) {
-    setPlanAndSave(plan.map(p => (p.id === id ? { ...p, text } : p)))
-  }
-
-  function deletePlanItem(id: string) {
-    setPlanAndSave(plan.filter(p => p.id !== id))
-  }
-
-  function addPlanItem(afterId?: string) {
-    const item: PlanItem = { id: crypto.randomUUID(), text: '', done: false }
-    if (afterId) {
-      const idx = plan.findIndex(p => p.id === afterId)
-      const next = [...plan]
-      next.splice(idx + 1, 0, item)
-      setPlanAndSave(next)
-    } else {
-      setPlanAndSave([...plan, item])
-    }
-    setFocusItemId(item.id)
-  }
-
   async function requestPlan(payload?: { message?: string; audioPath?: string }) {
     setPlanning(true)
     setPlanError(null)
@@ -178,6 +153,7 @@ export default function EntryDetail({ initialEntry }: Props) {
       setPlan(json.plan)
       queryClient.invalidateQueries({ queryKey: ['journal', entry.id] })
       queryClient.invalidateQueries({ queryKey: ['journal'] })
+      queryClient.invalidateQueries({ queryKey: ['home', 'day-plan'] })
     } catch (err) {
       if (err instanceof NoApiKeyClientError) setPlanKeyProvider(err.provider)
       else if (err instanceof AiLimitClientError) setPlanLimit(true)
@@ -606,68 +582,7 @@ export default function EntryDetail({ initialEntry }: Props) {
             )}
 
             {(hasPlanItems || (!canPlanFromEntry && !planning)) && (
-              <div>
-                <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-600">
-                  ☀️ Today&apos;s plan
-                </p>
-                <div className={`space-y-1 ${planning ? 'opacity-50' : ''}`}>
-                  {plan.map((item) => (
-                    <div key={item.id} className="group flex items-start gap-3 rounded-xl px-1 py-1.5">
-                      <button
-                        onClick={() => togglePlanItem(item.id)}
-                        className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md transition-colors"
-                        style={{
-                          background: item.done ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.06)',
-                          border: item.done ? '1px solid rgba(251,191,36,0.4)' : '1px solid rgba(255,255,255,0.15)',
-                        }}
-                      >
-                        {item.done && <span className="text-[11px] leading-none text-amber-300">✓</span>}
-                      </button>
-                      {/* textarea (not input) so long tasks wrap onto new lines
-                          under the same checkbox instead of trailing off-screen */}
-                      <textarea
-                        value={item.text}
-                        rows={1}
-                        ref={(el) => {
-                          if (el) {
-                            el.style.height = 'auto'
-                            el.style.height = el.scrollHeight + 'px'
-                          }
-                        }}
-                        autoFocus={focusItemId === item.id}
-                        placeholder="What's the move?"
-                        onChange={(e) => {
-                          editPlanItem(item.id, e.target.value)
-                          autoGrow(e.target)
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault()
-                            addPlanItem(item.id)
-                          }
-                        }}
-                        className={`min-w-0 flex-1 resize-none bg-transparent text-[15px] leading-snug outline-none placeholder:text-zinc-700 transition-colors ${
-                          item.done
-                            ? 'text-zinc-500 line-through decoration-zinc-600'
-                            : 'text-white'
-                        }`}
-                      />
-                      <button
-                        onClick={() => deletePlanItem(item.id)}
-                        className="px-1 text-zinc-700 active:text-zinc-400"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                <button
-                  onClick={() => addPlanItem()}
-                  className="mt-2 px-1 text-sm text-zinc-600 active:text-zinc-400"
-                >
-                  + Add a line
-                </button>
-              </div>
+              <PlanEditor plan={plan} planning={planning} onChange={setPlanAndSave} />
             )}
 
             {/* Morning feeling — how he feels about the day ahead */}

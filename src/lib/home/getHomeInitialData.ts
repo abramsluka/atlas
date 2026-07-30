@@ -1,14 +1,14 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { computeBentoStats, type BentoStats } from '@/lib/home/bentoStats'
 import { computeStreaks, type Streaks } from '@/lib/home/streaks'
-import type { PlanItem } from '@/features/journal/types'
+import type { DayPlanData, PlanItem } from '@/features/journal/types'
 
 type DB = ReturnType<typeof createServiceClient>
 
 type Verdict = 'GREEN' | 'YELLOW' | 'RED'
 export interface TodaysCallCached { color: Verdict; headline: string; bullets: string[] }
 export interface WeeklyReportRow { id: string; week_of: string; report_text: string; created_at: string }
-export interface DayPlanData { entryId: string; plan: PlanItem[] }
+export type { DayPlanData }
 
 // `undefined` for a field means "the server couldn't load it" → the client card
 // falls back to its own fetch (current behavior). A non-undefined value (incl.

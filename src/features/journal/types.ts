@@ -15,6 +15,12 @@ export interface PlanItem {
   done: boolean
 }
 
+// Today's morning plan as the Home card consumes it
+export interface DayPlanData {
+  entryId: string
+  plan: PlanItem[]
+}
+
 export interface JournalEntry {
   id: string
   user_id: string

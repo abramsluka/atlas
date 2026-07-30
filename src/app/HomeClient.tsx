@@ -8,7 +8,8 @@ import { useRouter } from 'next/navigation'
 import { useTodayCheckin } from '@/features/checkins/queries'
 import { useSaveEveningCheckin } from '@/features/checkins/mutations'
 import type { DailyCheckin } from '@/features/checkins/types'
-import type { PlanItem } from '@/features/journal/types'
+import { useDayPlan } from '@/features/journal/queries'
+import type { DayPlanData } from '@/features/journal/types'
 import type { BentoStats } from '@/lib/home/bentoStats'
 import type { Streaks } from '@/lib/home/streaks'
 import StreakStrip from './StreakStrip'
@@ -723,30 +724,20 @@ function TodaysCallCard({ initial }: { initial?: TodaysCallData | null }) {
 
 // ─── Day Plan ─────────────────────────────────────────────────────────────────
 
-interface DayPlanData { entryId: string; plan: PlanItem[] }
-
 const DAY_PLAN_PREVIEW_COUNT = 3
 
 function DayPlanCard({ initial }: { initial?: DayPlanData | null }) {
   const router = useRouter()
-  // undefined = loading (fallback fetch in flight), null = no morning entry today
-  const [data, setData] = useState<DayPlanData | null | undefined>(initial)
+  const queryClient = useQueryClient()
+  const { data } = useDayPlan(initial)
   // Just-ticked items stay visible (struck through) briefly before dropping out
   const [lingering, setLingering] = useState<Set<string>>(new Set())
-
-  useEffect(() => {
-    if (initial !== undefined) return // server-seeded; skip the fetch
-    fetch('/api/home/day-plan')
-      .then(r => (r.ok ? r.json() : null))
-      .then(j => setData(j?.entryId ? { entryId: j.entryId, plan: j.plan ?? [] } : null))
-      .catch(() => setData(null))
-  }, [initial])
 
   function toggleItem(itemId: string) {
     if (!data) return
     const prev = data
     const nextPlan = data.plan.map(p => (p.id === itemId ? { ...p, done: !p.done } : p))
-    setData({ ...data, plan: nextPlan })
+    queryClient.setQueryData<DayPlanData | null>(['home', 'day-plan'], { ...data, plan: nextPlan })
 
     const nowDone = nextPlan.find(p => p.id === itemId)?.done
     if (nowDone) {
@@ -761,11 +752,12 @@ function DayPlanCard({ initial }: { initial?: DayPlanData | null }) {
     }
 
     // Write back to the journal entry (source of truth); revert on failure
+    const revert = () => queryClient.setQueryData<DayPlanData | null>(['home', 'day-plan'], prev)
     fetch(`/api/journal/${data.entryId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ plan: nextPlan }),
-    }).then(res => { if (!res.ok) setData(prev) }).catch(() => setData(prev))
+    }).then(res => { if (!res.ok) revert() }).catch(revert)
   }
 
   if (data === undefined) return null
