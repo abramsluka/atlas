@@ -51,7 +51,7 @@ export interface HealthProfile {
   height_cm: number | null
   activity_hrs_per_week: number
   caffeine_mg_per_day: number
-  water_unit: 'bottle' | 'glass' | 'oz' | 'ml'
+  water_unit: 'bottle' | 'glass'
   bottle_ml: number
   glass_ml: number
   weight_unit: 'lb' | 'kg'

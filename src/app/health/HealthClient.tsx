@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, type ReactNode, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, type ReactNode, type InputHTMLAttributes, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, Reorder, useDragControls } from 'framer-motion'
 import Link from 'next/link'
@@ -16,6 +16,7 @@ import {
 } from '@/features/health/queries'
 import { useQueryClient } from '@tanstack/react-query'
 import { useHashScroll } from '@/lib/useHashScroll'
+import { useLockBodyScroll } from '@/lib/useLockBodyScroll'
 import {
   useCreateSupplement,
   useUpdateSupplement,
@@ -608,6 +609,7 @@ function SupplementReorderSheet({ title, items, onClose, onSave }: {
 }) {
   const [order, setOrder] = useState(items)
   const done = () => { onSave(order.map(s => s.id)); onClose() }
+  useLockBodyScroll(true)
   return createPortal(
     <div
       className="fixed inset-0 z-[60] flex items-end justify-center bg-black/65 p-4"
@@ -615,7 +617,7 @@ function SupplementReorderSheet({ title, items, onClose, onSave }: {
       onClick={done}
     >
       <div
-        className="w-full max-w-md rounded-2xl bg-[#111113] border border-white/[0.14] p-4 max-h-[80vh] overflow-y-auto"
+        className="w-full max-w-md rounded-2xl bg-[#111113] border border-white/[0.14] p-4 max-h-[80vh] overflow-y-auto overscroll-contain"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-3">
@@ -1112,7 +1114,7 @@ interface WaterProfile {
   height_cm: number | null
   activity_hrs_per_week: number
   caffeine_mg_per_day: number
-  water_unit: 'bottle' | 'glass' | 'oz' | 'ml'
+  water_unit: 'bottle' | 'glass'
   bottle_ml: number
   glass_ml: number
   weight_unit: 'lb' | 'kg'
@@ -1142,7 +1144,8 @@ function mergeProfile(p: HealthProfile | null | undefined): WaterProfile {
     height_cm: p.height_cm ?? d.height_cm,
     activity_hrs_per_week: p.activity_hrs_per_week ?? d.activity_hrs_per_week,
     caffeine_mg_per_day: p.caffeine_mg_per_day ?? d.caffeine_mg_per_day,
-    water_unit: p.water_unit ?? d.water_unit,
+    // Legacy profiles may still carry 'oz'/'ml' — collapse them to bottle.
+    water_unit: p.water_unit === 'glass' ? 'glass' : p.water_unit === 'bottle' ? 'bottle' : d.water_unit,
     bottle_ml: p.bottle_ml ?? d.bottle_ml,
     glass_ml: p.glass_ml ?? d.glass_ml,
     weight_unit: p.weight_unit ?? d.weight_unit,
@@ -1175,20 +1178,16 @@ function computeTarget(p: WaterProfile, todayCaffeineMg?: number | null) {
 }
 
 function unitVolOz(p: WaterProfile): number {
-  if (p.water_unit === 'bottle') return (p.bottle_ml || 500) / ML_PER_OZ
   if (p.water_unit === 'glass') return (p.glass_ml || 250) / ML_PER_OZ
-  if (p.water_unit === 'oz') return 1
-  return 1 / ML_PER_OZ
+  return (p.bottle_ml || 500) / ML_PER_OZ
 }
 
 function unitLabelSingular(p: WaterProfile): string {
-  const map = { bottle: 'bottle', glass: 'glass', oz: 'oz', ml: 'ml' }
-  return map[p.water_unit] ?? 'bottle'
+  return p.water_unit === 'glass' ? 'glass' : 'bottle'
 }
 
 function unitLabelPlural(p: WaterProfile): string {
-  const map = { bottle: 'bottles', glass: 'glasses', oz: 'oz', ml: 'ml' }
-  return map[p.water_unit] ?? 'bottles'
+  return p.water_unit === 'glass' ? 'glasses' : 'bottles'
 }
 
 function fmtMl(ml: number): string {
@@ -1308,6 +1307,35 @@ function WToggleRow({ label, hint, checked, onChange }: {
 
 const INPUT_CLS = 'bg-black/[0.28] border border-white/[0.06] text-white text-[14px] px-3 py-2.5 rounded-[10px] outline-none focus:border-[rgba(110,231,183,0.40)] w-full'
 
+// Numeric field that tolerates being emptied: the draft string is the source of
+// truth while typing, so clearing the field (or a partial "16.") never snaps
+// back to the last saved value — same fix as the gym rep-range inputs. Empty
+// reports null and the caller decides what that means. Only safe inside the
+// settings modal, which unmounts on close and re-seeds the draft on open.
+function WNumInput({ value, onChange, className, ...rest }: {
+  value: number | null
+  onChange: (n: number | null) => void
+  className?: string
+} & Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'type' | 'className'>) {
+  const [draft, setDraft] = useState(() => (value == null || value === 0 ? '' : String(value)))
+  return (
+    <input
+      type="number"
+      placeholder="0"
+      value={draft}
+      onFocus={e => e.target.select()}
+      onChange={e => {
+        const raw = e.target.value
+        setDraft(raw)
+        const n = parseFloat(raw)
+        onChange(raw === '' || !Number.isFinite(n) ? null : n)
+      }}
+      className={className ?? INPUT_CLS}
+      {...rest}
+    />
+  )
+}
+
 function WaterSection({
   initialWater,
   initialCaffeine,
@@ -1328,6 +1356,13 @@ function WaterSection({
   const [localProfile, setLocalProfile] = useState<WaterProfile>(() => mergeProfile(initialProfile))
   const [savingSettings, setSavingSettings] = useState(false)
   const [caffeineMode, setCaffeineMode] = useState<'auto' | 'manual'>('auto')
+  // The settings modal must portal to document.body (transformed ancestors on
+  // this page trap `fixed` overlays — see the food section's portal note) and
+  // freeze the page behind it, otherwise touch scrolling inside the sheet
+  // drives the health page underneath.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
+  useLockBodyScroll(settingsOpen)
 
   // Use rolledDate() (3am rollover) so water resets on the same schedule as supplements
   const [waterDate] = useState(() => rolledDate())
@@ -1563,14 +1598,14 @@ function WaterSection({
       </div>
 
       {/* Settings Modal */}
-      {settingsOpen && (
+      {settingsOpen && mounted && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-5 bg-black/65"
+          className="fixed inset-0 z-[60] flex items-center justify-center p-5 bg-black/65"
           style={{ backdropFilter: 'blur(6px)' }}
           onClick={() => setSettingsOpen(false)}
         >
           <div
-            className="w-full max-w-[480px] bg-[#111113] border border-white/[0.14] rounded-2xl p-[22px] max-h-[88vh] overflow-y-auto"
+            className="w-full max-w-[480px] bg-[#111113] border border-white/[0.14] rounded-2xl p-[22px] max-h-[88vh] overflow-y-auto overscroll-contain"
             onClick={e => e.stopPropagation()}
           >
             <h3 className="m-0 mb-3.5 text-[17px] font-bold">Settings</h3>
@@ -1578,10 +1613,9 @@ function WaterSection({
             <WSettingSection title="Profile">
               <div className="grid grid-cols-2 gap-2.5">
                 <WSettingField label="Weight">
-                  <input type="number" inputMode="decimal" step="0.5" min="20" max="300"
-                    value={localProfile.weight_lbs ?? ''}
-                    onChange={e => updateLocal({ weight_lbs: e.target.value ? parseFloat(e.target.value) : null })}
-                    className={INPUT_CLS} />
+                  <WNumInput inputMode="decimal" step="0.5" min="20" max="300"
+                    value={localProfile.weight_lbs}
+                    onChange={n => updateLocal({ weight_lbs: n })} />
                 </WSettingField>
                 <WSettingField label="Weight unit">
                   <WSegControl
@@ -1593,10 +1627,9 @@ function WaterSection({
               </div>
               <div className="grid grid-cols-2 gap-2.5">
                 <WSettingField label="Age">
-                  <input type="number" inputMode="numeric" min="13" max="100"
-                    value={localProfile.age ?? ''}
-                    onChange={e => updateLocal({ age: e.target.value ? parseInt(e.target.value) : null })}
-                    className={INPUT_CLS} />
+                  <WNumInput inputMode="numeric" min="13" max="100"
+                    value={localProfile.age}
+                    onChange={n => updateLocal({ age: n == null ? null : Math.round(n) })} />
                 </WSettingField>
                 <WSettingField label="Sex">
                   <WSegControl
@@ -1608,35 +1641,32 @@ function WaterSection({
               </div>
               <div className="grid grid-cols-2 gap-2.5">
                 <WSettingField label="Height (ft)" hint="Improves calorie accuracy">
-                  <input type="number" inputMode="numeric" min="3" max="8"
-                    value={localProfile.height_cm != null ? Math.floor(Math.round(localProfile.height_cm / 2.54) / 12) : ''}
-                    onChange={e => {
-                      const ft = parseInt(e.target.value) || 0
+                  <WNumInput inputMode="numeric" min="3" max="8"
+                    value={localProfile.height_cm != null ? Math.floor(Math.round(localProfile.height_cm / 2.54) / 12) : null}
+                    onChange={n => {
+                      const ft = n ?? 0
                       const existingIn = localProfile.height_cm != null
                         ? Math.round(localProfile.height_cm / 2.54) % 12
                         : 0
                       updateLocal({ height_cm: (ft * 12 + existingIn) * 2.54 })
-                    }}
-                    className={INPUT_CLS} />
+                    }} />
                 </WSettingField>
                 <WSettingField label="Height (in)">
-                  <input type="number" inputMode="numeric" min="0" max="11"
-                    value={localProfile.height_cm != null ? Math.round(localProfile.height_cm / 2.54) % 12 : ''}
-                    onChange={e => {
-                      const inches = parseInt(e.target.value) || 0
+                  <WNumInput inputMode="numeric" min="0" max="11"
+                    value={localProfile.height_cm != null ? Math.round(localProfile.height_cm / 2.54) % 12 : null}
+                    onChange={n => {
+                      const inches = n ?? 0
                       const existingFt = localProfile.height_cm != null
                         ? Math.floor(Math.round(localProfile.height_cm / 2.54) / 12)
                         : 0
                       updateLocal({ height_cm: (existingFt * 12 + inches) * 2.54 })
-                    }}
-                    className={INPUT_CLS} />
+                    }} />
                 </WSettingField>
               </div>
               <WSettingField label="Activity (training hours per week)">
-                <input type="number" inputMode="decimal" min="0" max="40" step="0.5"
+                <WNumInput inputMode="decimal" min="0" max="40" step="0.5"
                   value={localProfile.activity_hrs_per_week}
-                  onChange={e => updateLocal({ activity_hrs_per_week: parseFloat(e.target.value) || 0 })}
-                  className={INPUT_CLS} />
+                  onChange={n => updateLocal({ activity_hrs_per_week: n ?? 0 })} />
               </WSettingField>
             </WSettingSection>
 
@@ -1647,30 +1677,20 @@ function WaterSection({
                   options={[
                     { label: 'Bottles', value: 'bottle' },
                     { label: 'Glasses', value: 'glass' },
-                    { label: 'oz', value: 'oz' },
-                    { label: 'ml', value: 'ml' },
                   ]}
-                  onChange={v => updateLocal({ water_unit: v as 'bottle' | 'glass' | 'oz' | 'ml' })}
+                  onChange={v => updateLocal({ water_unit: v as 'bottle' | 'glass' })}
                 />
               </WSettingField>
               <div className="grid grid-cols-2 gap-2.5">
                 <WSettingField label="Bottle size (oz)">
-                  <input type="number" inputMode="decimal" min="4" max="64" step="1"
-                    value={localProfile.bottle_ml != null ? Math.round((localProfile.bottle_ml / ML_PER_OZ) * 10) / 10 : ''}
-                    onChange={e => {
-                      const oz = parseFloat(e.target.value)
-                      updateLocal({ bottle_ml: Number.isFinite(oz) ? oz * ML_PER_OZ : 500 })
-                    }}
-                    className={INPUT_CLS} />
+                  <WNumInput inputMode="decimal" min="4" max="64" step="1"
+                    value={localProfile.bottle_ml ? Math.round((localProfile.bottle_ml / ML_PER_OZ) * 10) / 10 : null}
+                    onChange={n => updateLocal({ bottle_ml: n != null ? n * ML_PER_OZ : 0 })} />
                 </WSettingField>
                 <WSettingField label="Glass size (oz)">
-                  <input type="number" inputMode="decimal" min="4" max="32" step="1"
-                    value={localProfile.glass_ml != null ? Math.round((localProfile.glass_ml / ML_PER_OZ) * 10) / 10 : ''}
-                    onChange={e => {
-                      const oz = parseFloat(e.target.value)
-                      updateLocal({ glass_ml: Number.isFinite(oz) ? oz * ML_PER_OZ : 250 })
-                    }}
-                    className={INPUT_CLS} />
+                  <WNumInput inputMode="decimal" min="4" max="32" step="1"
+                    value={localProfile.glass_ml ? Math.round((localProfile.glass_ml / ML_PER_OZ) * 10) / 10 : null}
+                    onChange={n => updateLocal({ glass_ml: n != null ? n * ML_PER_OZ : 0 })} />
                 </WSettingField>
               </div>
             </WSettingSection>
@@ -1700,10 +1720,9 @@ function WaterSection({
                   label="Average caffeine per day (mg)"
                   hint="~1 cup of coffee = 95mg · espresso shot = 75mg · energy drink = 160mg. Above 200mg/day starts to add a small water requirement."
                 >
-                  <input type="number" inputMode="numeric" min="0" max="1000" step="10"
+                  <WNumInput inputMode="numeric" min="0" max="1000" step="10"
                     value={localProfile.caffeine_mg_per_day}
-                    onChange={e => updateLocal({ caffeine_mg_per_day: parseFloat(e.target.value) || 0 })}
-                    className={INPUT_CLS} />
+                    onChange={n => updateLocal({ caffeine_mg_per_day: n ?? 0 })} />
                 </WSettingField>
               )}
             </WSettingSection>
@@ -1749,11 +1768,11 @@ function WaterSection({
                           <div className="text-[11px] text-white/40 font-mono mt-0.5">+ {fmtMl(subExtraMl(s))} / day · {s.cat}</div>
                         </div>
                         <div className="inline-flex items-center gap-1.5 bg-black/30 border border-white/[0.06] rounded-[8px] px-2 py-1">
-                          <input
-                            type="number" inputMode="decimal" min="0" step="0.5"
+                          <WNumInput
+                            inputMode="decimal" min="0" step="0.5"
                             value={s.dose ?? s.defaultDose}
-                            onChange={e => {
-                              const dose = parseFloat(e.target.value) || 0
+                            onChange={n => {
+                              const dose = n ?? 0
                               setLocalProfile(prev => ({
                                 ...prev,
                                 substances: prev.substances.map(x => x.id === s.id ? { ...x, dose } : x),
@@ -1808,7 +1827,8 @@ function WaterSection({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </section>
   )
