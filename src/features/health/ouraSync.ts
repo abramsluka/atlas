@@ -94,6 +94,16 @@ export async function syncOuraToday(
     fetch(`https://api.ouraring.com/v2/usercollection/daily_activity?start_date=${threeDaysAgo}&end_date=${today}`, { headers }),
   ])
 
+  // 401 on every endpoint means the token itself is unusable — revoked, or
+  // granted without the daily scope (early connects requested invalid scope
+  // names, so Oura issued scopeless tokens). It can never recover, so drop it:
+  // the card falls back to the Connect button instead of caching all-null rows
+  // and showing "No data yet" forever.
+  if ([sleepScoreRes, sleepDetailRes, readinessRes, activityRes].every(r => r.status === 401)) {
+    await db.from('wearable_tokens').delete().eq('user_id', userId).eq('provider', 'oura')
+    return null
+  }
+
   const [sleepScoreJson, sleepDetailJson, readinessJson, activityJson] = await Promise.all([
     sleepScoreRes.ok ? sleepScoreRes.json() : null,
     sleepDetailRes.ok ? sleepDetailRes.json() : null,
