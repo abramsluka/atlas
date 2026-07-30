@@ -162,6 +162,16 @@ src/proxy.ts                        # Next.js 16 middleware (session refresh + l
 
 Finances/subscriptions tab, goals module.
 
+## Committing — multiple agents may share this tree
+
+Several Claude agents (and Luka) can be working in this repo at once. EVERY commit
+or push must follow the `/commit-mine` skill (`.claude/skills/commit-mine/`),
+whether or not it is mentioned: stage only files you created or edited this
+session, by explicit path. Never `git add -A` / `git add .` / `commit -a`. Leave
+every change you did not make — including untracked files you didn't create —
+sitting in the tree for its owner to commit, and never stash, restore, or clean
+someone else's changes.
+
 ## Deploying — production only builds from main
 
 Vercel builds Production ONLY from `main`. Pushes to `claude/*` session branches
