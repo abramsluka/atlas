@@ -779,6 +779,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     [filteredExercises, currentExId]
   )
 
+  // Tracks which exercise the live weight/reps were actually dialed in for.
+  const enteredForExId = useRef<string | null>(null)
   // Persist current exercise + weight + reps so the page resumes where you left off.
   useEffect(() => {
     if (!restoredRef.current || !currentEx?.id) return
@@ -786,8 +788,15 @@ export default function GymClient({ today, initialConfig, initialExercises, init
       localStorage.setItem(GYM_LAST_KEY, JSON.stringify({ exId: currentEx.id, weight: weightInput, reps: selectedReps }))
     } catch {}
     // Remember what was typed for THIS exercise so re-selecting it restores the
-    // entered weight, not the last logged set.
-    writeEntered(currentEx.id, { weight: weightInput, reps: selectedReps })
+    // entered weight, not the last logged set — but ONLY when this fire was caused
+    // by the user editing weight/reps, i.e. the exercise is unchanged since the last
+    // render. When currentEx changes (selection / filter / refetch) the weight still
+    // reflects the *previous* exercise (or the initial '0' default), and recording it
+    // here would poison this exercise's memory with a bogus 0.
+    if (enteredForExId.current === currentEx.id) {
+      writeEntered(currentEx.id, { weight: weightInput, reps: selectedReps })
+    }
+    enteredForExId.current = currentEx.id
   }, [currentEx, weightInput, selectedReps])
 
   // Reorder via the bottom sheet — opened by the "reorder" button or a chip long-press.
@@ -878,17 +887,21 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     if (!ex) return
     setCurrentExId(id)
     // Prefer the last weight/reps you TYPED for this exercise; only fall back to
-    // the last logged set when you've never entered one.
+    // the last logged set when you've never entered a usable one. A remembered
+    // weight of 0 (or blank) on a weighted lift is never real — fall through to the
+    // last logged set (and self-heal any older poisoned entry) while still keeping
+    // the remembered reps.
     const entered = readEntered()[id]
-    if (entered && entered.weight !== '' && entered.weight != null) {
-      setWeightInput(entered.weight)
-      setSelectedReps(entered.reps ?? ex.rep_max)
+    const w = entered?.weight
+    if (w != null && w !== '' && (ex.bodyweight || (parseFloat(w) || 0) > 0)) {
+      setWeightInput(w)
+      setSelectedReps(entered!.reps ?? ex.rep_max)
       return
     }
     const logs = allLogs.filter(l => l.exercise_id === id).sort((a, b) => a.logged_at.localeCompare(b.logged_at))
     const lastLog = logs[logs.length - 1]
     setWeightInput(String(lastLog?.weight ?? 0))
-    setSelectedReps(lastLog?.reps ?? ex.rep_max)
+    setSelectedReps(entered?.reps ?? lastLog?.reps ?? ex.rep_max)
   }
 
   function handleLogSet() {
