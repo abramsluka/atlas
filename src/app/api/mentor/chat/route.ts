@@ -14,6 +14,7 @@ import { noKeyResponse } from '@/lib/userKeys'
 import { isAiLimitError, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
 import { getProfileBlock } from '@/lib/profile/getProfileBlock'
 import { extractFacts } from '@/lib/profile/extractFacts'
+import { buildProgressionBriefing } from '@/lib/gym/progressionBriefing'
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -222,6 +223,7 @@ export async function POST(req: NextRequest) {
     supplementLogData,
     appleHealthData,
     cardioData,
+    progressionBriefing,
   ] = await Promise.all([
     db.from('gym_logs').select('logged_at, weight, reps, exercise_id, gym_exercises(name)').eq('user_id', user.id).gte('logged_at', fourWeeksAgo).order('logged_at', { ascending: false }).limit(200),
     db.from('gym_sessions').select('date_key, started_at, ended_at').eq('user_id', user.id).gte('date_key', fourWeeksAgoDate),
@@ -236,6 +238,7 @@ export async function POST(req: NextRequest) {
     db.from('supplement_logs').select('taken_at, supplements(name)').eq('user_id', user.id).gte('taken_at', formatInTimeZone(subDays(new Date(), 7), TZ, "yyyy-MM-dd'T'HH:mm:ssxxx")).order('taken_at', { ascending: false }).limit(30),
     db.from('apple_health_logs').select('date, steps, active_calories, vo2_max').eq('user_id', user.id).gte('date', fourteenDaysAgo).order('date', { ascending: false }).limit(14),
     db.from('apple_workouts').select('date, workout_type, duration_min, distance_mi, active_calories').eq('user_id', user.id).gte('date', fourteenDaysAgo).order('start_time', { ascending: false }).limit(20),
+    buildProgressionBriefing(db, user.id),
   ])
 
   // Step 4 — system prompt
@@ -285,6 +288,17 @@ When journal data is present: look for mood trends across entries (not just toda
     )
     const formatted = formatGymLogs(gymLogData.data as unknown as GymLogRow[], TZ, sessionsByDate)
     if (formatted) dataSections.push(`GYM TRAINING (last 4 weeks — grouped by day; each day shows start–end time and duration when recorded):\n${formatted}`)
+  }
+
+  // The Gym tab's own progression engine, so the chat and the tab never give
+  // conflicting calls on the same lift.
+  if (progressionBriefing) {
+    dataSections.push(
+      `PROGRESSIVE OVERLOAD READ (from Atlas's progression engine — this is what the Gym tab is telling him right now, so agree with it or explain why you don't):
+Actions: INCREASE = add weight · HOLD = same weight, in rep range · REPEAT = same weight, reps fell short · DROP = one step back · DELOAD = 10% reset.
+Judged on estimated 1RM trend across sessions, not on the last set's rep count — a session like 120 × 9, 8, 7 is normal within-session fatigue, not a reason to back off.
+${progressionBriefing}`,
+    )
   }
 
   if (Array.isArray(ouraData) && ouraData.length > 0) {

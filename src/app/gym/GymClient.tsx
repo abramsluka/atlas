@@ -14,7 +14,10 @@ import {
   useLogSet, useDeleteLog,
   useLogBodyWeight, useLogBodyMeasurement, useUploadPhoto, useDeletePhoto,
 } from '@/features/gym/mutations'
-import type { GymConfig, GymExercise, GymLog, BodyWeight, Prescription, ProgressPhoto } from '@/features/gym/types'
+import type { GymConfig, GymExercise, GymLog, BodyWeight, ProgressPhoto } from '@/features/gym/types'
+import {
+  buildSessionHistory, decideProgression, nextSetGuidance, specFromExercise,
+} from '@/features/gym/progression'
 import ProtocolCard from './ProtocolCard'
 import ActiveProgramCard from './ActiveProgramCard'
 import ProgramGenerator, { type GeneratorPrefill } from './ProgramGenerator'
@@ -138,53 +141,8 @@ function compute1RM(weight: number, reps: number): number {
   return weight * (1 + reps / 30)
 }
 
-function getRx(logs: GymLog[], ex: GymExercise, units: string): Prescription | null {
-  if (!logs.length) return null
-  const last = logs[logs.length - 1]
-  const { reps, weight } = last
-  const { rep_min: repMin, rep_max: repMax, step, bodyweight: bw } = ex
-
-  // Stuck: consecutive sets at same weight with reps below repMin
-  let stuck = 0
-  for (let i = logs.length - 1; i >= 0; i--) {
-    if (logs[i].weight === weight) stuck++
-    else break
-  }
-
-  if (bw) {
-    if (reps >= repMax) return { action: 'INCREASE', reason: `${reps} reps — strong. Push for ${reps + 1} next time.` }
-    if (reps >= repMin) return { action: 'HOLD', reason: `${reps} reps. Push for ${reps + 1} next session.` }
-    return { action: 'REPEAT', reason: `${reps} reps fell short. Repeat until you hit ${repMin}+.` }
-  }
-
-  if (stuck >= 3 && reps < repMin) {
-    return {
-      action: 'DELOAD',
-      reason: `Stuck at ${weight}${units} for ${stuck} sets. Drop 10%, reset, build back.`,
-      nextWeight: Math.round((weight * 0.9) / step) * step,
-    }
-  }
-  if (reps >= repMax) return {
-    action: 'INCREASE',
-    reason: `You hit ${reps} reps — time to add ${step}${units}. Expect ${repMin}–${repMin + 1} next session.`,
-  }
-  if (reps >= repMin) return {
-    action: 'HOLD',
-    reason: `${reps} reps in target. Stay at ${weight}${units}, push for ${reps + 1}.`,
-  }
-  const dropWeight = Math.max(0, Math.round((weight - step) / step) * step)
-  if (dropWeight < weight) {
-    return {
-      action: 'DROP',
-      reason: `${reps} reps short of ${repMin}. Drop to ${dropWeight}${units} next session.`,
-      nextWeight: dropWeight,
-    }
-  }
-  return {
-    action: 'REPEAT',
-    reason: `${reps} reps short of ${repMin}–${repMax}. Repeat ${weight}${units} until you hit ${repMin}+ clean.`,
-  }
-}
+// The progression engine lives in @/features/gym/progression — pure, tested,
+// and fed the whole set history rather than just the last logged set.
 
 // SVG sparkline — each point is one logged set (last 15), full-bleed, no dots
 function PoSparkline({ logs, bodyweight }: { logs: GymLog[]; bodyweight: boolean }) {
@@ -848,10 +806,32 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   // ±  still cover anything outside it.
   const repsPct = Math.min(100, Math.max(0, ((selectedReps - 5) / (14 - 5)) * 100))
 
-  const rx = useMemo(() => {
-    if (!currentEx) return null
-    return getRx(ownLogs, currentEx, config.units)
-  }, [ownLogs, currentEx, config.units])
+  const spec = useMemo(
+    () => (currentEx ? specFromExercise(currentEx, config.units) : null),
+    [currentEx, config.units],
+  )
+
+  // Whole set history, normalized into one comparable row per training day.
+  const sessionHistory = useMemo(
+    () => (spec ? buildSessionHistory(ownLogs, spec) : []),
+    [ownLogs, spec],
+  )
+
+  const rx = useMemo(
+    () => (spec ? decideProgression(sessionHistory, spec) : null),
+    [sessionHistory, spec],
+  )
+
+  // Live cue for the set you're about to do — today's sets measured against the
+  // matching set from the last session at this same weight.
+  const setCue = useMemo(() => {
+    if (!spec) return null
+    const todaySets = ownLogs
+      .filter(l => logDatePST(l.logged_at) === today)
+      .map(l => ({ weight: spec.bodyweight ? 0 : l.weight, reps: l.reps }))
+    const past = sessionHistory.filter(s => s.dateKey !== today)
+    return nextSetGuidance(todaySets, past, spec, rx)
+  }, [ownLogs, sessionHistory, spec, today, rx])
 
   const bestSet = useMemo(() => {
     if (!ownLogs.length) return null
@@ -1114,6 +1094,14 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   }
   const rxIcons: Record<string, string> = {
     INCREASE: '↑', HOLD: '→', REPEAT: '↺', DROP: '↓', DELOAD: '⬇',
+  }
+  // One accent per action, reused for the badge, card wash, and target chip.
+  const rxTone: Record<string, { accent: string; wash: string; edge: string; body: string }> = {
+    INCREASE: { accent: '#4ade80', wash: 'rgba(74,222,128,0.10)', edge: 'rgba(74,222,128,0.22)', body: 'rgba(187,247,208,0.62)' },
+    HOLD: { accent: '#fbbf24', wash: 'rgba(251,191,36,0.09)', edge: 'rgba(251,191,36,0.22)', body: 'rgba(253,230,138,0.62)' },
+    REPEAT: { accent: '#7dd3fc', wash: 'rgba(125,211,252,0.08)', edge: 'rgba(125,211,252,0.18)', body: 'rgba(186,230,253,0.6)' },
+    DROP: { accent: '#fb923c', wash: 'rgba(251,146,60,0.10)', edge: 'rgba(251,146,60,0.22)', body: 'rgba(254,215,170,0.62)' },
+    DELOAD: { accent: '#f87171', wash: 'rgba(248,113,113,0.11)', edge: 'rgba(248,113,113,0.22)', body: 'rgba(254,202,202,0.62)' },
   }
 
   const bwDelta = bodyWeights.length >= 2
@@ -1874,6 +1862,31 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   <SetTimerRing phase={timer.phase} ms={phaseMs} />
                 </div>
 
+                {/* Live set cue — set N of today vs set N of the last session
+                    at this weight, so the target moves with you mid-workout */}
+                {setCue && (
+                  <motion.div
+                    key={setCue.label}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, ease: EASE_OUT }}
+                    className="mb-2.5 flex items-center justify-center gap-2 rounded-xl py-2 px-3"
+                    style={{
+                      background: setCue.tone === 'ahead' ? 'rgba(74,222,128,0.08)' : 'rgba(255,255,255,0.04)',
+                      border: setCue.tone === 'ahead'
+                        ? '1px solid rgba(74,222,128,0.18)'
+                        : '1px solid rgba(255,255,255,0.07)',
+                    }}
+                  >
+                    <span
+                      className="text-[12px] font-semibold tracking-wide tabular-nums"
+                      style={{ color: setCue.tone === 'ahead' ? '#4ade80' : 'rgba(255,255,255,0.5)' }}
+                    >
+                      {setCue.label}
+                    </span>
+                  </motion.div>
+                )}
+
                 {/* Start / End Set button */}
                 <motion.button
                   onClick={handleSetButton}
@@ -1903,52 +1916,102 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                   {logSet.isPending ? '…' : timer.phase === 'active' ? 'End Set' : 'Start Set'}
                 </motion.button>
 
-                {/* Prescription card */}
-                {rx && (
-                  <motion.div
-                    key={rx.action}
-                    initial={{ opacity: 0, y: 8, scale: 0.97 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    transition={{ duration: 0.35, ease: [0.34, 1.56, 0.64, 1] }}
-                    className="mt-4 rounded-2xl overflow-hidden"
-                    style={{
-                      background: rx.action === 'INCREASE'
-                        ? 'linear-gradient(135deg, rgba(74,222,128,0.12) 0%, rgba(74,222,128,0.03) 100%)'
-                        : rx.action === 'HOLD'
-                        ? 'linear-gradient(135deg, rgba(251,191,36,0.10) 0%, rgba(251,191,36,0.02) 100%)'
-                        : rx.action === 'DELOAD'
-                        ? 'linear-gradient(135deg, rgba(248,113,113,0.12) 0%, rgba(248,113,113,0.03) 100%)'
-                        : 'rgba(255,255,255,0.04)',
-                      border: rx.action === 'INCREASE'
-                        ? '1px solid rgba(74,222,128,0.22)'
-                        : rx.action === 'HOLD'
-                        ? '1px solid rgba(251,191,36,0.22)'
-                        : rx.action === 'DELOAD'
-                        ? '1px solid rgba(248,113,113,0.22)'
-                        : '1px solid rgba(255,255,255,0.08)',
-                    }}
-                  >
-                    <div className="px-5 py-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className={`text-base font-bold tracking-wide ${rxColors[rx.action].split(' ')[0]}`}>
-                          {rxIcons[rx.action]} {rx.action}
-                        </span>
-                        {rx.action === 'INCREASE' && (
-                          <span className="text-[9px] font-bold tracking-widest px-2 py-1 rounded-full"
-                            style={{ background: 'rgba(74,222,128,0.15)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.2)' }}>
-                            LEVEL UP
+                {/* Prescription card — the call, the reasoning, the numbers it came from */}
+                {rx && (() => {
+                  const tone = rxTone[rx.action] ?? rxTone.REPEAT
+                  const t = rx.trend
+                  const s = rx.signals
+                  const chips: string[] = [
+                    `top set ${s.topSetReps}`,
+                    `avg ${s.avgWorkReps.toFixed(1)}`,
+                    ...(t ? [`e1RM ${t.pctPerSession >= 0 ? '+' : ''}${t.pctPerSession.toFixed(1)}%/session`] : []),
+                    ...(s.sessionsAtWeight > 1 && !currentEx.bodyweight
+                      ? [`${s.sessionsAtWeight} sessions at ${s.workWeight}`]
+                      : []),
+                    ...(s.fatigueDrop != null && s.fatigueDrop > 0
+                      ? [`${Math.round(s.fatigueDrop * 100)}% fade`]
+                      : []),
+                  ]
+                  return (
+                    <motion.div
+                      key={rx.headline}
+                      initial={{ opacity: 0, y: 8, scale: 0.97 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{ duration: 0.35, ease: [0.34, 1.56, 0.64, 1] }}
+                      className="mt-4 rounded-2xl overflow-hidden"
+                      style={{
+                        background: `linear-gradient(135deg, ${tone.wash} 0%, rgba(255,255,255,0.02) 100%)`,
+                        border: `1px solid ${tone.edge}`,
+                      }}
+                    >
+                      <div className="px-5 py-4">
+                        <div className="flex items-center justify-between gap-3 mb-1.5">
+                          <span className="text-[11px] font-bold tracking-[0.18em]" style={{ color: tone.accent }}>
+                            {rxIcons[rx.action]} {rx.action}
                           </span>
+                          <div className="flex items-center gap-2">
+                            {rx.flags.includes('new-best') && (
+                              <span className="text-[9px] font-bold tracking-widest px-2 py-1 rounded-full"
+                                style={{ background: 'rgba(74,222,128,0.15)', color: '#4ade80', border: '1px solid rgba(74,222,128,0.2)' }}>
+                                NEW BEST
+                              </span>
+                            )}
+                            {/* Confidence — three pips, so a low-data call never reads as certainty */}
+                            <span className="flex items-center gap-[3px]" title={`${rx.confidence} confidence`}>
+                              {[0, 1, 2].map(i => (
+                                <span
+                                  key={i}
+                                  className="w-1 h-1 rounded-full"
+                                  style={{
+                                    background: i < (rx.confidence === 'high' ? 3 : rx.confidence === 'medium' ? 2 : 1)
+                                      ? tone.accent : 'rgba(255,255,255,0.15)',
+                                  }}
+                                />
+                              ))}
+                            </span>
+                          </div>
+                        </div>
+
+                        <p className="text-[17px] font-bold leading-snug text-white">{rx.headline}</p>
+
+                        <div className="mt-2.5 space-y-1.5">
+                          {rx.detail.map((line, i) => (
+                            <p
+                              key={i}
+                              className="text-[13px] leading-relaxed"
+                              style={{ color: i === 0 ? 'rgba(255,255,255,0.42)' : tone.body }}
+                            >
+                              {line}
+                            </p>
+                          ))}
+                        </div>
+
+                        {rx.target && (
+                          <div
+                            className="mt-3.5 flex items-center justify-between rounded-xl px-3.5 py-2.5"
+                            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
+                          >
+                            <span className="text-[10px] uppercase tracking-widest text-white/30 font-semibold">Next session</span>
+                            <span className="text-sm font-bold tabular-nums" style={{ color: tone.accent }}>
+                              {currentEx.bodyweight
+                                ? `${rx.target.reps} reps`
+                                : `${rx.target.weight}${config.units} × ${rx.target.reps}`}
+                            </span>
+                          </div>
                         )}
+
+                        {/* The numbers the call was made from — no black box */}
+                        <div className="mt-3 flex flex-wrap gap-x-2.5 gap-y-1">
+                          {chips.map(c => (
+                            <span key={c} className="text-[10px] font-mono uppercase tracking-wider text-white/25">
+                              {c}
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                      <p className={`text-sm leading-relaxed ${rxColors[rx.action].split(' ')[0] === 'text-green-400' ? 'text-green-200/60' : rxColors[rx.action].split(' ')[0] === 'text-yellow-400' ? 'text-yellow-200/60' : rxColors[rx.action].split(' ')[0] === 'text-red-400' ? 'text-red-200/60' : 'text-white/40'}`}>
-                        {rx.reason}
-                      </p>
-                      {rx.nextWeight != null && (
-                        <p className="text-xs mt-2 font-mono text-white/35">→ next: {rx.nextWeight} {config.units}</p>
-                      )}
-                    </div>
-                  </motion.div>
-                )}
+                    </motion.div>
+                  )
+                })()}
 
                 {/* Best set + trend — side by side to stay compact */}
                 {bestSet && (

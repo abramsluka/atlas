@@ -124,8 +124,6 @@ export interface ProgressPhoto {
 
 export type PrescriptionAction = 'INCREASE' | 'HOLD' | 'REPEAT' | 'DROP' | 'DELOAD'
 
-export interface Prescription {
-  action: PrescriptionAction
-  reason: string
-  nextWeight?: number
-}
+// `Prescription` itself lives in ./progression alongside the engine that builds
+// it — it carries the signals and trend the decision was made from, and those
+// types would be a cycle back into this file.
