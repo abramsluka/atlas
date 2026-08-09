@@ -7,6 +7,7 @@ import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
 import type { OuraData } from '@/features/health/types'
 import { getProfileBlock } from '@/lib/profile/getProfileBlock'
+import { getLiveSession, liveSessionBlock } from '@/lib/liveGymSession'
 
 export async function POST(_request: NextRequest) {
   const authClient = await createClient()
@@ -34,6 +35,7 @@ export async function POST(_request: NextRequest) {
     foodTodayRes,
     healthProfileRes,
     profileBlock,
+    liveSession,
   ] = await Promise.all([
     db.from('daily_checkins')
       .select('*')
@@ -112,6 +114,9 @@ export async function POST(_request: NextRequest) {
       .maybeSingle(),
 
     getProfileBlock(db, user.id, 'home'),
+
+    // Mid-workout right now? The briefing must not nag him to go train.
+    getLiveSession(db, user.id),
   ])
 
   const checkin = checkinRes.data
@@ -198,11 +203,13 @@ export async function POST(_request: NextRequest) {
     `Today: ${today}`,
     '',
     '--- GYM ---',
-    daysSinceWorkout === null
-      ? 'No workout history recorded yet.'
-      : daysSinceWorkout === 0
-        ? 'Worked out today.'
-        : `Last workout: ${daysSinceWorkout} day${daysSinceWorkout === 1 ? '' : 's'} ago.`,
+    liveSession
+      ? `${liveSessionBlock(liveSession)}\n  Do NOT tell him to go train or ask whether he'll train — he is training. Speak to the session happening right now.`
+      : daysSinceWorkout === null
+        ? 'No workout history recorded yet.'
+        : daysSinceWorkout === 0
+          ? 'Worked out today.'
+          : `Last workout: ${daysSinceWorkout} day${daysSinceWorkout === 1 ? '' : 's'} ago.`,
     `Workout days this week: ${workoutDaysThisWeek}`,
     latestWeight ? `Latest body weight: ${latestWeight.weight} lbs${weightTrend ? ` (trending ${weightTrend} over last 5 entries)` : ''}` : 'No body weight logged.',
     '',

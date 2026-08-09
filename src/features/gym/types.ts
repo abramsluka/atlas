@@ -90,6 +90,10 @@ export interface GymSession {
   date_key: string   // LA calendar day, YYYY-MM-DD
   started_at: string // ISO
   ended_at: string   // ISO
+  // Set by Finish Workout, cleared when a later set reopens the day. Null means
+  // the workout is still in progress (until it goes cold an hour after the last
+  // set) — the training streak and the AI coaches both read this.
+  finished_at?: string | null
 }
 
 export interface BodyWeight {

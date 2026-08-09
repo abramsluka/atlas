@@ -11,7 +11,7 @@ import { useHealthProfile } from '@/features/health/queries'
 import {
   useSaveGymConfig,
   useCreateExercise, useUpdateExercise, useDeleteExercise, useReorderExercises,
-  useLogSet, useDeleteLog,
+  useLogSet, useDeleteLog, useFinishWorkout,
   useLogBodyWeight, useLogBodyMeasurement, useUploadPhoto, useDeletePhoto,
 } from '@/features/gym/mutations'
 import type { GymConfig, GymExercise, GymLog, BodyWeight, ProgressPhoto } from '@/features/gym/types'
@@ -554,17 +554,32 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   }
   const todayBw = bodyWeights.find(w => w.date_key === today)
 
-  // Today done + history collapse — persisted to localStorage keyed by date
+  // Today done — owned by the server (gym_sessions.finished_at), because the
+  // training streak and the AI coaches both need to tell a workout in progress
+  // from a finished one, and localStorage only ever told this one device.
+  // localStorage stays as the mirror so the button paints right without waiting
+  // on the sessions query.
   const DONE_KEY = `gym_done_${today}`
+  const finishWorkout = useFinishWorkout()
   const [todayDone, setTodayDoneState] = useState(() => {
     try { return localStorage.getItem(DONE_KEY) === '1' } catch { return false }
   })
-  function setTodayDone(fn: boolean | ((prev: boolean) => boolean)) {
-    setTodayDoneState(prev => {
-      const next = typeof fn === 'function' ? fn(prev) : fn
-      try { next ? localStorage.setItem(DONE_KEY, '1') : localStorage.removeItem(DONE_KEY) } catch {}
-      return next
-    })
+  const serverDone = !!sessions.find(s => s.date_key === today)?.finished_at
+
+  // Server wins once its data is in: another device may have finished the day,
+  // and a set logged after finishing reopens it (see syncGymSession).
+  useEffect(() => {
+    if (!sessions.length) return
+    setTodayDoneState(serverDone)
+    try { serverDone ? localStorage.setItem(DONE_KEY, '1') : localStorage.removeItem(DONE_KEY) } catch {}
+  }, [serverDone, sessions.length, DONE_KEY])
+
+  function toggleTodayDone() {
+    const next = !todayDone
+    setTodayDoneState(next) // optimistic — the effect above reconciles on response
+    try { next ? localStorage.setItem(DONE_KEY, '1') : localStorage.removeItem(DONE_KEY) } catch {}
+    if (next) endSession() // finishing the workout resets the set timer to idle
+    finishWorkout.mutate({ date_key: today, finished: next })
   }
   const [todayExpanded, setTodayExpanded] = useState(true)
   const [pastExpanded, setPastExpanded] = useState(false)
@@ -2133,11 +2148,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
               {/* Finish Workout — always visible */}
               <div className="px-5 py-4 border-t border-white/6">
                 <button
-                  onClick={() => setTodayDone(d => {
-                    const next = !d
-                    if (next) endSession() // finishing the workout resets the set timer to idle
-                    return next
-                  })}
+                  onClick={toggleTodayDone}
                   className={`w-full rounded-xl py-3.5 text-sm font-bold transition-all active:scale-[0.98] ${
                     todayDone
                       ? 'bg-green-500/20 border border-green-500/40 text-green-400'

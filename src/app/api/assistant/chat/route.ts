@@ -8,6 +8,7 @@ import type { OuraData } from '@/features/health/types'
 import { describeAction, type AssistantStreamEvent } from '@/features/assistant/actions'
 import { loadAssistantContext, buildAssistantTools, resolveToolCall, ACTION_RULES } from '@/features/assistant/tools'
 import { getProfileBlock } from '@/lib/profile/getProfileBlock'
+import { getLiveSession, liveSessionBlock, type LiveSession } from '@/lib/liveGymSession'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -32,11 +33,15 @@ export async function POST(req: NextRequest) {
   if (!message?.trim()) return new Response('message is required', { status: 400 })
 
   const db = createServiceClient()
-  const [ctx, wearableRes, profileRes, profileBlock] = await Promise.all([
+  const [ctx, wearableRes, profileRes, profileBlock, liveSession] = await Promise.all([
     loadAssistantContext(db, user.id),
     createServiceClient().from('wearable_data').select('data, provider').eq('user_id', user.id).eq('provider', 'oura').order('date', { ascending: false }).limit(2),
     createServiceClient().from('health_profile').select('age, weight_lbs, fitness_goal, target_weight_lbs').eq('user_id', user.id).maybeSingle(),
     getProfileBlock(db, user.id, 'assistant'),
+    // Server-derived mid-workout state. The client's inGymSession comes from the
+    // Gym page's localStorage timer, so it only knows about the device it runs
+    // on and can't see which sets he's actually put in.
+    getLiveSession(db, user.id),
   ])
 
   // ── Recovery today (from Oura) ──
@@ -61,8 +66,17 @@ export async function POST(req: NextRequest) {
 
   const onGymPage = page.startsWith('/gym')
 
+  // Server truth wins; the client timer covers the gap where he's started the
+  // session but hasn't logged a first set yet (nothing for the server to see).
+  const midWorkout = !!liveSession || !!context?.inGymSession
+  const gymSessionBlock = liveSession
+    ? `\n${liveSessionBlock(liveSession)}`
+    : context?.inGymSession
+      ? `\n— IN A GYM SESSION RIGHT NOW: ${context.sessionMinutes ?? 0} min in, no sets logged yet`
+      : ''
+
   const system = `You are the Atlas Orb — Luka's quick-capture assistant, living in a floating chat panel available on every page of his life-OS app. Your #1 job is turning what he says (often voice transcripts) into logged data fast. Your #2 job is tactical gym coaching (you replaced his old gym coach and kept its powers: recovery-aware training calls, exercise management, programs). Direct, honest, zero fluff, references his real numbers. You HAVE his live data in the context below (TODAY SO FAR, recovery, catalogs) — answer intake/status questions ("how much water have I had?") directly from it; never claim you lack access to his data. Be concise and decisive — this is quick capture, not a long conversation (his Mentor handles those).
-${onGymPage ? '\nHe is ON THE GYM PAGE right now — lean tactical coach: give the call and the one-line reason. If recovery is low, dial back volume and say why; if high, green-light pushing.\n' : ''}
+${onGymPage ? '\nHe is ON THE GYM PAGE right now — lean tactical coach: give the call and the one-line reason. If recovery is low, dial back volume and say why; if high, green-light pushing.\n' : ''}${midWorkout ? '\nHe is MID-WORKOUT — reading this between sets with a bar waiting. Never tell him to go train, and never talk about today\'s session in the future tense; he is in it. Keep answers to a sentence or two, tactical, and reference the sets he has already logged. If he wants fire, give it to him for the sets that are left, not for showing up.\n' : ''}
 FORMATTING — this renders in a narrow phone chat bubble. Plain conversational text. NEVER use markdown tables or horizontal rules (---). Keep **bold** to the occasional key number. When you list exercises, one per line like "Bench — 105×8–12". Short and scannable beats pretty.
 
 UNITS: ${ctx.units}.
@@ -71,7 +85,7 @@ ${ACTION_RULES}
 
 When he asks for a multi-week PROGRAM or periodized plan ("build me a program", "8-week hypertrophy block"), use the generate_program tool. Infer goal / duration / days-per-week; defaults: hypertrophy, 8 weeks, his usual days/week. That tool opens a preview he reviews — keep your text brief ("Opening an 8-week hypertrophy build — tweak it in the preview").
 
-— CURRENT PAGE: ${page}${context?.inGymSession ? `\n— IN A GYM SESSION RIGHT NOW: ${context.sessionMinutes ?? 0} min in` : ''}
+— CURRENT PAGE: ${page}${gymSessionBlock}
 — TODAY'S RECOVERY: ${recoveryLine}
 — PROFILE: ${profileLine}
 
@@ -145,7 +159,7 @@ ${ctx.catalogBlock}${profileBlock ? `\n\n${profileBlock}` : ''}`
           }).then(({ error }) => { if (error) console.error('[assistant/chat] orb_commands insert:', error) }),
           clarifyEmitted
             ? Promise.resolve<string[]>([])
-            : generateSuggestions(anthropic, { message: message.trim(), replyText, actionNotes, page, recoveryLine, context })
+            : generateSuggestions(anthropic, { message: message.trim(), replyText, actionNotes, page, recoveryLine, context, liveSession })
                 .catch(err => { console.error('[assistant/chat] suggestions:', err); return [] as string[] }),
         ])
         if (suggestions.length >= 2) send(controller, { t: 'suggestions', options: suggestions.slice(0, 3) })
@@ -188,12 +202,18 @@ interface SuggestArgs {
   page: string
   recoveryLine: string
   context?: ChatBody['context']
+  liveSession?: LiveSession | null
 }
 
 async function generateSuggestions(anthropic: Anthropic, args: SuggestArgs): Promise<string[]> {
   const hour = typeof args.context?.hour === 'number' ? args.context.hour : null
   const hourLabel = hour == null ? 'unknown' : `${hour < 11 ? 'morning' : hour < 17 ? 'midday' : 'evening'} (hour ${hour})`
-  const gymLine = args.context?.inGymSession ? ` · IN A GYM SESSION, ${args.context.sessionMinutes ?? 0} min in` : ''
+  const live = args.liveSession
+  const gymLine = live
+    ? ` · MID-WORKOUT: ${live.minutesIn} min in, ${live.setCount} sets done, last was ${live.lastSet.name}. Suggest next-set actions, not "start a workout".`
+    : args.context?.inGymSession
+      ? ` · IN A GYM SESSION, ${args.context.sessionMinutes ?? 0} min in`
+      : ''
 
   const system = `You generate exactly 3 tap-to-send quick replies for Luka, the user of a fitness app. He just got
 a response from Atlas (his logging assistant + gym coach) and these are the three most likely

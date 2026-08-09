@@ -62,7 +62,11 @@ const MODULES: ModuleDef[] = [
 
 function StreakCell({ def, stat }: { def: ModuleDef; stat: StreakStat }) {
   const router = useRouter()
-  const active = stat.streak > 0
+  // Pending = a workout is running right now. The day isn't banked until it's
+  // finished, so the count still reads yesterday's streak — but the cell reads
+  // "live", not "you haven't trained", which is the whole point.
+  const pending = !!stat.pending
+  const active = stat.streak > 0 || pending
   const color = active ? def.color : 'rgba(255,255,255,0.22)'
 
   return (
@@ -71,20 +75,42 @@ function StreakCell({ def, stat }: { def: ModuleDef; stat: StreakStat }) {
       whileTap={{ scale: 0.93 }}
       transition={{ duration: 0.15 }}
       className="flex flex-col items-center gap-1 flex-1 min-w-0"
+      aria-label={pending ? `${def.label} — workout in progress, ${stat.streak} day streak` : `${def.label} — ${stat.streak} day streak`}
     >
-      <def.icon color={color} />
+      <span className="relative flex items-center justify-center">
+        <def.icon color={color} />
+        {pending && (
+          <motion.span
+            className="absolute -top-[1px] -right-[3px] rounded-full"
+            style={{ width: 5, height: 5, background: def.color, boxShadow: `0 0 5px ${def.color}` }}
+            animate={{ opacity: [1, 0.2, 1], scale: [1, 0.75, 1] }}
+            transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+          />
+        )}
+      </span>
       <span
         className="text-[14px] font-bold leading-none tabular-nums"
-        style={{ color: active ? def.color : 'rgba(255,255,255,0.3)' }}
+        style={{ color: active ? def.color : 'rgba(255,255,255,0.3)', opacity: pending ? 0.6 : 1 }}
       >
         {stat.streak}<span className="text-[10px] font-semibold opacity-70">d</span>
       </span>
-      <span
-        className="text-[8.5px] font-bold tracking-[0.16em] uppercase leading-none"
-        style={{ color: active ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.22)' }}
-      >
-        {def.label}
-      </span>
+      {pending ? (
+        <motion.span
+          className="text-[8.5px] font-bold tracking-[0.16em] uppercase leading-none"
+          style={{ color: def.color }}
+          animate={{ opacity: [1, 0.45, 1] }}
+          transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+        >
+          Live
+        </motion.span>
+      ) : (
+        <span
+          className="text-[8.5px] font-bold tracking-[0.16em] uppercase leading-none"
+          style={{ color: active ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.22)' }}
+        >
+          {def.label}
+        </span>
+      )}
       {/* weekly consistency bar */}
       <div className="w-[26px] h-[3px] rounded-full overflow-hidden mt-0.5" style={{ background: 'rgba(255,255,255,0.06)' }}>
         <div
@@ -161,6 +187,27 @@ export default function StreakStrip({ initial }: { initial?: Streaks }) {
       .catch(() => {})
     return () => { cancelled = true }
   }, [initial])
+
+  // The training cell flips live/banked as a workout starts and finishes, and a
+  // server-rendered `initial` can't see that happen in another tab. Re-pull on
+  // focus (throttled) so coming back from the Gym page shows the truth.
+  useEffect(() => {
+    let last = Date.now()
+    const refresh = () => {
+      if (document.visibilityState !== 'visible' || Date.now() - last < 30_000) return
+      last = Date.now()
+      fetch('/api/home/streaks', { cache: 'no-store' })
+        .then(r => (r.ok ? r.json() : null))
+        .then(d => { if (d) setData(d) })
+        .catch(() => {})
+    }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [])
 
   if (!data) {
     return (
