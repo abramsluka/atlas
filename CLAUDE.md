@@ -162,6 +162,14 @@ src/proxy.ts                        # Next.js 16 middleware (session refresh + l
 
 Finances/subscriptions tab, goals module.
 
+## Clarify before building — ambiguous prompts
+
+Luka's prompts are often voice-dictated and imprecise. If a request has multiple
+plausible readings that lead to noticeably different work, and the repo doesn't
+answer it, follow the `/clarify` skill (`.claude/skills/clarify/`) BEFORE
+starting: one batched AskUserQuestion call with concrete options, then build
+straight through. Detailed prompts and specs mean skip the questions and build.
+
 ## Committing — multiple agents may share this tree
 
 Several Claude agents (and Luka) can be working in this repo at once. EVERY commit
