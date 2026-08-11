@@ -19,6 +19,9 @@ export interface FoodLog {
   volume_oz: number | null
   refine_status: 'open' | 'done' | null
   user_description: string | null
+  // Searchable contents: for photo logs, everything the vision model saw in the
+  // shot; for manual logs, portion wording + brand. Feeds the search index.
+  search_text: string | null
   // User-chosen emoji. Null → resolved from the item name (see foodEmoji.ts).
   emoji: string | null
   taken_at: string
@@ -214,6 +217,20 @@ export interface DailyTotals {
   protein_g: number
   carbs_g: number
   mealCount: number
+}
+
+export interface FoodSearchStats {
+  count: number
+  /** True when the result set hit the server cap — there are older matches not shown. */
+  capped: boolean
+  avg_calories: number | null
+  first_date: string | null
+  last_date: string | null
+}
+
+export interface FoodSearchResponse {
+  results: FoodLog[]
+  stats: FoodSearchStats | null
 }
 
 export interface DailyFoodSummary {

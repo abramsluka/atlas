@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useRef } from 'react'
-import { useFoodLogs, useFoodHistory } from '@/features/food/queries'
+import { useState, useRef, useEffect } from 'react'
+import { useFoodLogs, useFoodHistory, useFoodSearch } from '@/features/food/queries'
 import { useUpdateFoodLog, useDeleteFoodLog, useRepeatFoodLog } from '@/features/food/mutations'
 import type { FoodLog } from '@/features/food/types'
 import FoodEmojiPicker from '../FoodEmojiPicker'
@@ -76,6 +76,38 @@ function MealEditSheet({
   )
 }
 
+/** Why this meal matched when the query isn't in its name — e.g. searching
+ *  "chicken apple sausage" and hitting a log titled "Breakfast plate". */
+function matchContext(meal: FoodLog, query: string): string | null {
+  const terms = query.toLowerCase().split(/\s+/).filter(t => t.length >= 2)
+  const name = meal.item_name.toLowerCase()
+  const missing = terms.filter(t => !name.includes(t))
+  if (missing.length === 0) return null
+
+  for (const field of [meal.search_text, meal.user_description, meal.notes]) {
+    if (!field) continue
+    const hit = missing.find(t => field.toLowerCase().includes(t))
+    if (!hit) continue
+    const fragment = field
+      .split(/[,·]/)
+      .map(s => s.trim())
+      .find(s => s.toLowerCase().includes(hit))
+    return fragment ?? field.slice(0, 80)
+  }
+  return null
+}
+
+function dayLabel(date: string) {
+  const d = new Date(date + 'T12:00:00')
+  const days = Math.round((Date.now() - d.getTime()) / 86_400_000)
+  const abs = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  if (days <= 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  if (days < 7) return `${abs} · ${days}d ago`
+  if (days < 60) return `${abs} · ${Math.round(days / 7)}w ago`
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 function CalSparkline({ history }: { history: { date: string; calories: number }[] }) {
   const reversed = [...history].reverse()
   const values = reversed.map(h => h.calories)
@@ -102,6 +134,17 @@ export default function FoodHistoryClient({
   const [selectedDate, setSelectedDate] = useState(today)
   const [editingMeal, setEditingMeal] = useState<FoodLog | null>(null)
   const dateInputRef = useRef<HTMLInputElement>(null)
+
+  const [query, setQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query.trim()), 250)
+    return () => clearTimeout(t)
+  }, [query])
+  const searching = query.trim().length >= 2
+  const { data: search, isFetching: searchFetching } = useFoodSearch(debouncedQuery)
+  const searchResults = debouncedQuery.length >= 2 ? search?.results ?? [] : []
+  const searchStats = debouncedQuery.length >= 2 ? search?.stats ?? null : null
 
   function shiftDate(days: number) {
     const d = new Date(selectedDate + 'T12:00:00')
@@ -146,6 +189,87 @@ export default function FoodHistoryClient({
         <h1 className="text-xl font-bold text-white">Food history</h1>
       </div>
 
+      {/* Search all history */}
+      <div className="relative mb-4">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-600">
+          <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M11 11l3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+        <input
+          type="search"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search every meal you've logged"
+          className="w-full rounded-xl border border-white/[0.12] bg-zinc-900 py-2.5 pl-10 pr-9 text-sm text-white placeholder-zinc-600 outline-none focus:border-white/40"
+        />
+        {query && (
+          <button
+            onClick={() => { setQuery(''); setDebouncedQuery('') }}
+            className="absolute right-2 top-1/2 -translate-y-1/2 px-2 text-base text-zinc-600 hover:text-zinc-300"
+          >
+            ×
+          </button>
+        )}
+      </div>
+
+      {searching ? (
+        <div className="space-y-2">
+          {searchStats && searchResults.length > 0 && (
+            <p className="px-1 pb-1 text-xs text-zinc-500">
+              {searchStats.count}{searchStats.capped ? '+' : ''} meal{searchStats.count === 1 ? '' : 's'}
+              {searchStats.avg_calories ? ` · avg ${searchStats.avg_calories.toLocaleString()} cal` : ''}
+              {searchStats.last_date ? ` · last ${dayLabel(searchStats.last_date)}` : ''}
+            </p>
+          )}
+
+          {searchResults.length === 0 && (
+            <p className="py-8 text-center text-sm text-zinc-600">
+              {searchFetching ? 'Searching…' : `Nothing logged matching “${query.trim()}”.`}
+            </p>
+          )}
+
+          {searchResults.map(meal => {
+            const context = matchContext(meal, debouncedQuery)
+            return (
+              <div
+                key={meal.id}
+                className="flex w-full items-center gap-3 rounded-xl bg-zinc-900 px-4 py-3 cursor-pointer hover:bg-zinc-800 transition-colors"
+                onClick={() => { setQuery(''); setDebouncedQuery(''); setSelectedDate(meal.date) }}
+              >
+                {meal.photo_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={meal.photo_url} alt="" className="h-12 w-12 shrink-0 rounded-lg object-cover" />
+                ) : (
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-white/[0.05] text-xl leading-none">
+                    {foodEmoji(meal.item_name, { source: meal.source, override: meal.emoji })}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-white">{meal.item_name}</p>
+                  <p className="text-xs text-zinc-500">
+                    {dayLabel(meal.date)} · {meal.calories?.toLocaleString() ?? 0} cal · {Math.round(Number(meal.protein_g))}g P
+                  </p>
+                  {context && (
+                    <p className="mt-0.5 truncate text-xs text-emerald-300/70">contains {context}</p>
+                  )}
+                </div>
+                <button
+                  onClick={e => { e.stopPropagation(); addToToday(meal) }}
+                  disabled={repeatMeal.isPending}
+                  className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold whitespace-nowrap transition-colors disabled:opacity-50 ${
+                    addedId === meal.id
+                      ? 'border-emerald-300/40 bg-emerald-300/10 text-emerald-300'
+                      : 'border-white/[0.12] bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08]'
+                  }`}
+                >
+                  {addedId === meal.id ? 'Added ✓' : repeatingId === meal.id ? 'Adding…' : '+ Today'}
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+      <>
       {/* Sparkline */}
       {history && history.length > 1 && (
         <div className="mb-4 rounded-xl bg-zinc-900 p-4">
@@ -261,6 +385,8 @@ export default function FoodHistoryClient({
           </div>
         ))}
       </div>
+      </>
+      )}
 
       {editingMeal && (
         <MealEditSheet
