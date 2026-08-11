@@ -142,6 +142,8 @@ export default function FoodHistoryClient({
     return () => clearTimeout(t)
   }, [query])
   const searching = query.trim().length >= 2
+  // Mid-debounce the results are still stale — don't flash "nothing found"
+  const searchPending = query.trim() !== debouncedQuery
   const { data: search, isFetching: searchFetching } = useFoodSearch(debouncedQuery)
   const searchResults = debouncedQuery.length >= 2 ? search?.results ?? [] : []
   const searchStats = debouncedQuery.length >= 2 ? search?.stats ?? null : null
@@ -224,7 +226,7 @@ export default function FoodHistoryClient({
 
           {searchResults.length === 0 && (
             <p className="py-8 text-center text-sm text-zinc-600">
-              {searchFetching ? 'Searching…' : `Nothing logged matching “${query.trim()}”.`}
+              {searchFetching || searchPending ? 'Searching…' : `Nothing logged matching “${query.trim()}”.`}
             </p>
           )}
 
