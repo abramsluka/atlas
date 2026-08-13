@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { toLocalDate } from '@/lib/date'
 import { getUserTimezone } from '@/lib/getUserTimezone'
+import { buildSearchText } from './searchText'
 
 export interface LogFoodInput {
   item_name: string
@@ -61,6 +62,9 @@ export async function logFoodServer(
       volume_oz: input.volume_oz,
       ingredients: input.ingredients ?? null,
       emoji: input.emoji ?? null,
+      // Portion wording and brand are often the only place a searchable detail
+      // lives on a manual log ("palm-sized grilled chicken breast").
+      search_text: buildSearchText([input.portion_desc, input.brand].filter(Boolean)),
       taken_at: now.toISOString(),
     })
     .select()

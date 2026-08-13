@@ -7,6 +7,7 @@ import { subDays } from 'date-fns'
 import { formatInTimeZone } from 'date-fns-tz'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { getProfileBlock } from '@/lib/profile/getProfileBlock'
+import { getLiveSession, liveSessionBlock } from '@/lib/liveGymSession'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -28,7 +29,7 @@ export async function POST(request: NextRequest) {
   const fourteenDaysAgo = formatInTimeZone(subDays(now, 14), TZ, 'yyyy-MM-dd')
   const fiftySevenDaysAgo = formatInTimeZone(subDays(now, 57), TZ, 'yyyy-MM-dd')
 
-  const [gymLogsResult, checkinsResult, bodyWeightsResult, volumeLogsResult] = await Promise.all([
+  const [gymLogsResult, checkinsResult, bodyWeightsResult, volumeLogsResult, liveSession] = await Promise.all([
     db
       .from('gym_logs')
       .select('logged_at')
@@ -43,6 +44,9 @@ export async function POST(request: NextRequest) {
       .order('date', { ascending: false }),
     db.from('body_weights').select('date_key, weight').eq('user_id', user.id).gte('date_key', fiftySevenDaysAgo).order('date_key', { ascending: true }),
     db.from('gym_logs').select('logged_at, weight, reps').eq('user_id', user.id).gte('logged_at', new Date(Date.now() - 57 * 86400000).toISOString()).order('logged_at', { ascending: true }),
+    // Non-null when he's mid-workout right now — flips the whole message from
+    // "go train" to "finish what you started".
+    getLiveSession(db, user.id),
   ])
 
   const gymLogs = gymLogsResult.data ?? []
@@ -106,7 +110,9 @@ export async function POST(request: NextRequest) {
 
   lines.push(`Active days this week: ${activeThisWeek}. Last week: ${activeLastWeek}.`)
 
-  if (daysSinceLast === null) {
+  if (liveSession) {
+    lines.push(liveSessionBlock(liveSession))
+  } else if (daysSinceLast === null) {
     lines.push('Has never logged any training.')
   } else if (daysSinceLast === 0) {
     lines.push('Already trained today.')
@@ -168,7 +174,21 @@ export async function POST(request: NextRequest) {
   if (!anthropic) return noKeyResponse('anthropic')
 
   const profileBlock = await getProfileBlock(db, user.id, 'gym')
-  const baseSystem = mode === 'devil' ? devilSystem : angelSystem
+
+  // Both voices are written to push him INTO a session. When he taps this
+  // mid-workout — phone in hand between sets — that ending lands wrong, so
+  // retarget the same voice at the session he's already in instead of writing
+  // a third personality.
+  const midSessionOverride = `
+
+MID-SESSION OVERRIDE — READ THIS FIRST. He is IN THE GYM RIGHT NOW, between sets, and he tapped this for a hit of fuel before the next one. Everything above about your voice still holds, but retarget it completely:
+- Do NOT tell him to start, to go train, or to get to the gym. He is already there and already working. Saying otherwise makes you look blind to him.
+- Fuel THIS session. The enemy is not skipping today, it is coasting: cutting the session short, dropping the last sets, phoning in the reps that actually count.
+- Use the real sets he has already put in. Name an exercise and a number from them — that specificity is what makes it land.
+- End by sending him into his next set, not out the door.
+- Keep it SHORT: 3–4 sentences max. He is reading this with a bar waiting.`
+
+  const baseSystem = (mode === 'devil' ? devilSystem : angelSystem) + (liveSession ? midSessionOverride : '')
 
   const stream = anthropic.messages.stream({
     model: 'claude-sonnet-4-6',

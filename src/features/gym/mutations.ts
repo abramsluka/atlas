@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { GymConfig, GymExercise, GymLog, BodyWeight, BodyMeasurement, ProgressPhoto } from './types'
+import type { GymConfig, GymExercise, GymLog, GymSession, BodyWeight, BodyMeasurement, ProgressPhoto } from './types'
 
 export function useSaveGymConfig() {
   const qc = useQueryClient()
@@ -229,6 +229,33 @@ export function useLogBodyWeight() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ weight_lbs: data.weight }),
       }).then(() => qc.invalidateQueries({ queryKey: ['health', 'profile'] })).catch(() => {})
+    },
+  })
+}
+
+// Finish Workout / un-finish. Marking the day done is what banks the training
+// streak and tells the AI coaches to stop treating him as mid-session, so it has
+// to reach the server — localStorage alone only ever informed one device.
+export function useFinishWorkout() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ date_key, finished }: { date_key: string; finished: boolean }) => {
+      const res = await fetch('/api/gym/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date_key, finished }),
+      })
+      if (!res.ok) throw new Error('Failed to update workout session')
+      return res.json() as Promise<GymSession>
+    },
+    onSuccess: (data) => {
+      qc.setQueryData<GymSession[]>(['gym-sessions'], (old = []) =>
+        old.some(s => s.date_key === data.date_key)
+          ? old.map(s => (s.date_key === data.date_key ? data : s))
+          : [data, ...old],
+      )
+      // The home streak strip reads finished_at through its own fetch and
+      // re-pulls on focus, so it picks this up on the way back to Home.
     },
   })
 }

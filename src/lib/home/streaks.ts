@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { formatInTimeZone } from 'date-fns-tz'
 import { daysAgoLocal } from '@/lib/date'
+import { getLiveSession } from '@/lib/liveGymSession'
 
 type DB = ReturnType<typeof createServiceClient>
 
@@ -11,6 +12,7 @@ const LOOKBACK_DAYS = 120
 export interface StreakStat {
   streak: number      // consecutive days, "grace" rule (today pending doesn't break it)
   weeklyPct: number   // % of last 7 days with activity
+  pending?: boolean   // today is in progress, not yet banked (training only)
 }
 
 export interface Streaks {
@@ -52,7 +54,7 @@ export async function computeStreaks(db: DB, userId: string, tz: string): Promis
   const dateCutoff = daysAgoLocal(LOOKBACK_DAYS, tz)                       // YYYY-MM-DD for date-column tables
   const tsCutoff = new Date(Date.now() - (LOOKBACK_DAYS + 1) * 86400000).toISOString()
 
-  const [gymR, journalR, foodR, suppR, waterR, profileR, checkinR] = await Promise.allSettled([
+  const [gymR, journalR, foodR, suppR, waterR, profileR, checkinR, liveR] = await Promise.allSettled([
     // gym_logs only has logged_at (timestamptz) → convert to local day below
     db.from('gym_logs').select('logged_at').eq('user_id', userId).gte('logged_at', tsCutoff),
     db.from('journal_entries').select('date').eq('user_id', userId).gte('date', dateCutoff),
@@ -62,23 +64,44 @@ export async function computeStreaks(db: DB, userId: string, tz: string): Promis
     db.from('health_profile').select('daily_water_target_oz').eq('user_id', userId).maybeSingle(),
     // daily_checkins — the "Did you train today?" answer (date is already local)
     db.from('daily_checkins').select('date, evening_actual_training').eq('user_id', userId).gte('date', dateCutoff),
+    // Workout in progress right now, if any — gates today's training credit below
+    getLiveSession(db, userId),
   ])
 
-  // Training — a day counts if a set was logged OR the "Did you train today?"
-  // check-in was answered that day. Both Yes and No count: answering "No" is a
-  // rest day, showing up to the check-in is the point. Only a fully skipped
-  // check-in with no logged set fails to count. Same day via both → still one.
+  // Training — a day counts if a FINISHED workout was logged OR the "Did you
+  // train today?" check-in was answered that day. Both Yes and No count:
+  // answering "No" is a rest day, showing up to the check-in is the point. Only
+  // a fully skipped check-in with no logged set fails to count. Same day via
+  // both → still one.
   const gymDates = new Set<string>()
   if (gymR.status === 'fulfilled') {
     for (const row of (gymR.value.data ?? []) as Array<{ logged_at: string }>) {
       gymDates.add(formatInTimeZone(new Date(row.logged_at), tz, 'yyyy-MM-dd'))
     }
   }
+  const checkinDates = new Set<string>()
   if (checkinR.status === 'fulfilled') {
     for (const row of (checkinR.value.data ?? []) as Array<{ date: string | null; evening_actual_training: boolean | null }>) {
-      if (row.date && row.evening_actual_training !== null) gymDates.add(row.date)
+      if (row.date && row.evening_actual_training !== null) checkinDates.add(row.date)
     }
   }
+
+  // A workout only banks the day once it's done — mid-session the day sits
+  // "pending" so the streak ticks up when he taps Finish Workout (or when the
+  // session goes cold an hour later), not on his first warmup set. Only the day
+  // holding the live session can be pending; every earlier day is settled.
+  // The check-in is its own path to the day, so an already-answered check-in
+  // banks it regardless of the workout still running.
+  const live = liveR.status === 'fulfilled' ? liveR.value : null
+  let trainingPending = false
+  if (live) {
+    const liveDay = formatInTimeZone(new Date(live.lastSetAt), tz, 'yyyy-MM-dd')
+    if (!checkinDates.has(liveDay)) {
+      gymDates.delete(liveDay)
+      trainingPending = true
+    }
+  }
+  for (const d of checkinDates) gymDates.add(d)
 
   // Journal / food / supplements — any row that day counts (date is already local).
   const datesFrom = (r: PromiseSettledResult<{ data: Array<{ date: string | null }> | null }>) => {
@@ -109,7 +132,7 @@ export async function computeStreaks(db: DB, userId: string, tz: string): Promis
   }
 
   return {
-    training: gymDates.size ? stat(gymDates, tz) : EMPTY,
+    training: { ...(gymDates.size ? stat(gymDates, tz) : EMPTY), pending: trainingPending },
     journal: journalDates.size ? stat(journalDates, tz) : EMPTY,
     food: foodDates.size ? stat(foodDates, tz) : EMPTY,
     supplements: suppDates.size ? stat(suppDates, tz) : EMPTY,

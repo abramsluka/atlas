@@ -4,6 +4,7 @@ import type {
   FoodItem,
   DailyFoodSummary,
   FoodCoachMessage,
+  FoodSearchResponse,
   SavedMeal,
   UserIngredient,
 } from './types'
@@ -66,6 +67,22 @@ export function useFoodCoachMessages(date: string) {
       return res.json()
     },
     staleTime: 30_000,
+  })
+}
+
+/** Search the whole food history. Pass an already-debounced query. */
+export function useFoodSearch(query: string) {
+  const q = query.trim()
+  return useQuery<FoodSearchResponse>({
+    queryKey: ['food-search', q],
+    queryFn: async () => {
+      const res = await fetch(`/api/health/food/search?q=${encodeURIComponent(q)}`)
+      if (!res.ok) throw new Error('Search failed')
+      return res.json()
+    },
+    enabled: q.length >= 2,
+    staleTime: 60_000,
+    placeholderData: prev => prev,
   })
 }
 

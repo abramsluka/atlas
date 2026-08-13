@@ -6,6 +6,7 @@ import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
 import { toLocalDate } from '@/lib/date'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { PORTION_STYLE_RULES } from '@/features/food/portionStyle'
+import { buildSearchText } from '@/features/food/searchText'
 import type { FoodEstimate, PhotoRefineQuestion } from '@/features/food/types'
 
 export async function GET(request: NextRequest) {
@@ -25,8 +26,9 @@ export async function GET(request: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+  // search_tsv is a search index artifact — strip it rather than ship it every fetch
   const withUrls = await Promise.all(
-    (logs ?? []).map(async (log) => {
+    (logs ?? []).map(async ({ search_tsv: _tsv, ...log }) => {
       if (!log.storage_path) return { ...log, photo_url: null }
       const { data } = await db.storage
         .from('food-photos')
@@ -93,6 +95,7 @@ Return JSON only, no prose. Required fields:
 - fat_g (number)
 - confidence ("low"|"medium"|"high")
 - notes (string, one sentence on what drove the estimate)
+- visible (array of 3-12 short lowercase strings): every distinct food, drink, ingredient, garnish, sauce, and side you can identify in the photo, plus preparation and cuisine words ("grilled", "breaded", "thai", "air fried"). Name the specific items even when item_name is generic — a plate called "Breakfast plate" should still list "chicken apple sausage", "scrambled eggs", "sourdough toast". This list is what the user searches their history by later, so be specific and generous.
 - refine_question (object or null):
   - question (string): one follow-up question to sharpen accuracy
   - reasoning (string): why this matters, e.g. "Portion size could shift this by ±80 kcal"
@@ -112,7 +115,7 @@ Set refine_question to null only when confidence is already "high" and the porti
           ],
         },
       ],
-      max_tokens: 300,
+      max_tokens: 450,
     })
 
     const raw = response.choices[0]?.message?.content ?? '{}'
@@ -121,6 +124,10 @@ Set refine_question to null only when confidence is already "high" and the porti
     if (!parsed.item_name || parsed.calories == null) {
       return NextResponse.json({ error: 'AI returned invalid estimate' }, { status: 422 })
     }
+
+    // Everything the model could see, flattened into the row's search index so
+    // history search finds this meal by its contents, not just its title.
+    const searchText = buildSearchText(parsed.visible, description)
 
     const confidence: 'low' | 'medium' | 'high' = ['low', 'medium', 'high'].includes(parsed.confidence)
       ? parsed.confidence
@@ -188,6 +195,8 @@ Set refine_question to null only when confidence is already "high" and the porti
         confidence: estimate.confidence,
         ai_raw: aiRaw,
         notes: estimate.notes || null,
+        search_text: searchText,
+        user_description: description || null,
         refine_status: refineQuestion ? 'open' : 'done',
         taken_at: now.toISOString(),
       })
