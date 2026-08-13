@@ -38,6 +38,7 @@ import { checkNoApiKey, checkAiLimit } from '@/lib/apiKeyError'
 type SetTimerState = { phase: TimerPhase; phaseStart: number | null; sessionStart: number | null }
 const GYM_LAST_KEY = 'atlas.gym.last' // last-open exercise, restored on app open (weight/reps come from the prefill effect)
 const GYM_ENTERED_KEY = 'atlas.gym.entered' // per-exercise last *typed* weight/reps — what you entered, not what you logged
+const GYM_RX_KEY = 'atlas.gym.rxCollapsed' // prescription card collapsed? sticky across exercises + sessions
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -597,6 +598,19 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const [coachStreaming, setCoachStreaming] = useState(false)
   const [coachMode, setCoachMode] = useState<'devil' | 'angel' | null>(null)
   const [logSetFlash, setLogSetFlash] = useState(false)
+
+  // Prescription card collapse — sticky, so "I just want the call" survives
+  // switching exercises and closing the app.
+  const [rxCollapsed, setRxCollapsed] = useState(() => {
+    try { return localStorage.getItem(GYM_RX_KEY) === '1' } catch { return false }
+  })
+  function toggleRx() {
+    setRxCollapsed(prev => {
+      const next = !prev
+      try { next ? localStorage.setItem(GYM_RX_KEY, '1') : localStorage.removeItem(GYM_RX_KEY) } catch {}
+      return next
+    })
+  }
 
   // ── set timer (active / rest stopwatch, client-only, survives remount) ─────
   const [timer, setTimer] = useState<SetTimerState>(() => {
@@ -1967,7 +1981,15 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     ...(s.fatigueDrop != null && s.fatigueDrop > 0
                       ? [`${Math.round(s.fatigueDrop * 100)}% fade`]
                       : []),
+                    // Spells out what the three header pips mean — a tooltip
+                    // never fires on a phone.
+                    `${rx.confidence} confidence`,
                   ]
+                  const targetLabel = rx.target
+                    ? (currentEx.bodyweight
+                        ? `${rx.target.reps} reps`
+                        : `${rx.target.weight}${config.units} × ${rx.target.reps}`)
+                    : null
                   return (
                     <motion.div
                       key={rx.headline}
@@ -1980,7 +2002,14 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                         border: `1px solid ${tone.edge}`,
                       }}
                     >
-                      <div className="px-5 py-4">
+                      {/* Header — the call itself. Always visible; tap to fold
+                          the reasoning away and keep just this. */}
+                      <button
+                        onClick={toggleRx}
+                        aria-expanded={!rxCollapsed}
+                        aria-label={rxCollapsed ? 'Show why' : 'Hide why'}
+                        className="w-full text-left px-5 pt-4 pb-3.5 active:opacity-80"
+                      >
                         <div className="flex items-center justify-between gap-3 mb-1.5">
                           <span className="text-[11px] font-bold tracking-[0.18em]" style={{ color: tone.accent }}>
                             {rxIcons[rx.action]} {rx.action}
@@ -2005,46 +2034,72 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                                 />
                               ))}
                             </span>
+                            <motion.span
+                              animate={{ rotate: rxCollapsed ? 0 : 180 }}
+                              transition={{ duration: 0.2 }}
+                              className="text-[10px] leading-none text-white/25"
+                            >▾</motion.span>
                           </div>
                         </div>
 
                         <p className="text-[17px] font-bold leading-snug text-white">{rx.headline}</p>
 
-                        <div className="mt-2.5 space-y-1.5">
-                          {rx.detail.map((line, i) => (
-                            <p
-                              key={i}
-                              className="text-[13px] leading-relaxed"
-                              style={{ color: i === 0 ? 'rgba(255,255,255,0.42)' : tone.body }}
-                            >
-                              {line}
-                            </p>
-                          ))}
-                        </div>
-
-                        {rx.target && (
-                          <div
-                            className="mt-3.5 flex items-center justify-between rounded-xl px-3.5 py-2.5"
-                            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
-                          >
-                            <span className="text-[10px] uppercase tracking-widest text-white/30 font-semibold">Next session</span>
-                            <span className="text-sm font-bold tabular-nums" style={{ color: tone.accent }}>
-                              {currentEx.bodyweight
-                                ? `${rx.target.reps} reps`
-                                : `${rx.target.weight}${config.units} × ${rx.target.reps}`}
-                            </span>
-                          </div>
+                        {/* Collapsed keeps the rep target — the headline only
+                            carries the weight, and reps are the other half of
+                            what you're about to dial in. */}
+                        {rxCollapsed && targetLabel && (
+                          <p className="mt-1.5 text-[11px] font-mono uppercase tracking-wider" style={{ color: tone.accent, opacity: 0.75 }}>
+                            next · {targetLabel}
+                          </p>
                         )}
+                      </button>
 
-                        {/* The numbers the call was made from — no black box */}
-                        <div className="mt-3 flex flex-wrap gap-x-2.5 gap-y-1">
-                          {chips.map(c => (
-                            <span key={c} className="text-[10px] font-mono uppercase tracking-wider text-white/25">
-                              {c}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
+                      <AnimatePresence initial={false}>
+                        {!rxCollapsed && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.28, ease: EASE_OUT }}
+                            style={{ overflow: 'hidden' }}
+                          >
+                            <div className="px-5 pb-4">
+                              <div className="space-y-1.5">
+                                {rx.detail.map((line, i) => (
+                                  <p
+                                    key={i}
+                                    className="text-[13px] leading-relaxed"
+                                    style={{ color: i === 0 ? 'rgba(255,255,255,0.42)' : tone.body }}
+                                  >
+                                    {line}
+                                  </p>
+                                ))}
+                              </div>
+
+                              {targetLabel && (
+                                <div
+                                  className="mt-3.5 flex items-center justify-between rounded-xl px-3.5 py-2.5"
+                                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
+                                >
+                                  <span className="text-[10px] uppercase tracking-widest text-white/30 font-semibold">Next session</span>
+                                  <span className="text-sm font-bold tabular-nums" style={{ color: tone.accent }}>
+                                    {targetLabel}
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* The numbers the call was made from — no black box */}
+                              <div className="mt-3 flex flex-wrap gap-x-2.5 gap-y-1">
+                                {chips.map(c => (
+                                  <span key={c} className="text-[10px] font-mono uppercase tracking-wider text-white/25">
+                                    {c}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </motion.div>
                   )
                 })()}
