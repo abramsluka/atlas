@@ -11,17 +11,28 @@ export async function GET(req: NextRequest) {
   const exerciseId = url.searchParams.get('exercise_id')
 
   const db = createServiceClient()
-  let query = db
-    .from('gym_logs')
-    .select('*')
-    .eq('user_id', user.id)
-    .order('logged_at')
 
-  if (exerciseId) query = query.eq('exercise_id', exerciseId)
-
-  const { data, error } = await query
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data ?? [])
+  // PostgREST silently caps any single select at 1000 rows. gym_logs is one row
+  // per set, so a full history blows past that — page until exhausted. The gym
+  // page's prefill, today badges, and totals all assume this is the TRUE total;
+  // a truncated (oldest-first) result makes "last logged set" months stale.
+  const PAGE = 1000
+  const all: unknown[] = []
+  for (let from = 0; ; from += PAGE) {
+    let query = db
+      .from('gym_logs')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('logged_at')
+      .order('id')
+      .range(from, from + PAGE - 1)
+    if (exerciseId) query = query.eq('exercise_id', exerciseId)
+    const { data, error } = await query
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    all.push(...(data ?? []))
+    if (!data || data.length < PAGE) break
+  }
+  return NextResponse.json(all)
 }
 
 export async function POST(req: NextRequest) {

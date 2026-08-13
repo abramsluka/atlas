@@ -38,17 +38,24 @@ const GYM_ENTERED_KEY = 'atlas.gym.entered' // per-exercise last *typed* weight/
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
-// Per-exercise memory of the last weight/reps typed into the stepper. Preferred
-// over the last logged set when selecting an exercise, so a backoff/dropset (or
-// any set logged at a different weight) never becomes the prefill.
-type EnteredEntry = { weight: string; reps: number }
+// Per-exercise memory of the last weight/reps typed into the stepper. `at`
+// records WHEN it was typed: on selection the prefill uses whichever is newer —
+// this typed value or the exercise's last logged set. Sets can land without any
+// typing here (MCP log_gym_set, another device), so an unconditional "typed
+// wins" goes stale. Entries without `at` predate this scheme AND may be
+// cross-contaminated by an old bug that wrote them on selection — drop them.
+type EnteredEntry = { weight: string; reps: number; at: number }
 function readEntered(): Record<string, EnteredEntry> {
-  try { return JSON.parse(localStorage.getItem(GYM_ENTERED_KEY) || '{}') || {} } catch { return {} }
+  try {
+    const map = JSON.parse(localStorage.getItem(GYM_ENTERED_KEY) || '{}') || {}
+    for (const k of Object.keys(map)) if (typeof map[k]?.at !== 'number') delete map[k]
+    return map
+  } catch { return {} }
 }
-function writeEntered(exId: string, entry: EnteredEntry) {
+function writeEntered(exId: string, entry: Omit<EnteredEntry, 'at'>) {
   try {
     const map = readEntered()
-    map[exId] = entry
+    map[exId] = { ...entry, at: Date.now() }
     localStorage.setItem(GYM_ENTERED_KEY, JSON.stringify(map))
   } catch {}
 }
@@ -442,7 +449,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
 
   const { data: config = initialConfig } = useGymConfig()
   const { data: exercises = [] } = useGymExercises()
-  const { data: allLogs = [] } = useAllGymLogs()
+  const { data: allLogs = [], isFetched: logsFetched } = useAllGymLogs()
   const { data: sessions = [] } = useGymSessions()
   const { data: bodyWeights = [] } = useBodyWeights()
   const { data: bodyMeasurements = [] } = useBodyMeasurements()
@@ -539,11 +546,14 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const [selectedReps, setSelectedReps] = useState<number>(8)
 
   // Restore the last exercise / weight / reps across app restarts (localStorage).
+  // Waits for logs so the saved weight/reps only apply when nothing was logged
+  // for that exercise since the app was last open on it (sets can arrive via
+  // MCP or another device while this device's saved state goes stale).
   const restoredRef = useRef(false)
   useEffect(() => {
-    if (restoredRef.current || exercises.length === 0) return
+    if (restoredRef.current || exercises.length === 0 || !logsFetched) return
     restoredRef.current = true
-    let saved: { exId?: string; weight?: string; reps?: number } | null = null
+    let saved: { exId?: string; weight?: string; reps?: number; at?: number } | null = null
     try { saved = JSON.parse(localStorage.getItem(GYM_LAST_KEY) || 'null') } catch {}
     if (!saved?.exId) return
     const ex = exercises.find(e => e.id === saved!.exId)
@@ -553,10 +563,17 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     const dayId = ex.day_ids?.find(id => config.days.some(d => d.id === id))
     setFilterDay(dayId ?? '')
     setCurrentExId(ex.id)
-    if (typeof saved.weight === 'string') setWeightInput(saved.weight)
-    if (typeof saved.reps === 'number') setSelectedReps(saved.reps)
+    const logs = allLogs.filter(l => l.exercise_id === ex.id).sort((a, b) => a.logged_at.localeCompare(b.logged_at))
+    const lastLog = logs[logs.length - 1]
+    const fresh = !lastLog || (saved.at ?? 0) >= new Date(lastLog.logged_at).getTime()
+    const okWeight = typeof saved.weight === 'string' && saved.weight !== '' &&
+      (ex.bodyweight || (parseFloat(saved.weight) || 0) > 0)
+    if (fresh && okWeight) setWeightInput(saved.weight!)
+    else if (lastLog) setWeightInput(String(lastLog.weight))
+    if (fresh && typeof saved.reps === 'number') setSelectedReps(saved.reps)
+    else if (lastLog) setSelectedReps(lastLog.reps)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exercises])
+  }, [exercises, allLogs, logsFetched])
 
   // Modals
   const [exModal, setExModal] = useState<ExModalState>(EMPTY_EX_MODAL)
@@ -785,7 +802,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   useEffect(() => {
     if (!restoredRef.current || !currentEx?.id) return
     try {
-      localStorage.setItem(GYM_LAST_KEY, JSON.stringify({ exId: currentEx.id, weight: weightInput, reps: selectedReps }))
+      localStorage.setItem(GYM_LAST_KEY, JSON.stringify({ exId: currentEx.id, weight: weightInput, reps: selectedReps, at: Date.now() }))
     } catch {}
     // Remember what was typed for THIS exercise so re-selecting it restores the
     // entered weight, not the last logged set — but ONLY when this fire was caused
@@ -886,22 +903,23 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     const ex = exercises.find(e => e.id === id)
     if (!ex) return
     setCurrentExId(id)
-    // Prefer the last weight/reps you TYPED for this exercise; only fall back to
-    // the last logged set when you've never entered a usable one. A remembered
-    // weight of 0 (or blank) on a weighted lift is never real — fall through to the
-    // last logged set (and self-heal any older poisoned entry) while still keeping
-    // the remembered reps.
-    const entered = readEntered()[id]
-    const w = entered?.weight
-    if (w != null && w !== '' && (ex.bodyweight || (parseFloat(w) || 0) > 0)) {
-      setWeightInput(w)
-      setSelectedReps(entered!.reps ?? ex.rep_max)
-      return
-    }
     const logs = allLogs.filter(l => l.exercise_id === id).sort((a, b) => a.logged_at.localeCompare(b.logged_at))
     const lastLog = logs[logs.length - 1]
+    // Prefill = the NEWER of (last weight/reps typed here) vs (last logged set).
+    // Typed wins only when typed after the last set — sets can arrive without
+    // typing (MCP, another device), and an older typed value is stale by
+    // definition. A typed 0/blank on a weighted lift is never real.
+    const entered = readEntered()[id]
+    const w = entered?.weight
+    const usable = w != null && w !== '' && (ex.bodyweight || (parseFloat(w) || 0) > 0)
+    const fresh = !lastLog || (entered?.at ?? 0) >= new Date(lastLog.logged_at).getTime()
+    if (entered && usable && fresh) {
+      setWeightInput(w!)
+      setSelectedReps(entered.reps ?? ex.rep_max)
+      return
+    }
     setWeightInput(String(lastLog?.weight ?? 0))
-    setSelectedReps(entered?.reps ?? lastLog?.reps ?? ex.rep_max)
+    setSelectedReps(lastLog?.reps ?? entered?.reps ?? ex.rep_max)
   }
 
   function handleLogSet() {
