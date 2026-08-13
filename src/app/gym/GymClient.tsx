@@ -36,7 +36,7 @@ import ChatText from '@/components/ChatText'
 import { checkNoApiKey, checkAiLimit } from '@/lib/apiKeyError'
 
 type SetTimerState = { phase: TimerPhase; phaseStart: number | null; sessionStart: number | null }
-const GYM_LAST_KEY = 'atlas.gym.last' // last exercise + weight + reps, restored on app open
+const GYM_LAST_KEY = 'atlas.gym.last' // last-open exercise, restored on app open (weight/reps come from the prefill effect)
 const GYM_ENTERED_KEY = 'atlas.gym.entered' // per-exercise last *typed* weight/reps — what you entered, not what you logged
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -503,15 +503,15 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const [weightInput, setWeightInput] = useState<string>('0')
   const [selectedReps, setSelectedReps] = useState<number>(8)
 
-  // Restore the last exercise / weight / reps across app restarts (localStorage).
-  // Waits for logs so the saved weight/reps only apply when nothing was logged
-  // for that exercise since the app was last open on it (sets can arrive via
-  // MCP or another device while this device's saved state goes stale).
+  // Restore the last-open exercise across app restarts (localStorage). Weight
+  // and reps are NOT restored here — the central prefill effect below owns
+  // those, resolving the newer of typed-memory vs last-logged-set once logs
+  // arrive (sets can land via MCP or another device while the app is closed).
   const restoredRef = useRef(false)
   useEffect(() => {
-    if (restoredRef.current || exercises.length === 0 || !logsFetched) return
+    if (restoredRef.current || exercises.length === 0) return
     restoredRef.current = true
-    let saved: { exId?: string; weight?: string; reps?: number; at?: number } | null = null
+    let saved: { exId?: string } | null = null
     try { saved = JSON.parse(localStorage.getItem(GYM_LAST_KEY) || 'null') } catch {}
     if (!saved?.exId) return
     const ex = exercises.find(e => e.id === saved!.exId)
@@ -521,17 +521,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     const dayId = ex.day_ids?.find(id => config.days.some(d => d.id === id))
     setFilterDay(dayId ?? '')
     setCurrentExId(ex.id)
-    const logs = allLogs.filter(l => l.exercise_id === ex.id).sort((a, b) => a.logged_at.localeCompare(b.logged_at))
-    const lastLog = logs[logs.length - 1]
-    const fresh = !lastLog || (saved.at ?? 0) >= new Date(lastLog.logged_at).getTime()
-    const okWeight = typeof saved.weight === 'string' && saved.weight !== '' &&
-      (ex.bodyweight || (parseFloat(saved.weight) || 0) > 0)
-    if (fresh && okWeight) setWeightInput(saved.weight!)
-    else if (lastLog) setWeightInput(String(lastLog.weight))
-    if (fresh && typeof saved.reps === 'number') setSelectedReps(saved.reps)
-    else if (lastLog) setSelectedReps(lastLog.reps)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exercises, allLogs, logsFetched])
+  }, [exercises])
 
   // Modals
   const [exModal, setExModal] = useState<ExModalState>(EMPTY_EX_MODAL)
@@ -769,13 +760,43 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     [filteredExercises, currentExId]
   )
 
+  // ONE owner for the weight/reps prefill: fires whenever the current exercise
+  // changes identity — tapping a chip, a day/gym filter switch (which falls back
+  // to the first exercise of the new list), restore-on-open, delete, reorder.
+  // Previously only tapping re-prefilled, so every other path left the PREVIOUS
+  // exercise's weight on screen under the new exercise's name — and a stepper
+  // tap at that moment recorded it against the wrong exercise.
+  // Prefill = the NEWER of (last weight/reps typed here) vs (last logged set):
+  // sets can arrive without typing (MCP, another device), and a typed value
+  // older than the newest set is stale by definition. A typed 0/blank on a
+  // weighted lift is never real.
+  const prefilledExRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!currentEx || !logsFetched) return
+    if (prefilledExRef.current === currentEx.id) return
+    prefilledExRef.current = currentEx.id
+    const logs = allLogs.filter(l => l.exercise_id === currentEx.id).sort((a, b) => a.logged_at.localeCompare(b.logged_at))
+    const lastLog = logs[logs.length - 1]
+    const entered = readEntered()[currentEx.id]
+    const w = entered?.weight
+    const usable = w != null && w !== '' && (currentEx.bodyweight || (parseFloat(w) || 0) > 0)
+    const fresh = !lastLog || (entered?.at ?? 0) >= new Date(lastLog.logged_at).getTime()
+    if (entered && usable && fresh) {
+      setWeightInput(w!)
+      setSelectedReps(entered.reps ?? currentEx.rep_max)
+    } else {
+      setWeightInput(String(lastLog?.weight ?? 0))
+      setSelectedReps(lastLog?.reps ?? entered?.reps ?? currentEx.rep_max)
+    }
+  }, [currentEx, allLogs, logsFetched])
+
   // Tracks which exercise the live weight/reps were actually dialed in for.
   const enteredForExId = useRef<string | null>(null)
-  // Persist current exercise + weight + reps so the page resumes where you left off.
+  // Persist the current exercise so the page resumes where you left off.
   useEffect(() => {
     if (!restoredRef.current || !currentEx?.id) return
     try {
-      localStorage.setItem(GYM_LAST_KEY, JSON.stringify({ exId: currentEx.id, weight: weightInput, reps: selectedReps, at: Date.now() }))
+      localStorage.setItem(GYM_LAST_KEY, JSON.stringify({ exId: currentEx.id }))
     } catch {}
     // Remember what was typed for THIS exercise so re-selecting it restores the
     // entered weight, not the last logged set — but ONLY when this fire was caused
@@ -895,26 +916,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   // ── actions ──────────────────────────────────────────────────────────────
 
   function selectEx(id: string) {
-    const ex = exercises.find(e => e.id === id)
-    if (!ex) return
+    // Weight/reps prefill happens in the central effect above on identity change.
     setCurrentExId(id)
-    const logs = allLogs.filter(l => l.exercise_id === id).sort((a, b) => a.logged_at.localeCompare(b.logged_at))
-    const lastLog = logs[logs.length - 1]
-    // Prefill = the NEWER of (last weight/reps typed here) vs (last logged set).
-    // Typed wins only when typed after the last set — sets can arrive without
-    // typing (MCP, another device), and an older typed value is stale by
-    // definition. A typed 0/blank on a weighted lift is never real.
-    const entered = readEntered()[id]
-    const w = entered?.weight
-    const usable = w != null && w !== '' && (ex.bodyweight || (parseFloat(w) || 0) > 0)
-    const fresh = !lastLog || (entered?.at ?? 0) >= new Date(lastLog.logged_at).getTime()
-    if (entered && usable && fresh) {
-      setWeightInput(w!)
-      setSelectedReps(entered.reps ?? ex.rep_max)
-      return
-    }
-    setWeightInput(String(lastLog?.weight ?? 0))
-    setSelectedReps(lastLog?.reps ?? entered?.reps ?? ex.rep_max)
   }
 
   function handleLogSet() {
@@ -976,7 +979,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     } else {
       createEx.mutate(
         { name: name.trim(), gym_id: gymId, day_ids: dayIds, bodyweight, start_weight: 0, rep_min: repMin, rep_max: repMax, step, library_id: libraryId, order_index: exercises.length },
-        { onSuccess: (ex) => { setCurrentExId(ex.id); setWeightInput('0') } }
+        { onSuccess: (ex) => setCurrentExId(ex.id) } // prefill effect handles weight/reps
       )
     }
     setExModal(EMPTY_EX_MODAL)
