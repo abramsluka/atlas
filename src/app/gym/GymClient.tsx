@@ -2043,15 +2043,6 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                         </div>
 
                         <p className="text-[17px] font-bold leading-snug text-white">{rx.headline}</p>
-
-                        {/* Collapsed keeps the rep target — the headline only
-                            carries the weight, and reps are the other half of
-                            what you're about to dial in. */}
-                        {rxCollapsed && targetLabel && (
-                          <p className="mt-1.5 text-[11px] font-mono uppercase tracking-wider" style={{ color: tone.accent, opacity: 0.75 }}>
-                            next · {targetLabel}
-                          </p>
-                        )}
                       </button>
 
                       <AnimatePresence initial={false}>
