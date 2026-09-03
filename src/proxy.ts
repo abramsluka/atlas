@@ -36,8 +36,9 @@ export async function proxy(request: NextRequest) {
   // cookie) — they enforce their own Bearer auth, so skip the login redirect.
   const TOKEN_AUTHED_PATHS = ['/api/health/apple/sync', '/api/health/apple/export']
   // Public surfaces that must never bounce to /login: the MCP endpoint does its
-  // own Bearer auth (and must 401, not 307), OAuth + discovery are pre-auth.
-  const PUBLIC_PREFIXES = ['/api/mcp', '/api/oauth', '/.well-known']
+  // own Bearer auth (and must 401, not 307), OAuth + discovery are pre-auth,
+  // /demo/<token> is the shareable demo auto-login (it checks its own secret).
+  const PUBLIC_PREFIXES = ['/api/mcp', '/api/oauth', '/.well-known', '/demo']
 
   if (
     !user &&
