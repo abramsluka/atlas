@@ -182,14 +182,17 @@ begin
     (uid, current_date,   'Oatmeal with banana & peanut butter','🥣',450,16,68,14,'meal',(current_date)+time '15:42');
 
   -- ── Water + caffeine ──
+  -- Water target is 80 oz — the streak only banks days that HIT the target, so
+  -- most seeded days clear 80 with one honest miss (day-5) for texture.
+  -- Streak reads 4 (grace rule: today counts once a reviewer tops it up).
   insert into water_logs (user_id, date, amount_oz, logged_at)
   select uid, current_date - d, oz, (current_date - d) + t from (values
-    (6,24,time '16:00'),(6,32,time '20:30'),(6,16,time '01:00'),
+    (6,24,time '16:00'),(6,32,time '20:30'),(6,32,time '01:00'),
     (5,24,time '16:10'),(5,24,time '21:00'),
-    (4,32,time '15:50'),(4,24,time '20:15'),(4,16,time '00:30'),
-    (3,24,time '16:20'),(3,32,time '20:45'),
-    (2,24,time '16:30'),(2,16,time '22:00'),
-    (1,32,time '15:55'),(1,24,time '20:20'),(1,16,time '01:10'),
+    (4,32,time '15:50'),(4,32,time '20:15'),(4,32,time '00:30'),
+    (3,24,time '16:20'),(3,32,time '20:45'),(3,24,time '23:30'),
+    (2,32,time '16:30'),(2,28,time '22:00'),(2,24,time '05:10'),
+    (1,32,time '15:55'),(1,32,time '20:20'),(1,24,time '01:10'),
     (0,24,time '16:15')
   ) v(d, oz, t);
 
