@@ -41,11 +41,13 @@ export default async function HealthPage() {
     db.from('water_logs').select('*').eq('user_id', user.id).eq('date', today).order('logged_at', { ascending: true }),
     db.from('caffeine_logs').select('*').eq('user_id', user.id).in('date', [today, nextCalendarDate(today)]).order('logged_at', { ascending: true }),
     db.from('health_profile').select('*').eq('user_id', user.id).maybeSingle(),
-    db.from('wearable_tokens').select('provider').eq('user_id', user.id).eq('provider', 'oura').maybeSingle(),
+    // Whichever wearable is connected (Oura or WHOOP) — the callbacks keep this
+    // to one row, but limit(2) guards a legacy account holding both.
+    db.from('wearable_tokens').select('provider').eq('user_id', user.id).limit(2),
     // Cached Oura payload fetched unconditionally (PK lookup) so it rides this
     // Promise.all instead of adding a serial round-trip after it; only used
     // when a token row exists.
-    db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'oura').eq('date', today).maybeSingle(),
+    db.from('wearable_data').select('data, provider').eq('user_id', user.id).in('provider', ['oura', 'whoop']).eq('date', today).limit(2),
     // Training + food feed the same energy model the caffeine page uses, so the
     // compact card reads identically to Today's Curve.
     db.from('gym_logs')
@@ -71,13 +73,18 @@ export default async function HealthPage() {
     db.from('user_ingredients').select('*').eq('user_id', user.id).order('last_used_at', { ascending: false }).limit(200),
   ])
 
-  const hasOura = !!ouraTokenResult.data
+  const tokenRows = (ouraTokenResult.data ?? []) as Array<{ provider: string }>
+  const wearableProvider: 'oura' | 'whoop' | null = tokenRows.some((r) => r.provider === 'whoop')
+    ? 'whoop'
+    : tokenRows.some((r) => r.provider === 'oura') ? 'oura' : null
+  const hasOura = wearableProvider != null
 
   // Use the cached wearable data only if a token exists
   let ouraData: OuraData | null = null
 
   if (hasOura) {
-    const rawOura = (ouraCacheResult.data?.data as OuraData) ?? null
+    const cacheRows = (ouraCacheResult.data ?? []) as Array<{ provider: string; data: OuraData }>
+    const rawOura = cacheRows.find((r) => r.provider === wearableProvider)?.data ?? null
     const ouraHasData =
       rawOura &&
       (rawOura.sleep?.score != null ||
@@ -114,7 +121,7 @@ export default async function HealthPage() {
       todayCaffeine={caffeineResult.data ?? []}
       profile={profileResult.data ?? null}
       ouraData={ouraData}
-      hasOura={hasOura}
+      wearableProvider={wearableProvider}
       today={today}
       typicalWakeHour={typicalWakeHour}
       savedMeals={savedMealsResult.data ?? []}

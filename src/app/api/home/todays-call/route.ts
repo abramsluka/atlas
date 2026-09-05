@@ -7,6 +7,8 @@ import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
 import { syncOuraToday } from '@/features/health/ouraSync'
+import { syncWhoopToday } from '@/features/health/whoopSync'
+import { getActiveWearableProvider } from '@/features/health/wearableProvider'
 import type { OuraData } from '@/features/health/types'
 import { getProfileBlock } from '@/lib/profile/getProfileBlock'
 
@@ -97,14 +99,16 @@ export async function POST(req: Request) {
 
   // The home page never triggers a wearable sync on its own, so without this
   // the card is blank every morning until the Health page is opened. Pull
-  // today's Oura data first (syncOuraToday has its own 15-min cache, so this is
-  // cheap when already fresh).
-  await syncOuraToday(db, user.id, today).catch(() => null)
+  // today's data for the active wearable first (both syncs have their own
+  // 15-min cache, so this is cheap when already fresh).
+  const provider = (await getActiveWearableProvider(db, user.id)) ?? 'oura'
+  const syncToday = provider === 'whoop' ? syncWhoopToday : syncOuraToday
+  await syncToday(db, user.id, today).catch(() => null)
 
-  // Fetch Oura data for today
+  // Fetch the active wearable's data for today
   const ouraRes = await db
     .from('wearable_data').select('data')
-    .eq('user_id', user.id).eq('provider', 'oura').eq('date', today).maybeSingle()
+    .eq('user_id', user.id).eq('provider', provider).eq('date', today).maybeSingle()
 
   let oura = ouraRes.data?.data as OuraData | null
   let verdict = verdictFor(oura)
@@ -116,7 +120,7 @@ export async function POST(req: Request) {
   if (!verdict) {
     const ouraRecent = await db
       .from('wearable_data').select('data')
-      .eq('user_id', user.id).eq('provider', 'oura').lt('date', today).order('date', { ascending: false }).limit(1).maybeSingle()
+      .eq('user_id', user.id).eq('provider', provider).lt('date', today).order('date', { ascending: false }).limit(1).maybeSingle()
     oura = oura ?? (ouraRecent.data?.data as OuraData | null)
     verdict = verdictFor(oura)
     usedFallback = true

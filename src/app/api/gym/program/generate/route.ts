@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     db.from('gym_config').select('*').eq('user_id', user.id).maybeSingle(),
     db.from('gym_exercises').select('*').eq('user_id', user.id).order('order_index'),
     db.from('gym_logs').select('exercise_id, weight, reps').eq('user_id', user.id).gte('logged_at', ninetyAgo),
-    db.from('wearable_data').select('data, provider, date').eq('user_id', user.id).gte('date', fourteenAgoDate).eq('provider', 'oura'),
+    db.from('wearable_data').select('data, provider, date').eq('user_id', user.id).gte('date', fourteenAgoDate).in('provider', ['oura', 'whoop']),
     db.from('health_profile').select('age, weight_lbs, fitness_goal, target_weight_lbs').eq('user_id', user.id).maybeSingle(),
   ])
 
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
   // ── Recovery baseline (avg over last 14d) ──
   const readinessVals: number[] = []
   for (const row of (wearableRes.data ?? []) as Array<{ provider: string; data: Record<string, unknown> }>) {
-    if (row.provider === 'oura') {
+    if (row.provider === 'oura' || row.provider === 'whoop') {
       const o = row.data as OuraData
       if (o.readiness?.score != null) readinessVals.push(o.readiness.score)
     }

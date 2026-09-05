@@ -6,6 +6,7 @@ import { isAiLimitError, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
 import type { OuraData } from '@/features/health/types'
+import { getActiveWearableProvider } from '@/features/health/wearableProvider'
 import { getProfileBlock } from '@/lib/profile/getProfileBlock'
 import { getLiveSession, liveSessionBlock } from '@/lib/liveGymSession'
 
@@ -36,6 +37,7 @@ export async function POST(_request: NextRequest) {
     healthProfileRes,
     profileBlock,
     liveSession,
+    activeProvider,
   ] = await Promise.all([
     db.from('daily_checkins')
       .select('*')
@@ -101,7 +103,8 @@ export async function POST(_request: NextRequest) {
       .order('date_key', { ascending: false })
       .limit(14),
 
-    db.from('wearable_data').select('data').eq('user_id', user.id).eq('provider', 'oura').eq('date', today).maybeSingle(),
+    // Both providers in one query (no serial await); the active one is picked below.
+    db.from('wearable_data').select('data, provider').eq('user_id', user.id).in('provider', ['oura', 'whoop']).eq('date', today),
 
     db.from('food_logs')
       .select('item_name, calories, protein_g, carbs_g')
@@ -117,6 +120,8 @@ export async function POST(_request: NextRequest) {
 
     // Mid-workout right now? The briefing must not nag him to go train.
     getLiveSession(db, user.id),
+
+    getActiveWearableProvider(db, user.id),
   ])
 
   const checkin = checkinRes.data
@@ -175,7 +180,9 @@ export async function POST(_request: NextRequest) {
     ? ((bodyweightRes.data[0].weight - bodyweightRes.data[4].weight) > 0 ? 'up' : 'down')
     : null
 
-  const ouraToday = ouraWearableRes.data?.data as OuraData | null
+  const wearableProvider = activeProvider ?? 'oura'
+  const wearableRows = (ouraWearableRes.data ?? []) as Array<{ provider: string; data: unknown }>
+  const ouraToday = (wearableRows.find(r => r.provider === wearableProvider)?.data ?? null) as OuraData | null
 
   const foodToday = foodTodayRes.data ?? []
   const caloriesToday = Math.round(foodToday.reduce((s, f) => s + (f.calories ?? 0), 0))

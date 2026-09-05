@@ -117,6 +117,11 @@ export interface OuraData {
     // the UI uses it to label non-today counts honestly.
     steps_day?: string | null
   }
+  // Only present on provider='whoop' rows (normalized into this shape by
+  // whoopSync). Nothing renders it yet; kept for a future strain tile.
+  whoop?: {
+    strain: number | null
+  }
 }
 
 export interface OuraHistoryPoint {

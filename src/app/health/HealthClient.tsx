@@ -54,6 +54,7 @@ import type {
   OuraData,
   TimeSlot,
 } from '@/features/health/types'
+import type { WearableProvider } from '@/features/health/wearableProvider'
 import {
   STACK_WINDOWS,
   searchSupplements,
@@ -80,7 +81,7 @@ interface Props {
   todayCaffeine: CaffeineLog[]
   profile: HealthProfile | null
   ouraData: OuraData | null
-  hasOura: boolean
+  wearableProvider: WearableProvider | null
   today: string
   workouts: WorkoutPoint[]
   meals: MealPoint[]
@@ -120,17 +121,50 @@ function getStackDate(): string {
   return rolledDate()
 }
 
+// ─── Wearable switcher (Health → Settings → Wearables) ──────────────────────
+// Connecting one provider replaces the other server-side (the callbacks delete
+// the sibling token), so these are plain links into each OAuth flow.
+
+function WearableSwitchRows() {
+  const [busy, setBusy] = useState(false)
+  const disconnect = async () => {
+    setBusy(true)
+    await fetch('/api/health/wearables/disconnect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'all' }),
+    }).catch(() => {})
+    window.location.href = '/health'
+  }
+  return (
+    <div className="mt-2 space-y-2">
+      <p className="text-[11px] text-zinc-500">Your main wearable. Connecting one replaces the other.</p>
+      <div className="grid grid-cols-2 gap-2">
+        <a href="/api/health/oura/connect" className="rounded-lg border border-white/10 px-3 py-2 text-center text-xs font-semibold text-white active:opacity-70">Use Oura Ring</a>
+        <a href="/api/health/whoop/connect" className="rounded-lg border border-white/10 px-3 py-2 text-center text-xs font-semibold text-white active:opacity-70">Use WHOOP</a>
+      </div>
+      <button onClick={disconnect} disabled={busy} className="w-full rounded-lg px-3 py-2 text-xs font-semibold text-red-400/80 active:opacity-60 disabled:opacity-50">
+        {busy ? 'Disconnecting…' : 'Disconnect wearable'}
+      </button>
+    </div>
+  )
+}
+
 // ─── Wearables Section ──────────────────────────────────────────────────────
 
 function WearablesSection({
-  hasOura,
+  wearableProvider,
   initialOura,
   today,
 }: {
-  hasOura: boolean
+  wearableProvider: WearableProvider | null
   initialOura: OuraData | null
   today: string
 }) {
+  // "oura" naming below is historical: WHOOP data is normalized into the same
+  // OuraData shape by whoopSync, so one card + one query serve both providers.
+  const hasOura = wearableProvider != null
+  const providerLabel = wearableProvider === 'whoop' ? 'WHOOP' : wearableProvider === 'oura' ? 'Oura Ring' : 'Wearable'
   const { data: oura, isPending: ouraPending } = useOuraData(today, hasOura, initialOura)
   const { data: apple } = useAppleHealth(today)
   const { data: profile } = useHealthProfile()
@@ -192,14 +226,22 @@ function WearablesSection({
       <div className="space-y-3">
         {showOura && (
         <div className="bg-[#111113] border border-white/[0.06] rounded-[18px] p-4">
-          <p className="mb-3 text-xs font-medium text-zinc-500">Oura Ring</p>
+          <p className="mb-3 text-xs font-medium text-zinc-500">{providerLabel}</p>
           {!hasOura ? (
-            <a
-              href="/api/health/oura/connect"
-              className="block rounded-lg bg-white px-3 py-2 text-center text-xs font-semibold text-black"
-            >
-              Connect
-            </a>
+            <div className="grid grid-cols-2 gap-2">
+              <a
+                href="/api/health/oura/connect"
+                className="block rounded-lg bg-white px-3 py-2 text-center text-xs font-semibold text-black"
+              >
+                Connect Oura Ring
+              </a>
+              <a
+                href="/api/health/whoop/connect"
+                className="block rounded-lg bg-white px-3 py-2 text-center text-xs font-semibold text-black"
+              >
+                Connect WHOOP
+              </a>
+            </div>
           ) : ouraPending ? (
             <p className="text-xs text-zinc-500">Syncing...</p>
           ) : !oura ? (
@@ -1795,8 +1837,8 @@ function WaterSection({
 
             <WSettingSection title="Wearables">
               <WToggleRow
-                label="Oura Ring card"
-                hint="Show the Oura card on the Health page."
+                label="Wearable card"
+                hint="Show the Oura Ring / WHOOP card on the Health page."
                 checked={localProfile.show_oura}
                 onChange={v => updateLocal({ show_oura: v })}
               />
@@ -1806,6 +1848,7 @@ function WaterSection({
                 checked={localProfile.show_apple_watch}
                 onChange={v => updateLocal({ show_apple_watch: v })}
               />
+              <WearableSwitchRows />
             </WSettingSection>
 
             <WSettingSection title="Apple Health">
@@ -2937,7 +2980,7 @@ export default function HealthClient({
   todayCaffeine,
   profile,
   ouraData,
-  hasOura,
+  wearableProvider,
   today,
   workouts,
   meals,
@@ -2980,7 +3023,7 @@ export default function HealthClient({
       </div>
       <HealthCoach />
       <WearablesSection
-        hasOura={hasOura}
+        wearableProvider={wearableProvider}
         initialOura={ouraData}
         today={today}
       />

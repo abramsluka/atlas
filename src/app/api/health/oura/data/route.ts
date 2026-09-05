@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { syncOuraToday } from '@/features/health/ouraSync'
+import { syncWhoopToday } from '@/features/health/whoopSync'
+import { getActiveWearableProvider } from '@/features/health/wearableProvider'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
 
@@ -14,6 +16,11 @@ export async function GET(req: NextRequest) {
   const today = toLocalDate(tz)
   const force = new URL(req.url).searchParams.get('force') === '1'
 
-  const data = await syncOuraToday(db, user.id, today, force)
+  // Syncs whichever wearable is the user's main one; both return the same
+  // OuraData shape so the client query key stays ['health', 'oura', today].
+  const provider = await getActiveWearableProvider(db, user.id)
+  const data = provider === 'whoop'
+    ? await syncWhoopToday(db, user.id, today, force)
+    : await syncOuraToday(db, user.id, today, force)
   return NextResponse.json(data)
 }

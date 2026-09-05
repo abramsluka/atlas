@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
   const db = createServiceClient()
   const [ctx, wearableRes, profileRes, profileBlock, liveSession] = await Promise.all([
     loadAssistantContext(db, user.id),
-    createServiceClient().from('wearable_data').select('data, provider').eq('user_id', user.id).eq('provider', 'oura').order('date', { ascending: false }).limit(2),
+    createServiceClient().from('wearable_data').select('data, provider').eq('user_id', user.id).in('provider', ['oura', 'whoop']).order('date', { ascending: false }).limit(2),
     createServiceClient().from('health_profile').select('age, weight_lbs, fitness_goal, target_weight_lbs').eq('user_id', user.id).maybeSingle(),
     getProfileBlock(db, user.id, 'assistant'),
     // Server-derived mid-workout state. The client's inGymSession comes from the
@@ -44,18 +44,22 @@ export async function POST(req: NextRequest) {
     getLiveSession(db, user.id),
   ])
 
-  // ── Recovery today (from Oura) ──
+  // ── Recovery today (from Oura or WHOOP — both land in the same OuraData shape) ──
   let readiness: number | null = null
+  let readinessProvider: string | null = null
   let sleepScore: number | null = null
   for (const row of (wearableRes.data ?? []) as Array<{ provider: string; data: Record<string, unknown> }>) {
-    if (row.provider === 'oura') {
+    if (row.provider === 'oura' || row.provider === 'whoop') {
       const o = row.data as OuraData
-      if (o.readiness?.score != null) readiness = o.readiness.score
+      if (o.readiness?.score != null) {
+        readiness = o.readiness.score
+        readinessProvider = row.provider
+      }
       if (o.sleep?.score != null) sleepScore = o.sleep.score
     }
   }
   const recoveryParts: string[] = []
-  if (readiness != null) recoveryParts.push(`Oura readiness ${readiness}`)
+  if (readiness != null) recoveryParts.push(`${readinessProvider === 'whoop' ? 'WHOOP recovery' : 'Oura readiness'} ${readiness}`)
   if (sleepScore != null) recoveryParts.push(`sleep score ${sleepScore}`)
   const recoveryLine = recoveryParts.length ? recoveryParts.join(', ') : 'no wearable data synced today'
 

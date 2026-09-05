@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import type { OuraHistoryPoint } from '@/features/health/types'
+import type { OuraData, OuraHistoryPoint } from '@/features/health/types'
+import { getActiveWearableProvider } from '@/features/health/wearableProvider'
 
 async function refreshOuraToken(
   db: ReturnType<typeof import('@/lib/supabase/server').createServiceClient>,
@@ -41,6 +42,28 @@ export async function GET(req: NextRequest) {
   const start = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
   const startStr = start.toISOString().split('T')[0]
   const endStr = end.toISOString().split('T')[0]
+
+  // WHOOP: no API call here. whoopSync already backfills one normalized
+  // wearable_data row per day, so the chart reads straight from the cache.
+  const provider = await getActiveWearableProvider(db, user.id)
+  if (provider === 'whoop') {
+    const { data: rows } = await db
+      .from('wearable_data')
+      .select('date, data')
+      .eq('user_id', user.id)
+      .eq('provider', 'whoop')
+      .gte('date', startStr)
+      .lte('date', endStr)
+      .order('date', { ascending: true })
+
+    const points: OuraHistoryPoint[] = ((rows ?? []) as Array<{ date: string; data: OuraData }>).map(({ date, data }) => ({
+      date,
+      readiness: data?.readiness?.score ?? null,
+      sleep_score: data?.sleep?.score ?? null,
+      hrv: data?.sleep?.average_hrv ?? null,
+    }))
+    return NextResponse.json(points)
+  }
 
   const { data: tokenRow } = await db
     .from('wearable_tokens')

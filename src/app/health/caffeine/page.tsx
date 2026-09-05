@@ -38,7 +38,7 @@ export default async function CaffeinePage() {
   // instants so timestamp windows catch post-midnight sets and meals.
   const { start: dayStart, end: dayEnd } = energyDayUtcWindow(today, tz)
 
-  const [caffeineResult, ouraTokenResult, workoutsResult, foodResult, ratingsResult, typicalWakeHour] = await Promise.all([
+  const [caffeineResult, wearableTokensResult, workoutsResult, foodResult, ratingsResult, typicalWakeHour] = await Promise.all([
     // Post-midnight doses can carry either date tag depending on where they
     // were logged from; the hour mapping folds both onto this energy day.
     db.from('caffeine_logs')
@@ -47,7 +47,9 @@ export default async function CaffeinePage() {
       .in('date', [today, tomorrow])
       .order('logged_at', { ascending: true }),
 
-    db.from('wearable_tokens').select('provider').eq('user_id', user.id).eq('provider', 'oura').maybeSingle(),
+    // One main wearable at a time (the OAuth callbacks delete the other's
+    // token row); a legacy account could still hold both, so prefer whoop.
+    db.from('wearable_tokens').select('provider').eq('user_id', user.id).limit(2),
 
     // Fetch this energy day's gym_logs for volume calculation
     db.from('gym_logs')
@@ -77,14 +79,18 @@ export default async function CaffeinePage() {
     getTypicalWakeHour(db, user.id, tz),
   ])
 
-  const hasOura = !!ouraTokenResult.data
+  const tokenRows = (wearableTokensResult.data ?? []) as Array<{ provider: string }>
+  const provider = tokenRows.some((r) => r.provider === 'whoop') ? 'whoop'
+    : tokenRows.some((r) => r.provider === 'oura') ? 'oura'
+    : null
+  const hasOura = provider != null
 
   let ouraData: OuraData | null = null
 
   if (hasOura) {
     const ouraCache = await db
       .from('wearable_data').select('data')
-      .eq('user_id', user.id).eq('provider', 'oura').eq('date', today).maybeSingle()
+      .eq('user_id', user.id).eq('provider', provider).eq('date', today).maybeSingle()
     ouraData = (ouraCache.data?.data as OuraData) ?? null
   }
 

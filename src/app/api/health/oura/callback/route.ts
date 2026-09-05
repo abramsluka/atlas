@@ -39,6 +39,9 @@ export async function GET(req: NextRequest) {
     },
     { onConflict: 'user_id,provider' }
   )
+  // One main wearable: connecting Oura replaces WHOOP (token only; WHOOP's
+  // cached history stays in wearable_data).
+  await db.from('wearable_tokens').delete().eq('user_id', user.id).eq('provider', 'whoop')
 
   return NextResponse.redirect(new URL('/health', req.url))
 }

@@ -1,4 +1,5 @@
 import type { OuraData } from './types'
+import { getActiveWearableProvider } from './wearableProvider'
 
 type DbClient = ReturnType<typeof import('@/lib/supabase/server').createServiceClient>
 
@@ -26,11 +27,12 @@ export async function getOuraContextRange(
   startDate: string,
   endDate: string,
 ): Promise<CacheRow[]> {
+  const provider = (await getActiveWearableProvider(db, userId)) ?? 'oura'
   const { data } = await db
     .from('wearable_data')
     .select('date, data')
     .eq('user_id', userId)
-    .eq('provider', 'oura')
+    .eq('provider', provider)
     .gte('date', startDate)
     .lte('date', endDate)
     .order('date', { ascending: false })
@@ -119,11 +121,12 @@ export async function getOuraForDate(
   userId: string,
   date: string,
 ): Promise<OuraData | null> {
+  const provider = (await getActiveWearableProvider(db, userId)) ?? 'oura'
   const { data } = await db
     .from('wearable_data')
     .select('data')
     .eq('user_id', userId)
-    .eq('provider', 'oura')
+    .eq('provider', provider)
     .eq('date', date)
     .maybeSingle()
   return (data?.data as OuraData) ?? null
