@@ -87,7 +87,7 @@ export default async function CaffeinePage() {
 
   let ouraData: OuraData | null = null
 
-  if (hasOura) {
+  if (provider) {
     const ouraCache = await db
       .from('wearable_data').select('data')
       .eq('user_id', user.id).eq('provider', provider).eq('date', today).maybeSingle()

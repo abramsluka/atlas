@@ -9,6 +9,7 @@ import { getUserTimezone } from '@/lib/getUserTimezone'
 import type { OuraData } from '@/features/health/types'
 import { getProfileBlock } from '@/lib/profile/getProfileBlock'
 import type { GymConfig, GymExercise } from '@/features/gym/types'
+import { getActiveWearableProvider } from '@/features/health/wearableProvider'
 import type {
   GeneratedProgram, GenerateProgramRequest, ProgramGoal, ProgramStructure, ProgramSession, ProgramPhase,
 } from '@/features/gym/programTypes'
@@ -37,12 +38,13 @@ export async function POST(req: NextRequest) {
   const fourteenAgo = subDays(new Date(), 14).toISOString()
   const fourteenAgoDate = subDays(new Date(), 14).toISOString().slice(0, 10)
 
-  const [configRes, exercisesRes, logsRes, wearableRes, profileRes] = await Promise.all([
+  const [configRes, exercisesRes, logsRes, wearableRes, profileRes, activeProvider] = await Promise.all([
     db.from('gym_config').select('*').eq('user_id', user.id).maybeSingle(),
     db.from('gym_exercises').select('*').eq('user_id', user.id).order('order_index'),
     db.from('gym_logs').select('exercise_id, weight, reps').eq('user_id', user.id).gte('logged_at', ninetyAgo),
     db.from('wearable_data').select('data, provider, date').eq('user_id', user.id).gte('date', fourteenAgoDate).in('provider', ['oura', 'whoop']),
     db.from('health_profile').select('age, weight_lbs, fitness_goal, target_weight_lbs').eq('user_id', user.id).maybeSingle(),
+    getActiveWearableProvider(db, user.id),
   ])
 
   const config = configRes.data as GymConfig | null
@@ -72,9 +74,12 @@ export async function POST(req: NextRequest) {
   const dayList = (config?.days ?? []).map(d => `[${d.id}] ${d.name}`).join('\n') || '(none)'
 
   // ── Recovery baseline (avg over last 14d) ──
+  // Only the active provider — averaging across a mid-window wearable switch
+  // would blend two different recovery scales into one meaningless number.
+  const wearableProvider = activeProvider ?? 'oura'
   const readinessVals: number[] = []
   for (const row of (wearableRes.data ?? []) as Array<{ provider: string; data: Record<string, unknown> }>) {
-    if (row.provider === 'oura' || row.provider === 'whoop') {
+    if (row.provider === wearableProvider) {
       const o = row.data as OuraData
       if (o.readiness?.score != null) readinessVals.push(o.readiness.score)
     }

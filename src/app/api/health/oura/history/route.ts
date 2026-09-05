@@ -56,12 +56,16 @@ export async function GET(req: NextRequest) {
       .lte('date', endStr)
       .order('date', { ascending: true })
 
-    const points: OuraHistoryPoint[] = ((rows ?? []) as Array<{ date: string; data: OuraData }>).map(({ date, data }) => ({
-      date,
-      readiness: data?.readiness?.score ?? null,
-      sleep_score: data?.sleep?.score ?? null,
-      hrv: data?.sleep?.average_hrv ?? null,
-    }))
+    const points: OuraHistoryPoint[] = ((rows ?? []) as Array<{ date: string; data: OuraData }>)
+      .map(({ date, data }) => ({
+        date,
+        readiness: data?.readiness?.score ?? null,
+        sleep_score: data?.sleep?.score ?? null,
+        hrv: data?.sleep?.average_hrv ?? null,
+      }))
+      // A day with only a cycle (no scored sleep/recovery) carries nothing the
+      // chart can plot — drop it rather than emitting an all-null gap point.
+      .filter(p => p.readiness != null || p.sleep_score != null || p.hrv != null)
     return NextResponse.json(points)
   }
 

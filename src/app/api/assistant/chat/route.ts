@@ -9,6 +9,7 @@ import { describeAction, type AssistantStreamEvent } from '@/features/assistant/
 import { loadAssistantContext, buildAssistantTools, resolveToolCall, ACTION_RULES } from '@/features/assistant/tools'
 import { getProfileBlock } from '@/lib/profile/getProfileBlock'
 import { getLiveSession, liveSessionBlock, type LiveSession } from '@/lib/liveGymSession'
+import { getActiveWearableProvider } from '@/features/health/wearableProvider'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -33,33 +34,34 @@ export async function POST(req: NextRequest) {
   if (!message?.trim()) return new Response('message is required', { status: 400 })
 
   const db = createServiceClient()
-  const [ctx, wearableRes, profileRes, profileBlock, liveSession] = await Promise.all([
+  const [ctx, wearableRes, profileRes, profileBlock, liveSession, activeProvider] = await Promise.all([
     loadAssistantContext(db, user.id),
-    createServiceClient().from('wearable_data').select('data, provider').eq('user_id', user.id).in('provider', ['oura', 'whoop']).order('date', { ascending: false }).limit(2),
+    createServiceClient().from('wearable_data').select('data, provider').eq('user_id', user.id).in('provider', ['oura', 'whoop']).order('date', { ascending: false }).limit(4),
     createServiceClient().from('health_profile').select('age, weight_lbs, fitness_goal, target_weight_lbs').eq('user_id', user.id).maybeSingle(),
     getProfileBlock(db, user.id, 'assistant'),
     // Server-derived mid-workout state. The client's inGymSession comes from the
     // Gym page's localStorage timer, so it only knows about the device it runs
     // on and can't see which sets he's actually put in.
     getLiveSession(db, user.id),
+    getActiveWearableProvider(db, user.id),
   ])
 
   // ── Recovery today (from Oura or WHOOP — both land in the same OuraData shape) ──
+  // Read ONLY the active provider: on a switch day both providers can have a row
+  // for the same date, and row order between equal dates is undefined, so
+  // accepting both would pick a winner at random.
+  const wearableProvider = activeProvider ?? 'oura'
   let readiness: number | null = null
-  let readinessProvider: string | null = null
   let sleepScore: number | null = null
   for (const row of (wearableRes.data ?? []) as Array<{ provider: string; data: Record<string, unknown> }>) {
-    if (row.provider === 'oura' || row.provider === 'whoop') {
+    if (row.provider === wearableProvider) {
       const o = row.data as OuraData
-      if (o.readiness?.score != null) {
-        readiness = o.readiness.score
-        readinessProvider = row.provider
-      }
+      if (o.readiness?.score != null) readiness = o.readiness.score
       if (o.sleep?.score != null) sleepScore = o.sleep.score
     }
   }
   const recoveryParts: string[] = []
-  if (readiness != null) recoveryParts.push(`${readinessProvider === 'whoop' ? 'WHOOP recovery' : 'Oura readiness'} ${readiness}`)
+  if (readiness != null) recoveryParts.push(`${wearableProvider === 'whoop' ? 'WHOOP recovery' : 'Oura readiness'} ${readiness}`)
   if (sleepScore != null) recoveryParts.push(`sleep score ${sleepScore}`)
   const recoveryLine = recoveryParts.length ? recoveryParts.join(', ') : 'no wearable data synced today'
 
@@ -229,7 +231,7 @@ RULES
 - Every suggestion must be something Atlas can actually act on. Atlas can: log sets, supplements,
   body weight, water, caffeine, food, journal notes, check-in notes; adjust/add/remove/swap
   exercises; propose a workout; generate a program; answer questions from his gym history,
-  recovery (Oura), and food/water/weight logs. Atlas CANNOT: show charts, set reminders,
+  recovery (Oura/WHOOP), and food/water/weight logs. Atlas CANNOT: show charts, set reminders,
   control other apps, or answer general trivia.
 - Ground them in the conversation. Aim for a spread: (1) continue the current task, (2) a related
   next action, (3) an insight question about his data. Collapse the spread when the context

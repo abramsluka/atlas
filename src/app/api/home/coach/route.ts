@@ -190,15 +190,21 @@ export async function POST(_request: NextRequest) {
   const carbsToday = Math.round(foodToday.reduce((s, f) => s + (Number(f.carbs_g) || 0), 0))
   const profile = healthProfileRes.data
 
+  // Name the actual device in the prompt — telling the model "Oura readiness"
+  // for a WHOOP wearer is a lie it will repeat back to the user.
+  const isWhoop = wearableProvider === 'whoop'
+  const wName = isWhoop ? 'WHOOP' : 'Oura'
+  const recoveryLabel = isWhoop ? 'WHOOP recovery' : 'Oura readiness'
+
   const wearableLines: string[] = []
   if (ouraToday) {
-    if (ouraToday.readiness?.score != null) wearableLines.push(`  Oura readiness: ${ouraToday.readiness.score}`)
-    if (ouraToday.sleep?.score != null) wearableLines.push(`  Oura sleep score: ${ouraToday.sleep.score}`)
-    if (ouraToday.sleep?.average_hrv != null) wearableLines.push(`  Oura HRV: ${Math.round(ouraToday.sleep.average_hrv)}ms`)
+    if (ouraToday.readiness?.score != null) wearableLines.push(`  ${recoveryLabel}: ${ouraToday.readiness.score}`)
+    if (ouraToday.sleep?.score != null) wearableLines.push(`  ${wName} sleep score: ${ouraToday.sleep.score}`)
+    if (ouraToday.sleep?.average_hrv != null) wearableLines.push(`  ${wName} HRV: ${Math.round(ouraToday.sleep.average_hrv)}ms`)
     if (ouraToday.sleep?.total_sleep_duration != null) {
       const h = Math.floor(ouraToday.sleep.total_sleep_duration / 3600)
       const m = Math.floor((ouraToday.sleep.total_sleep_duration % 3600) / 60)
-      wearableLines.push(`  Oura sleep duration: ${h}h${m}m`)
+      wearableLines.push(`  ${wName} sleep duration: ${h}h${m}m`)
     }
   }
 

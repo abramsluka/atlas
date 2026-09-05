@@ -36,16 +36,21 @@ async function generateCall(
   verdict: Verdict,
   oura: OuraData | null,
   profileBlock: string,
+  provider: 'oura' | 'whoop' = 'oura',
 ): Promise<{ headline: string; bullets: string[] }> {
   const lines: string[] = [`Readiness verdict: ${verdict}`]
 
-  if (oura?.readiness?.score != null) lines.push(`Oura readiness score: ${oura.readiness.score}`)
-  if (oura?.readiness?.temperature_deviation != null) lines.push(`Oura temperature deviation: ${oura.readiness.temperature_deviation.toFixed(2)}°C`)
-  if (oura?.sleep?.score != null) lines.push(`Oura sleep score: ${oura.sleep.score}`)
-  if (oura?.sleep?.average_hrv != null) lines.push(`Oura HRV: ${Math.round(oura.sleep.average_hrv)}ms`)
-  if (oura?.sleep?.resting_heart_rate != null) lines.push(`Oura RHR: ${Math.round(oura.sleep.resting_heart_rate)}bpm`)
-  if (oura?.activity?.steps != null) lines.push(`Oura steps yesterday: ${oura.activity.steps.toLocaleString()}`)
-  if (oura?.activity?.active_calories != null) lines.push(`Oura active calories yesterday: ${oura.activity.active_calories}`)
+  // Name the actual device — the model quotes these labels back to the user.
+  const isWhoop = provider === 'whoop'
+  const w = isWhoop ? 'WHOOP' : 'Oura'
+
+  if (oura?.readiness?.score != null) lines.push(`${isWhoop ? 'WHOOP recovery score' : 'Oura readiness score'}: ${oura.readiness.score}`)
+  if (oura?.readiness?.temperature_deviation != null) lines.push(`${w} temperature deviation: ${oura.readiness.temperature_deviation.toFixed(2)}°C`)
+  if (oura?.sleep?.score != null) lines.push(`${w} sleep score: ${oura.sleep.score}`)
+  if (oura?.sleep?.average_hrv != null) lines.push(`${w} HRV: ${Math.round(oura.sleep.average_hrv)}ms`)
+  if (oura?.sleep?.resting_heart_rate != null) lines.push(`${w} RHR: ${Math.round(oura.sleep.resting_heart_rate)}bpm`)
+  if (oura?.activity?.steps != null) lines.push(`${w} steps yesterday: ${oura.activity.steps.toLocaleString()}`)
+  if (oura?.activity?.active_calories != null) lines.push(`${w} active calories yesterday: ${oura.activity.active_calories}`)
 
   const prompt = `${lines.join('\n')}
 
@@ -135,7 +140,7 @@ export async function POST(req: Request) {
 
   let call: { headline: string; bullets: string[] }
   try {
-    call = await generateCall(anthropic, verdict, oura, profileBlock)
+    call = await generateCall(anthropic, verdict, oura, profileBlock, provider)
   } catch (err) {
     if (isAiLimitError(err)) return aiLimitResponse()
     throw err
