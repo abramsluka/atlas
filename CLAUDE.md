@@ -60,7 +60,7 @@ const db = createServiceClient()
 
 ### Wearables
 
-**`wearable_data`** — provider-agnostic table, PK (user_id, provider, date); the whole payload is a `data` jsonb blob, with no per-provider tables and no typed sleep/readiness columns. **Only Oura is actually implemented.** The `provider` key leaves room for other sources, but there is NO Whoop code anywhere in `src/` — the `WHOOP_CLIENT_ID`/`WHOOP_CLIENT_SECRET` env vars are unused leftovers and there is no `WhoopData` type. Oura's shape lives in `src/features/health/types.ts` (`OuraData`). OAuth tokens in **`wearable_tokens`** (PK user_id, provider). Apple Health also feeds in via the iOS Shortcut sync (`apple_health_logs` / `apple_workouts`), separate from this table.
+**`wearable_data`** — provider-agnostic table, PK (user_id, provider, date); the whole payload is a `data` jsonb blob, with no per-provider tables and no typed sleep/readiness columns. **Two providers: Oura and WHOOP**, one main wearable per user. Both store the same `OuraData` shape (`src/features/health/types.ts`) — WHOOP is normalized into it at sync time by `whoopSync.ts` (spec: `specs/health/WHOOP_INTEGRATION_SPEC.md`), so every consumer renders either. `getActiveWearableProvider()` (`wearableProvider.ts`) resolves which one; readers use that instead of the literal `'oura'`. The OAuth callbacks enforce single-provider (connecting one deletes the other's token). OAuth tokens in **`wearable_tokens`** (PK user_id, provider); WHOOP refresh tokens ROTATE on every refresh (persist both immediately) and need `WHOOP_CLIENT_ID`/`WHOOP_CLIENT_SECRET` in env (Vercel too). Apple Health also feeds in via the iOS Shortcut sync (`apple_health_logs` / `apple_workouts`), separate from this table.
 
 ### Other
 
