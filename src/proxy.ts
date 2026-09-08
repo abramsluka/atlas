@@ -40,7 +40,9 @@ export async function proxy(request: NextRequest) {
   // /demo/<token> is the shareable demo auto-login (it checks its own secret).
   // /join is the invite signup (it checks its own token); /api/join is its POST.
   // /guide is the API-key walkthrough, linked from invites and read before signup.
-  const PUBLIC_PREFIXES = ['/api/mcp', '/api/oauth', '/.well-known', '/demo', '/join', '/api/join', '/guide']
+  // /privacy is linked from the Google OAuth consent screen, so it must be readable
+  // by a logged-out visitor (and by Google's own checks).
+  const PUBLIC_PREFIXES = ['/api/mcp', '/api/oauth', '/.well-known', '/demo', '/join', '/api/join', '/guide', '/privacy']
 
   if (
     !user &&

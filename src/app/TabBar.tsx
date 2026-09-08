@@ -8,7 +8,7 @@ const HIDDEN_ON = ['/login', '/journal/new']
 // Pre-app surfaces: a signed-out visitor reading the invite or the API key guide,
 // and anyone mid-onboarding, has nothing to navigate to yet — the tabs would all
 // bounce them to /login or drop them out of setup.
-const HIDDEN_PREFIXES = ['/join', '/guide', '/onboarding']
+const HIDDEN_PREFIXES = ['/join', '/guide', '/onboarding', '/privacy']
 
 const tabs = [
   {
