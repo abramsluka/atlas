@@ -76,12 +76,37 @@ Must be added to the `PUBLIC_PREFIXES` bypass in `src/proxy.ts`, same as
 - Every successful signup is logged (email + timestamp) so Luka can see who used
   the link. A small `invite_signups` table, or a structured server log line.
 
-### Rate limiting
+### Abuse controls
 
-`/api/join/<token>` is publicly reachable and creates users. A wrong-token
-request must be cheap, and a right-token request should not be loopable into
-hundreds of accounts. Add a simple per-IP limit (the existing in-memory limiter
-pattern is fine) plus a configurable max total signups per token.
+`/api/join/<token>` is publicly reachable and creates users. Two layers, and it
+matters which one is load-bearing:
+
+1. **Max signups per token (the real control).** A counter in the database, so
+   it is global and cannot be evaded. Once the token hits its cap, every further
+   signup is refused regardless of source. This is what bounds a forwarded or
+   leaked link to a known number of junk accounts. Default cap: 10.
+2. **Per-IP rate limit (the soft control).** Reuses the existing in-memory
+   limiter. Worth having to stop casual loops, but it is **per serverless
+   instance on Vercel**, so each warm instance keeps its own window and it is
+   trivially evaded by spreading requests. Never rely on it as the boundary.
+
+The token itself must be ≥32 random characters, which puts brute force out of
+reach by construction and makes rate limiting a formality rather than a
+dependency.
+
+**Deliberately NOT doing: a separate human-typed invite code.** A typed code and
+a URL token are the same secret with the same entropy; the only real difference
+is that a URL leaks through history, `Referer`, and screenshots while a typed
+code costs UX. Given the blast radius of a successful signup (a blank account,
+zero access to any other user's data under RLS + audited per-user scoping, and
+no usable AI without the attacker supplying their own paid API key), the extra
+friction is not worth it for a link texted to known people.
+
+Revisit if the link is ever posted somewhere semi-public (a club Slack, a group
+chat Luka does not control). At that point add a short human-friendly code on
+the form — and note that a short code makes the per-IP limiting genuinely
+load-bearing, because a guessable-length secret is brute-forceable in a way a
+32-char token is not.
 
 ---
 
