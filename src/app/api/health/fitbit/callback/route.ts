@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { APP_URL } from '@/lib/appUrl'
-import { syncFitbitToday, fitbitBasicAuth, FITBIT_TOKEN_URL } from '@/features/health/fitbitSync'
+import { syncFitbitToday, GOOGLE_TOKEN_URL } from '@/features/health/fitbitSync'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
 
@@ -22,21 +22,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL('/health?error=bad_state', req.url))
   }
 
-  // Server-type app: Basic auth with the client secret is mandatory at the
-  // token endpoint, and the PKCE verifier proves this is the same client that
-  // started the flow.
-  const tokenRes = await fetch(FITBIT_TOKEN_URL, {
+  // Google's token endpoint: client secret in the body (a "Web application"
+  // client is confidential), plus the PKCE verifier from the connect step.
+  const tokenRes = await fetch(GOOGLE_TOKEN_URL, {
     method: 'POST',
-    headers: {
-      Authorization: fitbitBasicAuth(),
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       grant_type: 'authorization_code',
       code,
       redirect_uri: `${APP_URL}/api/health/fitbit/callback`,
+      client_id: process.env.GOOGLE_HEALTH_CLIENT_ID!,
+      client_secret: process.env.GOOGLE_HEALTH_CLIENT_SECRET!,
       code_verifier: verifier,
-      client_id: process.env.FITBIT_CLIENT_ID!,
     }),
   })
   if (!tokenRes.ok) {
@@ -45,7 +42,14 @@ export async function GET(req: NextRequest) {
   }
 
   const tokens = await tokenRes.json()
-  const expiresAt = new Date(Date.now() + (tokens.expires_in ?? 28800) * 1000).toISOString()
+  // No refresh token means Google considered this a re-grant it had already
+  // issued one for and prompt=consent didn't take. Without it the connection
+  // dies in an hour, so refuse now rather than look connected and go blank.
+  if (!tokens.refresh_token) {
+    console.error('[fitbit] token response had no refresh_token')
+    return NextResponse.redirect(new URL('/health?error=fitbit_no_refresh_token', req.url))
+  }
+  const expiresAt = new Date(Date.now() + (tokens.expires_in ?? 3599) * 1000).toISOString()
 
   const db = createServiceClient()
   await db.from('wearable_tokens').upsert(

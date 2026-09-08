@@ -2,21 +2,24 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createHash, randomBytes } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { APP_URL } from '@/lib/appUrl'
+import { GOOGLE_HEALTH_SCOPES } from '@/features/health/fitbitSync'
 
-// Kick off Fitbit OAuth. redirect_uri must byte-match the entry in the Fitbit
-// developer portal (prod: https://atlas-phi-plum.vercel.app/api/health/fitbit/callback),
-// so it's built from the canonical APP_URL, never from request headers.
+// Kick off Fitbit OAuth — which is GOOGLE OAuth, because the Google Health API
+// replaced the legacy Fitbit Web API (sunset 2026-09-30). redirect_uri must
+// byte-match an Authorized redirect URI on the OAuth client in Google Cloud
+// (prod: https://atlas-phi-plum.vercel.app/api/health/fitbit/callback), so it's
+// built from the canonical APP_URL, never from request headers.
 //
-// Authorization Code + PKCE, which Fitbit recommends for every app type, plus
-// the Server-app client secret at the token step. The PKCE verifier and the
-// CSRF state are mirrored into httpOnly cookies and checked in the callback.
+// access_type=offline + prompt=consent is what makes Google return a refresh
+// token (it only does so on a consenting grant, and only when asked). PKCE
+// verifier and CSRF state are mirrored into httpOnly cookies for the callback.
 export async function GET(req: NextRequest) {
   const authClient = await createClient()
   const { data: { user } } = await authClient.auth.getUser()
   if (!user) return NextResponse.redirect(new URL('/login', req.url))
 
-  // A missing portal registration should say so on /health, not 500.
-  if (!process.env.FITBIT_CLIENT_ID || !process.env.FITBIT_CLIENT_SECRET) {
+  // A missing Cloud registration should say so on /health, not 500.
+  if (!process.env.GOOGLE_HEALTH_CLIENT_ID || !process.env.GOOGLE_HEALTH_CLIENT_SECRET) {
     return NextResponse.redirect(new URL('/health?error=fitbit_not_configured', req.url))
   }
 
@@ -26,18 +29,18 @@ export async function GET(req: NextRequest) {
 
   const params = new URLSearchParams({
     response_type: 'code',
-    client_id: process.env.FITBIT_CLIENT_ID,
+    client_id: process.env.GOOGLE_HEALTH_CLIENT_ID,
     redirect_uri: `${APP_URL}/api/health/fitbit/callback`,
-    // Everything fitbitSync reads: sleep logs, HRV + resting HR, steps +
-    // calories, skin temperature. profile is harmless and lets the token
-    // response carry the Fitbit user id.
-    scope: 'sleep heartrate activity temperature profile',
+    scope: GOOGLE_HEALTH_SCOPES.join(' '),
+    access_type: 'offline',
+    prompt: 'consent',
+    include_granted_scopes: 'true',
     state,
     code_challenge: challenge,
     code_challenge_method: 'S256',
   })
 
-  const res = NextResponse.redirect(`https://www.fitbit.com/oauth2/authorize?${params}`)
+  const res = NextResponse.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`)
   const cookie = {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',

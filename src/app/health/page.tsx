@@ -15,7 +15,8 @@ export const dynamic = 'force-dynamic'
 // from "nothing happened". Keep the copy short and honest about which step broke.
 function wearableErrorMessage(code: string | undefined): string | null {
   if (!code) return null
-  if (code === 'fitbit_not_configured') return 'Fitbit is not set up on this Atlas yet (missing developer app credentials).'
+  if (code === 'fitbit_not_configured') return 'Fitbit is not set up on this Atlas yet (missing Google Cloud OAuth credentials).'
+  if (code === 'fitbit_no_refresh_token') return 'Google signed you in but did not issue a long-lived token. Remove Atlas under myaccount.google.com → Security → Third-party access, then connect again.'
   if (code === 'token_exchange') return 'The wearable connected but Atlas could not exchange the login for a token. Try again; if it persists, the app credentials may be wrong.'
   if (code === 'bad_state') return 'That connect attempt expired or was tampered with. Start it again from this page.'
   if (code === 'no_code') return 'The wearable did not return a login code. Try connecting again.'

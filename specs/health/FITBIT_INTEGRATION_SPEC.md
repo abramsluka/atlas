@@ -1,8 +1,58 @@
 # Fitbit Integration Spec
 
-Status: approved by Luka, building now
+Status: BUILT 2026-09-08 (on the Google Health API; see "Transport" below)
 Area: Health / wearables
 Author: Claude session, 2026-09-08
+
+## Transport: Google Health API, not the legacy Fitbit Web API
+
+The first cut of this integration was written against the legacy Fitbit Web
+API. Registering the app surfaced the banner nobody had seen yet: **the legacy
+Fitbit Web API is turned off on 2026-09-30.** Google's replacement is the
+Google Health API (`https://health.googleapis.com/v4`, Google OAuth 2.0,
+docs at developers.google.com/health). The whole data layer was rebuilt
+against it the same afternoon; the "Verified against Fitbit's docs" section
+below is kept for the record but the field mapping and OAuth sections that
+follow describe the Google Health API version, which is what shipped.
+
+Things about the Google Health API that shape the design, verified against
+the v4 discovery document (`health.googleapis.com/$discovery/rest?version=v4`)
+rather than the prose docs, which disagree with each other in places:
+
+- **Still no sleep score and no readiness score.** Same derivation as planned.
+- **Sleep sessions carry `metadata.mainSleep`** (longest sleep with stages in
+  a day) and a `summary` with `minutesAsleep`, `minutesInSleepPeriod` (time
+  in bed), `minutesToFallAsleep` and per-stage `stagesSummary[]`. Efficiency
+  is not a field; it is `minutesAsleep / minutesInSleepPeriod`.
+- **Day attribution is the civil end date** (`interval.civilEndTime`), which
+  is the morning you woke — Atlas's own convention. `interval.endUtcOffset`
+  ("-25200s") lets `bedtime_end` keep the wearer's wall clock.
+- **Daily metrics are `list` calls with a date filter**, not rollups:
+  `daily-resting-heart-rate` (`beatsPerMinute`), `daily-heart-rate-variability`
+  (`averageHeartRateVariabilityMilliseconds`, i.e. RMSSD),
+  `daily-sleep-temperature-derivations` (`nightlyTemperatureCelsius` −
+  `baselineTemperatureCelsius` = the deviation Oura exposes directly).
+  `dailyRollUp` on those types returns personal *ranges*, not the day's value.
+- **Steps and total calories are `dailyRollUp`** over a closed-open civil date
+  range with `windowSizeDays: 1` (`steps.countSum`, `totalCalories.kcalSum`).
+  `total-calories` caps the range at 14 days, which is exactly the window.
+- **Sleep `list` is capped at 25 per page**, so the sync follows
+  `nextPageToken`.
+- **Scopes** (all three are "restricted" in Google's taxonomy):
+  `googlehealth.sleep.readonly`, `googlehealth.health_metrics_and_measurements.readonly`,
+  `googlehealth.activity_and_fitness.readonly`.
+- **Google refresh tokens do not rotate.** The refresh response carries only a
+  new access token (~1h); the refresh token lives until revoked or unused for
+  six months. `access_type=offline&prompt=consent` is required to get one at
+  all, and the callback refuses a token response without one rather than
+  looking connected and going blank an hour later.
+- **Unverified apps are capped at 100 users in BOTH Testing and Production.**
+  Verification (plus the CASA security assessment) only gates the 101st user.
+  But a consent screen left in **Testing** issues 7-day refresh tokens, so
+  Atlas must be published to Production, unverified. Users see Google's
+  "hasn't verified this app" interstitial once and click Advanced → continue.
+- **Every Fitbit user already has a Google account:** the Fitbit→Google
+  account migration became mandatory on 2026-05-19.
 
 ## Goal
 
@@ -110,38 +160,38 @@ With no baseline yet (first few days), readiness is purely sleep-driven,
 which is the right degradation. Devices without HRV or a temperature sensor
 simply contribute nothing to those terms.
 
-## OAuth (mirrors WHOOP, plus Fitbit specifics)
+## OAuth (Google OAuth 2.0, PKCE + confidential client)
 
-- `GET /api/health/fitbit/connect` — auth'd; generates a PKCE verifier and a
-  `state`, mirrors both into httpOnly cookies (10 min), 302s to
-  `https://www.fitbit.com/oauth2/authorize` with `response_type=code`,
-  `client_id`, `redirect_uri={APP_URL}/api/health/fitbit/callback`,
-  `scope=sleep heartrate activity temperature profile`, `state`,
-  `code_challenge` (S256). The redirect URI must byte-match the portal entry.
+- `GET /api/health/fitbit/connect` — auth'd; PKCE verifier + `state` mirrored
+  into httpOnly cookies (10 min); 302 to
+  `https://accounts.google.com/o/oauth2/v2/auth` with `client_id`,
+  `redirect_uri={APP_URL}/api/health/fitbit/callback`, the three scopes,
+  `access_type=offline`, `prompt=consent`, `code_challenge` (S256).
 - `GET /api/health/fitbit/callback` — verifies state, exchanges the code at
-  `https://api.fitbit.com/oauth2/token` with `Authorization: Basic` and
-  `code_verifier`, upserts `wearable_tokens` provider='fitbit', **deletes
-  every other provider's token row** (one-main rule), runs a 14-day initial
-  sync, redirects to `/health`.
-- The Oura and WHOOP callbacks get the mirrored rule: they now delete every
-  sibling row (`neq('provider', self)`) instead of naming one.
+  `https://oauth2.googleapis.com/token` (client id + secret + `code_verifier`
+  in the body), refuses a response with no `refresh_token`, upserts
+  `wearable_tokens` provider='fitbit', **deletes every other provider's token
+  row** (one-main rule), runs a 14-day initial sync, redirects to `/health`.
+- Oura and WHOOP callbacks delete every sibling (`neq('provider', self)`).
 - **Token refresh:** at sync, if the access token expires within 60s, refresh
-  with Basic auth; persist BOTH new tokens immediately (single-use refresh).
-  Refresh failure or all-endpoints-401 deletes the token row so the card
-  falls back to Connect, same as the other two.
+  with client id + secret; store the new access token, keep the refresh token.
+  Refresh failure or all-endpoints-401 deletes the token row so the card falls
+  back to Connect.
 - `POST /api/health/wearables/disconnect` accepts `'fitbit'`.
 
 ## Sync (`src/features/health/fitbitSync.ts`)
 
 `syncFitbitToday(db, userId, today, tz, force?, windowDays=3)`:
 - Same 15-min cache short-circuit against the provider='fitbit' today row.
-- Fetches the six range endpoints above for `max(windowDays, 14)` days in
-  parallel, keyed by `dateTime` / `dateOfSleep`.
-- Computes baselines, derives the two scores, upserts one normalized row for
-  each of the last `windowDays` days that has any data.
-- `bedtime_end`: Fitbit gives a naive local timestamp. It is re-emitted with
-  the user's Atlas timezone offset for that instant (`date-fns-tz`), so the
-  existing `plausibleWakeHour` reads the wall clock straight off it.
+- Six calls over a 14-day closed-open civil window, in parallel: `sleep`
+  (list, `sleep.interval.civil_end_time` filter, paginated), the three daily
+  types (list, `{type}.date` filter), `steps` and `total-calories`
+  (dailyRollUp).
+- Main sleep per civil end day = `metadata.mainSleep`, else longest by
+  `minutesAsleep`. Naps never win.
+- Computes HRV/RHR baselines from prior days in the window, derives the two
+  scores, upserts one normalized row for each of the last `windowDays` days
+  that has any data.
 
 ## Active-provider resolution — de-duplicated while adding the third
 
@@ -174,37 +224,39 @@ Priority when a legacy account holds multiple rows: fitbit > whoop > oura
 - **Home coach / today's call / assistant:** say "Fitbit readiness (estimated)"
   so the model does not present a derived number as a device reading.
 
-## Env / portal — what Luka does
+## Env / Google Cloud — what Luka does
 
 ```
-FITBIT_CLIENT_ID
-FITBIT_CLIENT_SECRET
+GOOGLE_HEALTH_CLIENT_ID
+GOOGLE_HEALTH_CLIENT_SECRET
 ```
 
-in `.env.local` and Vercel Production. Register the app at
-`https://dev.fitbit.com/apps/new` (needs a plain Google account; Workspace
-accounts are not accepted):
+in `.env.local` and Vercel Production. In Google Cloud Console
+(`console.cloud.google.com`), with the personal Google account:
 
-| Field | Value |
-|---|---|
-| Application Name | Atlas |
-| Description | Personal health dashboard |
-| Application Website URL | `https://atlas-phi-plum.vercel.app` |
-| Organization | Atlas |
-| Organization Website URL | `https://atlas-phi-plum.vercel.app` |
-| Terms of Service URL | `https://atlas-phi-plum.vercel.app/guide/api-key` (any https URL on the app is accepted) |
-| Privacy Policy URL | same |
-| OAuth 2.0 Application Type | **Server** |
-| Redirect URL | `https://atlas-phi-plum.vercel.app/api/health/fitbit/callback` (add `http://localhost:3000/api/health/fitbit/callback` on a second line for local testing) |
-| Default Access Type | **Read Only** |
+1. **Create a project** named Atlas.
+2. **Enable the API:** APIs & Services → Library → "Google Health API"
+   (`health.googleapis.com`) → Enable.
+3. **OAuth consent screen** (Google Auth Platform → Branding): user type
+   **External**, app name Atlas, support email + developer contact = his
+   email. Data Access → Add scopes → search "Google Health API" → tick the
+   three `.readonly` scopes above (sleep, health metrics and measurements,
+   activity and fitness).
+4. **Audience → Publish app → In production.** It will warn that restricted
+   scopes need verification; confirm anyway. Unverified is fine under 100
+   users, and Testing status would expire everyone's token weekly. Adding the
+   five circle emails as test users as well is harmless belt-and-braces.
+5. **Clients → Create client → Web application**, name Atlas, Authorized
+   redirect URIs: `https://atlas-phi-plum.vercel.app/api/health/fitbit/callback`
+   and `http://localhost:3000/api/health/fitbit/callback`. Copy the Client ID
+   and Client Secret.
+6. Add the two env vars in `.env.local` and Vercel, redeploy.
 
-Copy the OAuth 2.0 Client ID and Client Secret from the app page.
-
-**On the friend's side:** HRV and skin temperature only flow if the "Health
-Metrics" tile is enabled in their Fitbit app and the device supports it
-(Sense / Versa 3+ / Charge 5+ / Inspire 3 for HRV; Sense / Charge 5+ for
-temperature). Without them readiness degrades to sleep-only, which still
-renders.
+**On the friend's side:** connect with the Google account their Fitbit is
+signed into. Google shows "Google hasn't verified this app" once → Advanced →
+"Go to Atlas (unsafe)" → tick all three permissions → Continue. HRV and skin
+temperature only flow if the device supports them; without them readiness
+degrades to sleep-only, which still renders.
 
 ## Acceptance
 
