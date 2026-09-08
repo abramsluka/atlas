@@ -37,5 +37,20 @@ export async function GET(
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  return NextResponse.redirect(new URL('/', request.url))
+  const res = NextResponse.redirect(new URL('/', request.url))
+
+  // Arriving from an invite page (/join/<token> passes ?invite=…) means this
+  // visitor still needs a way BACK to sign up — otherwise the demo is a
+  // dead end they can only escape with the back button. Remember the invite so
+  // the demo banner can offer "Create your account".
+  const invite = request.nextUrl.searchParams.get('invite')
+  if (invite && /^[A-Za-z0-9_-]{16,128}$/.test(invite)) {
+    res.cookies.set('atlas-invite-return', invite, {
+      maxAge: 60 * 60 * 6,
+      sameSite: 'lax',
+      path: '/',
+    })
+  }
+
+  return res
 }

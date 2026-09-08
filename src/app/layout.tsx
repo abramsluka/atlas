@@ -7,6 +7,7 @@ import OrbAssistant from '@/features/assistant/OrbAssistant'
 import StarField from '@/components/StarField'
 import PageTransition from '@/components/PageTransition'
 import PullToRefresh from '@/components/PullToRefresh'
+import DemoBanner from '@/components/DemoBanner'
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -64,6 +65,7 @@ export default function RootLayout({
             z-index here, every modal inside gets trapped below the fixed TabBar
             (z-50) and can never overlay it. */}
         <div style={{ position: 'relative' }}>
+          <DemoBanner />
           <Providers>
             <PullToRefresh>
               <PageTransition>{children}</PageTransition>

@@ -158,13 +158,50 @@ anyone who skips.
 | 5 | **Starter habits** — pick from a suggested list (Make bed, Workout, Read, Meditate, Walk, Water…) or add their own | `habits` | yes |
 | 6 | **Gym setup** (optional) — gyms, training days, split | `gym_config` | yes |
 | 7 | **Wearable** (optional) — Connect Oura or WHOOP, single-provider rule already enforced by the callbacks | `wearable_tokens` | yes |
-| 8 | **Tour** — five short cards, one per tab (Home, Gym, Health, Journal, Mentor) | `onboarding_completed_at` | finish |
+| 8 | **Walkthrough** — interactive coach marks, see below | `onboarding_completed_at` | finish |
 
 **Ordering rationale:** the API key comes second because step 4 genuinely needs
 it (the calorie target route is an AI call). If the key was skipped, step 4 must
 degrade gracefully: either fall back to a plain Mifflin-St Jeor calculation with
 no AI, or let them type targets manually. It must not show a broken AI error
 inside onboarding.
+
+### Step 8 in detail: the interactive walkthrough
+
+Not a slideshow of screenshots. A sequence of **coach marks**: a dimmed overlay
+with one real UI element spotlit, a small popover explaining it, and
+Back / Next / Skip. The user is looking at their actual app the whole time.
+
+**Anchor to the TabBar, not to page content.** The TabBar is fixed, present on
+every screen, and structurally stable. Page content moves constantly (cards
+reorder, empty states differ per user, the home layout is dense), so anchoring
+there produces popovers pointing at the wrong thing the first time anyone
+reorders a card. Anchoring to a fixed element is the difference between a tour
+that survives redesigns and one that silently rots.
+
+**Stops (5–6, keep it short):**
+1. Home tab — "your day at a glance: check-in, briefing, streaks"
+2. Gym tab — "log sets, the coach reads your history and tells you what to lift"
+3. Health tab — "food, water, weight, sleep, supplements"
+4. Journal tab — "write or talk, the AI reflects back"
+5. Mentor tab — "asks about everything above at once; this is the payoff"
+6. Settings link — "your API key and which AI runs it" (only if they skipped
+   the key step, otherwise drop it)
+
+**Rules:**
+- **Escapable at every step.** A tour you cannot dismiss is a hostage situation.
+  Skip must be visible on stop 1, not buried at the end.
+- Runs once. Completion writes `onboarding_completed_at`; never auto-replays.
+- Re-runnable on demand from Settings ("Replay walkthrough") so it is
+  discoverable later without being forced.
+- Pure UI, no data writes, no AI calls — so it works identically for a user who
+  skipped the API key step.
+- Mobile first: popovers must not overflow a 375px viewport, and the spotlight
+  has to account for the safe-area inset above the TabBar.
+
+**Explicitly not doing:** a tour that navigates between tabs on the user's
+behalf. It sounds better and is markedly worse — it fights the router, breaks
+the back button, and strands people mid-tour on a page they did not choose.
 
 ---
 
