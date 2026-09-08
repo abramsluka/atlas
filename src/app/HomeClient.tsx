@@ -1228,7 +1228,7 @@ export default function HomeClient({
           <a href="/subscriptions" className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors">
             Bills &amp; subscriptions →
           </a>
-          <a href="/settings" className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors">
+          <a href="/settings" data-tour="settings-link" className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors">
             Settings →
           </a>
         </div>

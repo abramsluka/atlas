@@ -2,7 +2,9 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { startWalkthrough } from '@/components/Walkthrough'
 
 type KeyProvider = 'anthropic' | 'openai' | 'gemini'
 type KeyStatus = { set: boolean; last4: string | null }
@@ -250,6 +252,7 @@ function ProviderPicker() {
 }
 
 export default function SettingsClient({ email }: { email: string }) {
+  const router = useRouter()
   const { data: keys } = useQuery<KeysResponse>({
     queryKey: ['user-keys'],
     queryFn: async () => (await fetch('/api/user/keys')).json(),
@@ -274,12 +277,35 @@ export default function SettingsClient({ email }: { email: string }) {
       </h2>
       <p className="mb-3 text-[11.5px] text-zinc-500 leading-relaxed">
         Atlas runs its AI on your own keys, billed to your own accounts. Nothing here is shared
-        between users. <span className="text-zinc-400">No credit card? Gemini has a free tier.</span>
+        between users. <span className="text-zinc-400">No credit card? Gemini has a free tier.</span>{' '}
+        <a href="/guide/api-key" className="text-green-400 underline">How to get a key →</a>
       </p>
       <div className="space-y-3">
         {PROVIDERS.map((p) => (
           <KeyCard key={p.id} provider={p} status={keys?.[p.id]} />
         ))}
+      </div>
+
+      <h2 className="mt-6 mb-2 font-mono text-[9.5px] font-extrabold tracking-[0.16em] uppercase text-zinc-500">
+        Getting around
+      </h2>
+      <div className="cosmic-card p-4">
+        <p className="text-[13px] font-semibold text-white">Replay the walkthrough</p>
+        <p className="mt-1 text-[11.5px] leading-relaxed text-zinc-500">
+          The short tour of the five tabs you saw when you signed up.
+        </p>
+        <button
+          onClick={() => {
+            // Queue it, then go home. It starts on arrival, and Home is the one
+            // screen where the final stop's Settings link exists to be spotlit.
+            // No coaching key means the tour keeps that last stop.
+            startWalkthrough(!(keys?.anthropic.set || keys?.gemini.set))
+            router.push('/')
+          }}
+          className="mt-2.5 rounded-lg border border-white/12 px-3 py-2 text-[12px] font-semibold text-white/70 active:opacity-70"
+        >
+          Start the tour
+        </button>
       </div>
     </main>
   )

@@ -51,7 +51,7 @@ export default function JoinClient({ token, valid, demoHref }: {
         return
       }
       if (json.signedIn) {
-        router.push('/')
+        router.push('/onboarding')
         router.refresh()
       } else {
         router.push('/login')

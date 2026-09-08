@@ -19,8 +19,14 @@ export default async function HomePage() {
   const [checkinRes, home, settingsRes] = await Promise.all([
     db.from('daily_checkins').select('*').eq('user_id', user.id).eq('date', today).maybeSingle(),
     getHomeInitialData(db, user.id, today, tz),
-    db.from('user_settings').select('first_name').eq('user_id', user.id).maybeSingle(),
+    db.from('user_settings').select('first_name, onboarding_completed_at').eq('user_id', user.id).maybeSingle(),
   ])
+
+  // First run: a brand-new account lands on empty states with every AI feature
+  // returning 428, so send them through setup first. Gated on the row EXISTING
+  // with a null timestamp — a user with no user_settings row at all predates
+  // the column and must never be dropped into onboarding.
+  if (settingsRes.data && !settingsRes.data.onboarding_completed_at) redirect('/onboarding')
 
   // "Sam's Dashboard" — the user's first name from user_settings (read fresh
   // from the DB, so it never lags behind a stale auth-session cookie). Email

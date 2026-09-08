@@ -39,7 +39,8 @@ export async function proxy(request: NextRequest) {
   // own Bearer auth (and must 401, not 307), OAuth + discovery are pre-auth,
   // /demo/<token> is the shareable demo auto-login (it checks its own secret).
   // /join is the invite signup (it checks its own token); /api/join is its POST.
-  const PUBLIC_PREFIXES = ['/api/mcp', '/api/oauth', '/.well-known', '/demo', '/join', '/api/join']
+  // /guide is the API-key walkthrough, linked from invites and read before signup.
+  const PUBLIC_PREFIXES = ['/api/mcp', '/api/oauth', '/.well-known', '/demo', '/join', '/api/join', '/guide']
 
   if (
     !user &&

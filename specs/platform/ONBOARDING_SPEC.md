@@ -1,8 +1,34 @@
 # Invite Signup + Onboarding Spec
 
-Status: proposed (not yet built)
+Status: BUILT (Parts 0-4 shipped 2026-09-08)
 Area: Platform (auth, first-run experience)
 Author: Claude session, 2026-09-07
+
+## Build notes (2026-09-08)
+
+All four parts are live. Deviations from the spec as written, and why:
+
+- **Resume is monotonic.** The wizard resumes just past the furthest step the
+  user finished, not at the first step they are missing. Resuming at the first
+  gap sent anyone who deliberately skipped the API key back to it on every
+  reload.
+- **Step 4 degrades via a flag, not a fork.** `/api/health/calorie-target/calculate`
+  takes `{ allowNoAi: true }`, which onboarding passes. The numbers were always
+  pure arithmetic; only the explanation sentence was AI, so without a key it
+  falls back to a plain-English version of the same maths. Every other caller
+  keeps the old 428 behaviour untouched.
+- **The walkthrough is queued, not started in place.** `startWalkthrough()` sets
+  a localStorage flag and the tour begins on the next page the user lands on.
+  Both entry points navigate immediately (out of `/onboarding`, or out of
+  `/settings`), and starting in place made it flash on the page being left.
+  This is also what lets it survive the wearable OAuth round trip: connecting a
+  ring marks setup complete, leaves for the provider, and the tour picks up on
+  `/health` when the callback returns.
+- **The TabBar hides on `/join`, `/guide` and `/onboarding`.** Those are
+  pre-app surfaces; a signed-out visitor reading the invite had five tabs that
+  all bounced to `/login`.
+- **`/guide` is in `PUBLIC_PREFIXES`**, so the API key guide can be read (and
+  texted around) before an account exists.
 
 ## Goal
 

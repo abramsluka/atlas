@@ -32,7 +32,17 @@ const CUT_DEFICIT: Record<string, number> = { slow: 250, moderate: 500, aggressi
 const CUT_FAT_PCT: Record<string, number> = { slow: 0.25, moderate: 0.28, aggressive: 0.35 }
 const BULK_SURPLUS: Record<string, number> = { slow: 200, moderate: 300 }
 
-export async function POST() {
+export async function POST(req: Request) {
+  // Onboarding passes { allowNoAi: true }: step 4 of the wizard must still hand
+  // the user real targets when they skipped the API key step, instead of showing
+  // them a 428 inside their own setup flow. Every other caller keeps the old
+  // behaviour and gets the "add a key" response.
+  let allowNoAi = false
+  try {
+    const body = await req.json()
+    allowNoAi = body?.allowNoAi === true
+  } catch {}
+
   const authClient = await createClient()
   const { data: { user } } = await authClient.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -134,7 +144,7 @@ export async function POST() {
 
   // ── Claude writes the reasoning sentence ─────────────────────────────────
   const resolved = await getModelForFeature(user.id, 'coaching', 'fast')
-  if (!resolved) return noKeyResponse(suggestedProviderFor('coaching'))
+  if (!resolved && !allowNoAi) return noKeyResponse(suggestedProviderFor('coaching'))
 
   const contextLines = [
     `Goal: ${goalLabel}`,
@@ -153,18 +163,35 @@ export async function POST() {
     maintain: 'Maintenance: keep current weight, stay fueled, hit protein to preserve muscle.',
   }
 
+  // The numbers above are pure arithmetic; the AI only writes the sentence that
+  // explains them. So when there is no key (or the call fails mid-onboarding),
+  // fall back to a plain-English version of the same maths rather than failing
+  // the whole request — the targets are the part that matters.
+  const fallbackReasoning =
+    `${goalLabel} at ${paceLabel}. Estimated maintenance is about ${tdee} calories a day, ` +
+    `so your target is ${dailyCalories} calories with ${protein_g}g protein to hold onto muscle.`
+
   let reasoningText: string
-  try {
-    const generated = await generateText({
-      model: resolved.model,
-      maxOutputTokens: 120,
-      system: `You are a nutrition coach. Write 1-2 plain sentences explaining these pre-calculated macro targets to the user. Be specific and mention the goal. ${goalContext[goal]} Do not recalculate anything.`,
-      messages: [{ role: 'user', content: contextLines }],
-    })
-    reasoningText = generated.text
-  } catch (err) {
-    if (isAiLimitError(err)) return aiLimitResponse()
-    throw err
+  if (!resolved) {
+    reasoningText = fallbackReasoning
+  } else {
+    try {
+      const generated = await generateText({
+        model: resolved.model,
+        maxOutputTokens: 120,
+        system: `You are a nutrition coach. Write 1-2 plain sentences explaining these pre-calculated macro targets to the user. Be specific and mention the goal. ${goalContext[goal]} Do not recalculate anything.`,
+        messages: [{ role: 'user', content: contextLines }],
+      })
+      reasoningText = generated.text
+    } catch (err) {
+      if (allowNoAi) {
+        reasoningText = fallbackReasoning
+      } else if (isAiLimitError(err)) {
+        return aiLimitResponse()
+      } else {
+        throw err
+      }
+    }
   }
 
   const reasoning = reasoningText.trim()

@@ -5,9 +5,14 @@ import { usePathname } from 'next/navigation'
 import { useEffect } from 'react'
 
 const HIDDEN_ON = ['/login', '/journal/new']
+// Pre-app surfaces: a signed-out visitor reading the invite or the API key guide,
+// and anyone mid-onboarding, has nothing to navigate to yet — the tabs would all
+// bounce them to /login or drop them out of setup.
+const HIDDEN_PREFIXES = ['/join', '/guide', '/onboarding']
 
 const tabs = [
   {
+    id: 'home',
     label: 'Home',
     href: '/',
     active: (p: string) => p === '/',
@@ -19,6 +24,7 @@ const tabs = [
     ),
   },
   {
+    id: 'gym',
     label: 'Gym',
     href: '/gym',
     active: (p: string) => p.startsWith('/gym'),
@@ -33,6 +39,7 @@ const tabs = [
     ),
   },
   {
+    id: 'health',
     label: 'Health',
     href: '/health',
     active: (p: string) => p.startsWith('/health'),
@@ -43,6 +50,7 @@ const tabs = [
     ),
   },
   {
+    id: 'journal',
     label: 'Journal',
     href: '/journal',
     active: (p: string) => p.startsWith('/journal'),
@@ -54,6 +62,7 @@ const tabs = [
     ),
   },
   {
+    id: 'mentor',
     label: 'Mentor',
     href: '/mentor',
     active: (p: string) => p.startsWith('/mentor'),
@@ -80,6 +89,7 @@ export default function TabBar() {
   }, [])
 
   if (HIDDEN_ON.includes(pathname)) return null
+  if (HIDDEN_PREFIXES.some((p) => pathname.startsWith(p))) return null
 
   return (
     <nav
@@ -93,6 +103,10 @@ export default function TabBar() {
             <Link
               key={tab.href}
               href={tab.href}
+              // Anchor for the onboarding walkthrough. The TabBar is fixed and
+              // present on every screen, so coach marks pinned here survive any
+              // page-content redesign (see ONBOARDING_SPEC Part 2, step 8).
+              data-tour={`tab-${tab.id}`}
               className={`flex flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium tracking-wide transition-colors ${
                 isActive ? 'text-green-400' : 'text-zinc-600 active:text-zinc-400'
               }`}

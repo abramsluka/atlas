@@ -8,6 +8,7 @@ import StarField from '@/components/StarField'
 import PageTransition from '@/components/PageTransition'
 import PullToRefresh from '@/components/PullToRefresh'
 import DemoBanner from '@/components/DemoBanner'
+import Walkthrough from '@/components/Walkthrough'
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -74,6 +75,8 @@ export default function RootLayout({
           </Providers>
         </div>
         <TabBar />
+        {/* Coach marks for the onboarding tour. Renders nothing unless queued. */}
+        <Walkthrough />
       </body>
     </html>
   )
