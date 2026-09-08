@@ -122,6 +122,17 @@ export interface OuraData {
   whoop?: {
     strain: number | null
   }
+  // Only present on provider='fitbit' rows (fitbitSync). Fitbit's Web API has
+  // no sleep or readiness score, so both are derived by Atlas from duration,
+  // efficiency, stages, HRV and RHR baselines (formulas in
+  // specs/health/FITBIT_INTEGRATION_SPEC.md). scores_estimated is what the
+  // card reads to label them "est.".
+  fitbit?: {
+    scores_estimated: true
+    log_type: 'stages' | 'classic' | null
+    hrv_baseline: number | null
+    rhr_baseline: number | null
+  }
 }
 
 export interface OuraHistoryPoint {

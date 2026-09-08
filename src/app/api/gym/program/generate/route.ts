@@ -9,7 +9,7 @@ import { getUserTimezone } from '@/lib/getUserTimezone'
 import type { OuraData } from '@/features/health/types'
 import { getProfileBlock } from '@/lib/profile/getProfileBlock'
 import type { GymConfig, GymExercise } from '@/features/gym/types'
-import { getActiveWearableProvider } from '@/features/health/wearableProvider'
+import { getActiveWearableProvider, WEARABLE_PROVIDERS } from '@/features/health/wearableProvider'
 import type {
   GeneratedProgram, GenerateProgramRequest, ProgramGoal, ProgramStructure, ProgramSession, ProgramPhase,
 } from '@/features/gym/programTypes'
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     db.from('gym_config').select('*').eq('user_id', user.id).maybeSingle(),
     db.from('gym_exercises').select('*').eq('user_id', user.id).order('order_index'),
     db.from('gym_logs').select('exercise_id, weight, reps').eq('user_id', user.id).gte('logged_at', ninetyAgo),
-    db.from('wearable_data').select('data, provider, date').eq('user_id', user.id).gte('date', fourteenAgoDate).in('provider', ['oura', 'whoop']),
+    db.from('wearable_data').select('data, provider, date').eq('user_id', user.id).gte('date', fourteenAgoDate).in('provider', WEARABLE_PROVIDERS),
     db.from('health_profile').select('age, weight_lbs, fitness_goal, target_weight_lbs').eq('user_id', user.id).maybeSingle(),
     getActiveWearableProvider(db, user.id),
   ])

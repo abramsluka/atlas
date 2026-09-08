@@ -54,7 +54,7 @@ import type {
   OuraData,
   TimeSlot,
 } from '@/features/health/types'
-import type { WearableProvider } from '@/features/health/wearableProvider'
+import { WEARABLE_LABEL, type WearableProvider } from '@/features/health/wearableProvider'
 import {
   STACK_WINDOWS,
   searchSupplements,
@@ -138,10 +138,11 @@ function WearableSwitchRows() {
   }
   return (
     <div className="mt-2 space-y-2">
-      <p className="text-[11px] text-zinc-500">Your main wearable. Connecting one replaces the other.</p>
-      <div className="grid grid-cols-2 gap-2">
-        <a href="/api/health/oura/connect" className="rounded-lg border border-white/10 px-3 py-2 text-center text-xs font-semibold text-white active:opacity-70">Use Oura Ring</a>
+      <p className="text-[11px] text-zinc-500">Your main wearable. Connecting one replaces the others.</p>
+      <div className="grid grid-cols-3 gap-2">
+        <a href="/api/health/oura/connect" className="rounded-lg border border-white/10 px-3 py-2 text-center text-xs font-semibold text-white active:opacity-70">Use Oura</a>
         <a href="/api/health/whoop/connect" className="rounded-lg border border-white/10 px-3 py-2 text-center text-xs font-semibold text-white active:opacity-70">Use WHOOP</a>
+        <a href="/api/health/fitbit/connect" className="rounded-lg border border-white/10 px-3 py-2 text-center text-xs font-semibold text-white active:opacity-70">Use Fitbit</a>
       </div>
       <button onClick={disconnect} disabled={busy} className="w-full rounded-lg px-3 py-2 text-xs font-semibold text-red-400/80 active:opacity-60 disabled:opacity-50">
         {busy ? 'Disconnecting…' : 'Disconnect wearable'}
@@ -164,8 +165,11 @@ function WearablesSection({
   // "oura" naming below is historical: WHOOP data is normalized into the same
   // OuraData shape by whoopSync, so one card + one query serve both providers.
   const hasOura = wearableProvider != null
-  const providerLabel = wearableProvider === 'whoop' ? 'WHOOP' : wearableProvider === 'oura' ? 'Oura Ring' : 'Wearable'
+  const providerLabel = wearableProvider ? WEARABLE_LABEL[wearableProvider].card : 'Wearable'
   const { data: oura, isPending: ouraPending } = useOuraData(today, hasOura, initialOura)
+  // Fitbit's Web API has no sleep/readiness score; fitbitSync derives both and
+  // flags the row so the card can say so instead of passing them off as device readings.
+  const estimated = !!oura?.fitbit?.scores_estimated
   const { data: apple } = useAppleHealth(today)
   const { data: profile } = useHealthProfile()
   // Per-user card visibility (Health → Settings → Wearables). Default on.
@@ -228,18 +232,24 @@ function WearablesSection({
         <div className="bg-[#111113] border border-white/[0.06] rounded-[18px] p-4">
           <p className="mb-3 text-xs font-medium text-zinc-500">{providerLabel}</p>
           {!hasOura ? (
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <a
                 href="/api/health/oura/connect"
-                className="block rounded-lg bg-white px-3 py-2 text-center text-xs font-semibold text-black"
+                className="block rounded-lg bg-white px-2 py-2 text-center text-xs font-semibold text-black"
               >
-                Connect Oura Ring
+                Oura Ring
               </a>
               <a
                 href="/api/health/whoop/connect"
-                className="block rounded-lg bg-white px-3 py-2 text-center text-xs font-semibold text-black"
+                className="block rounded-lg bg-white px-2 py-2 text-center text-xs font-semibold text-black"
               >
-                Connect WHOOP
+                WHOOP
+              </a>
+              <a
+                href="/api/health/fitbit/connect"
+                className="block rounded-lg bg-white px-2 py-2 text-center text-xs font-semibold text-black"
+              >
+                Fitbit
               </a>
             </div>
           ) : ouraPending ? (
@@ -252,12 +262,20 @@ function WearablesSection({
                 <p className="text-[10px] uppercase tracking-wide text-zinc-500">Readiness</p>
                 <p className={`text-3xl font-bold ${scoreColor(oura.readiness?.score)}`}>
                   {oura.readiness?.score ?? '--'}
+                  {estimated && oura.readiness?.score != null && (
+                    <span className="ml-1.5 align-middle text-[10px] font-normal text-zinc-600">est.</span>
+                  )}
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <p className="text-[10px] uppercase tracking-wide text-zinc-500">Sleep</p>
-                  <p className="text-sm font-semibold text-white">{oura.sleep?.score ?? '--'}</p>
+                  <p className="text-sm font-semibold text-white">
+                    {oura.sleep?.score ?? '--'}
+                    {estimated && oura.sleep?.score != null && (
+                      <span className="ml-1 text-[10px] font-normal text-zinc-600">est.</span>
+                    )}
+                  </p>
                 </div>
                 <div>
                   <p className="text-[10px] uppercase tracking-wide text-zinc-500">Steps</p>
@@ -1838,7 +1856,7 @@ function WaterSection({
             <WSettingSection title="Wearables">
               <WToggleRow
                 label="Wearable card"
-                hint="Show the Oura Ring / WHOOP card on the Health page."
+                hint="Show the Oura Ring / WHOOP / Fitbit card on the Health page."
                 checked={localProfile.show_oura}
                 onChange={v => updateLocal({ show_oura: v })}
               />

@@ -50,9 +50,9 @@ export async function GET(req: NextRequest) {
     },
     { onConflict: 'user_id,provider' }
   )
-  // One main wearable: connecting WHOOP replaces Oura. Oura's cached history
-  // stays in wearable_data; only the token goes.
-  await db.from('wearable_tokens').delete().eq('user_id', user.id).eq('provider', 'oura')
+  // One main wearable: connecting WHOOP replaces whatever else was connected.
+  // The other provider's cached history stays in wearable_data; only tokens go.
+  await db.from('wearable_tokens').delete().eq('user_id', user.id).neq('provider', 'whoop')
 
   // Initial backfill so the card isn't empty on landing (7 days, not 3).
   const tz = await getUserTimezone(user.id)

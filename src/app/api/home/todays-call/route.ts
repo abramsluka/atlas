@@ -8,7 +8,8 @@ import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
 import { syncOuraToday } from '@/features/health/ouraSync'
 import { syncWhoopToday } from '@/features/health/whoopSync'
-import { getActiveWearableProvider } from '@/features/health/wearableProvider'
+import { syncFitbitToday } from '@/features/health/fitbitSync'
+import { getActiveWearableProvider, WEARABLE_LABEL, type WearableProvider } from '@/features/health/wearableProvider'
 import type { OuraData } from '@/features/health/types'
 import { getProfileBlock } from '@/lib/profile/getProfileBlock'
 
@@ -36,15 +37,15 @@ async function generateCall(
   verdict: Verdict,
   oura: OuraData | null,
   profileBlock: string,
-  provider: 'oura' | 'whoop' = 'oura',
+  provider: WearableProvider = 'oura',
 ): Promise<{ headline: string; bullets: string[] }> {
   const lines: string[] = [`Readiness verdict: ${verdict}`]
 
   // Name the actual device — the model quotes these labels back to the user.
-  const isWhoop = provider === 'whoop'
-  const w = isWhoop ? 'WHOOP' : 'Oura'
+  // For Fitbit the label also says the readiness is an Atlas estimate.
+  const w = WEARABLE_LABEL[provider].name
 
-  if (oura?.readiness?.score != null) lines.push(`${isWhoop ? 'WHOOP recovery score' : 'Oura readiness score'}: ${oura.readiness.score}`)
+  if (oura?.readiness?.score != null) lines.push(`${WEARABLE_LABEL[provider].recovery}: ${oura.readiness.score}`)
   if (oura?.readiness?.temperature_deviation != null) lines.push(`${w} temperature deviation: ${oura.readiness.temperature_deviation.toFixed(2)}°C`)
   if (oura?.sleep?.score != null) lines.push(`${w} sleep score: ${oura.sleep.score}`)
   if (oura?.sleep?.average_hrv != null) lines.push(`${w} HRV: ${Math.round(oura.sleep.average_hrv)}ms`)
@@ -106,8 +107,8 @@ export async function POST(req: Request) {
   // today's data for the active wearable first (both syncs have their own
   // 15-min cache, so this is cheap when already fresh).
   const provider = (await getActiveWearableProvider(db, user.id)) ?? 'oura'
-  const syncToday = provider === 'whoop' ? syncWhoopToday : syncOuraToday
-  await syncToday(db, user.id, today).catch(() => null)
+  if (provider === 'fitbit') await syncFitbitToday(db, user.id, today, tz).catch(() => null)
+  else await (provider === 'whoop' ? syncWhoopToday : syncOuraToday)(db, user.id, today).catch(() => null)
 
   // Fetch the active wearable's data for today
   const ouraRes = await db

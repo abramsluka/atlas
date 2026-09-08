@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import { resolveWearableProvider, WEARABLE_PROVIDERS } from '@/features/health/wearableProvider'
 import { createServiceClient, getPageUser } from '@/lib/supabase/server'
 import HealthClient from './HealthClient'
 import type { OuraData } from '@/features/health/types'
@@ -9,7 +10,22 @@ import { sessionLabel, sessionVolumeLbs, type GymActivityLog } from '@/lib/gymAc
 
 export const dynamic = 'force-dynamic'
 
-export default async function HealthPage() {
+// The wearable OAuth callbacks bounce here with ?error=… on failure. Until now
+// that was silent, which made a friend's first failed connect indistinguishable
+// from "nothing happened". Keep the copy short and honest about which step broke.
+function wearableErrorMessage(code: string | undefined): string | null {
+  if (!code) return null
+  if (code === 'fitbit_not_configured') return 'Fitbit is not set up on this Atlas yet (missing developer app credentials).'
+  if (code === 'token_exchange') return 'The wearable connected but Atlas could not exchange the login for a token. Try again; if it persists, the app credentials may be wrong.'
+  if (code === 'bad_state') return 'That connect attempt expired or was tampered with. Start it again from this page.'
+  if (code === 'no_code') return 'The wearable did not return a login code. Try connecting again.'
+  const m = /^(oura|whoop|fitbit)_(.+)$/.exec(code)
+  if (m) return `${m[1] === 'oura' ? 'Oura' : m[1] === 'whoop' ? 'WHOOP' : 'Fitbit'} refused the connection (${m[2].replace(/_/g, ' ')}).`
+  return null
+}
+
+export default async function HealthPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  const errorMessage = wearableErrorMessage((await searchParams).error)
   const user = await getPageUser()
   if (!user) redirect('/login')
 
@@ -43,11 +59,11 @@ export default async function HealthPage() {
     db.from('health_profile').select('*').eq('user_id', user.id).maybeSingle(),
     // Whichever wearable is connected (Oura or WHOOP) — the callbacks keep this
     // to one row, but limit(2) guards a legacy account holding both.
-    db.from('wearable_tokens').select('provider').eq('user_id', user.id).limit(2),
+    db.from('wearable_tokens').select('provider').eq('user_id', user.id).limit(3),
     // Cached Oura payload fetched unconditionally (PK lookup) so it rides this
     // Promise.all instead of adding a serial round-trip after it; only used
     // when a token row exists.
-    db.from('wearable_data').select('data, provider').eq('user_id', user.id).in('provider', ['oura', 'whoop']).eq('date', today).limit(2),
+    db.from('wearable_data').select('data, provider').eq('user_id', user.id).in('provider', WEARABLE_PROVIDERS).eq('date', today).limit(3),
     // Training + food feed the same energy model the caffeine page uses, so the
     // compact card reads identically to Today's Curve.
     db.from('gym_logs')
@@ -73,10 +89,7 @@ export default async function HealthPage() {
     db.from('user_ingredients').select('*').eq('user_id', user.id).order('last_used_at', { ascending: false }).limit(200),
   ])
 
-  const tokenRows = (ouraTokenResult.data ?? []) as Array<{ provider: string }>
-  const wearableProvider: 'oura' | 'whoop' | null = tokenRows.some((r) => r.provider === 'whoop')
-    ? 'whoop'
-    : tokenRows.some((r) => r.provider === 'oura') ? 'oura' : null
+  const wearableProvider = resolveWearableProvider(ouraTokenResult.data as Array<{ provider: string }> | null)
   const hasOura = wearableProvider != null
 
   // Use the cached wearable data only if a token exists
@@ -112,6 +125,12 @@ export default async function HealthPage() {
       ({ id: f.id, hour: isoToEnergyDayHour(f.taken_at, tz), calories: f.calories!, name: f.item_name ?? 'Meal' }))
 
   return (
+    <>
+      {errorMessage && (
+        <div className="mx-4 mt-4 rounded-xl border border-red-400/25 bg-red-400/[0.07] px-3 py-2.5 text-[12.5px] leading-relaxed text-red-200/90">
+          {errorMessage}
+        </div>
+      )}
     <HealthClient
       workouts={workoutPoints}
       meals={mealPoints}
@@ -127,5 +146,6 @@ export default async function HealthPage() {
       savedMeals={savedMealsResult.data ?? []}
       userIngredients={userIngredientsResult.data ?? []}
     />
+    </>
   )
 }

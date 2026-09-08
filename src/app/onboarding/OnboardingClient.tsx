@@ -849,8 +849,8 @@ export default function OnboardingClient({
           <div>
             <h1 className="text-[22px] font-bold tracking-tight text-white">Wearing anything?</h1>
             <p className="mt-2 text-[13px] leading-relaxed text-zinc-400">
-              If you have an Oura ring or a WHOOP, connecting it pulls in your sleep and recovery so
-              the coach can tell you when to back off. You can only connect one at a time.
+              If you wear an Oura ring, a WHOOP or a Fitbit, connecting it pulls in your sleep and
+              recovery so the coach can tell you when to back off. One at a time.
             </p>
 
             <div className="mt-5 space-y-2">
@@ -871,6 +871,13 @@ export default function OnboardingClient({
                 className="w-full rounded-[10px] border border-white/12 bg-white/[0.03] py-3 text-[13px] font-semibold text-white active:opacity-70"
               >
                 Connect WHOOP
+              </button>
+              <button
+                onClick={() => complete(true, '/api/health/fitbit/connect')}
+                disabled={finishing}
+                className="w-full rounded-[10px] border border-white/12 bg-white/[0.03] py-3 text-[13px] font-semibold text-white active:opacity-70"
+              >
+                Connect Fitbit
               </button>
             </div>
 

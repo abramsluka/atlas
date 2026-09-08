@@ -7,7 +7,7 @@ import { isAiLimitError, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
 import type { OuraData } from '@/features/health/types'
-import { getActiveWearableProvider } from '@/features/health/wearableProvider'
+import { getActiveWearableProvider, WEARABLE_LABEL, WEARABLE_PROVIDERS } from '@/features/health/wearableProvider'
 import { getProfileBlock } from '@/lib/profile/getProfileBlock'
 import { getLiveSession, liveSessionBlock } from '@/lib/liveGymSession'
 
@@ -105,7 +105,7 @@ export async function POST(_request: NextRequest) {
       .limit(14),
 
     // Both providers in one query (no serial await); the active one is picked below.
-    db.from('wearable_data').select('data, provider').eq('user_id', user.id).in('provider', ['oura', 'whoop']).eq('date', today),
+    db.from('wearable_data').select('data, provider').eq('user_id', user.id).in('provider', WEARABLE_PROVIDERS).eq('date', today),
 
     db.from('food_logs')
       .select('item_name, calories, protein_g, carbs_g')
@@ -193,9 +193,8 @@ export async function POST(_request: NextRequest) {
 
   // Name the actual device in the prompt — telling the model "Oura readiness"
   // for a WHOOP wearer is a lie it will repeat back to the user.
-  const isWhoop = wearableProvider === 'whoop'
-  const wName = isWhoop ? 'WHOOP' : 'Oura'
-  const recoveryLabel = isWhoop ? 'WHOOP recovery' : 'Oura readiness'
+  const wName = WEARABLE_LABEL[wearableProvider].name
+  const recoveryLabel = WEARABLE_LABEL[wearableProvider].recovery
 
   const wearableLines: string[] = []
   if (ouraToday) {

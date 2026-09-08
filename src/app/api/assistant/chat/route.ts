@@ -9,7 +9,7 @@ import { describeAction, type AssistantStreamEvent } from '@/features/assistant/
 import { loadAssistantContext, buildAssistantTools, resolveToolCall, ACTION_RULES } from '@/features/assistant/tools'
 import { getProfileBlock } from '@/lib/profile/getProfileBlock'
 import { getLiveSession, liveSessionBlock, type LiveSession } from '@/lib/liveGymSession'
-import { getActiveWearableProvider } from '@/features/health/wearableProvider'
+import { getActiveWearableProvider, WEARABLE_LABEL, WEARABLE_PROVIDERS } from '@/features/health/wearableProvider'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
   const db = createServiceClient()
   const [ctx, wearableRes, profileRes, profileBlock, liveSession, activeProvider] = await Promise.all([
     loadAssistantContext(db, user.id),
-    createServiceClient().from('wearable_data').select('data, provider').eq('user_id', user.id).in('provider', ['oura', 'whoop']).order('date', { ascending: false }).limit(4),
+    createServiceClient().from('wearable_data').select('data, provider').eq('user_id', user.id).in('provider', WEARABLE_PROVIDERS).order('date', { ascending: false }).limit(4),
     createServiceClient().from('health_profile').select('age, weight_lbs, fitness_goal, target_weight_lbs').eq('user_id', user.id).maybeSingle(),
     getProfileBlock(db, user.id, 'assistant'),
     // Server-derived mid-workout state. The client's inGymSession comes from the
@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
     }
   }
   const recoveryParts: string[] = []
-  if (readiness != null) recoveryParts.push(`${wearableProvider === 'whoop' ? 'WHOOP recovery' : 'Oura readiness'} ${readiness}`)
+  if (readiness != null) recoveryParts.push(`${WEARABLE_LABEL[wearableProvider].recovery} ${readiness}`)
   if (sleepScore != null) recoveryParts.push(`sleep score ${sleepScore}`)
   const recoveryLine = recoveryParts.length ? recoveryParts.join(', ') : 'no wearable data synced today'
 
@@ -231,7 +231,7 @@ RULES
 - Every suggestion must be something Atlas can actually act on. Atlas can: log sets, supplements,
   body weight, water, caffeine, food, journal notes, check-in notes; adjust/add/remove/swap
   exercises; propose a workout; generate a program; answer questions from his gym history,
-  recovery (Oura/WHOOP), and food/water/weight logs. Atlas CANNOT: show charts, set reminders,
+  recovery (Oura/WHOOP/Fitbit), and food/water/weight logs. Atlas CANNOT: show charts, set reminders,
   control other apps, or answer general trivia.
 - Ground them in the conversation. Aim for a spread: (1) continue the current task, (2) a related
   next action, (3) an insight question about his data. Collapse the spread when the context

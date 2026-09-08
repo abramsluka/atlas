@@ -43,15 +43,15 @@ export async function GET(req: NextRequest) {
   const startStr = start.toISOString().split('T')[0]
   const endStr = end.toISOString().split('T')[0]
 
-  // WHOOP: no API call here. whoopSync already backfills one normalized
-  // wearable_data row per day, so the chart reads straight from the cache.
+  // WHOOP and Fitbit: no API call here. Their syncs already backfill one
+  // normalized wearable_data row per day, so the chart reads from the cache.
   const provider = await getActiveWearableProvider(db, user.id)
-  if (provider === 'whoop') {
+  if (provider === 'whoop' || provider === 'fitbit') {
     const { data: rows } = await db
       .from('wearable_data')
       .select('date, data')
       .eq('user_id', user.id)
-      .eq('provider', 'whoop')
+      .eq('provider', provider)
       .gte('date', startStr)
       .lte('date', endStr)
       .order('date', { ascending: true })

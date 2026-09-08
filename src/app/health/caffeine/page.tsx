@@ -1,4 +1,5 @@
 import { createServiceClient, getPageUser } from '@/lib/supabase/server'
+import { resolveWearableProvider } from '@/features/health/wearableProvider'
 import { redirect } from 'next/navigation'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toEnergyDate, nextCalendarDate, isoToEnergyDayHour, energyDayUtcWindow } from '@/features/health/energyModel'
@@ -49,7 +50,7 @@ export default async function CaffeinePage() {
 
     // One main wearable at a time (the OAuth callbacks delete the other's
     // token row); a legacy account could still hold both, so prefer whoop.
-    db.from('wearable_tokens').select('provider').eq('user_id', user.id).limit(2),
+    db.from('wearable_tokens').select('provider').eq('user_id', user.id).limit(3),
 
     // Fetch this energy day's gym_logs for volume calculation
     db.from('gym_logs')
@@ -79,10 +80,7 @@ export default async function CaffeinePage() {
     getTypicalWakeHour(db, user.id, tz),
   ])
 
-  const tokenRows = (wearableTokensResult.data ?? []) as Array<{ provider: string }>
-  const provider = tokenRows.some((r) => r.provider === 'whoop') ? 'whoop'
-    : tokenRows.some((r) => r.provider === 'oura') ? 'oura'
-    : null
+  const provider = resolveWearableProvider(wearableTokensResult.data as Array<{ provider: string }> | null)
   const hasOura = provider != null
 
   let ouraData: OuraData | null = null
