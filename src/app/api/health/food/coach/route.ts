@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { getAnthropicForUser } from '@/lib/anthropic'
+import { streamText } from 'ai'
+import { getModelForFeature, suggestedProviderFor } from '@/lib/aiProvider'
 import { noKeyResponse } from '@/lib/userKeys'
 import { isAiLimitError, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
 import { toLocalDate } from '@/lib/date'
@@ -145,8 +146,11 @@ export async function POST(request: NextRequest) {
       .eq('is_summary', true)
   }
 
-  const anthropic = await getAnthropicForUser(user.id)
-  if (!anthropic) return noKeyResponse('anthropic')
+  // Provider-agnostic: honors the user's "coaching" preference (Claude, GPT or
+  // Gemini) and falls back to whichever key they actually hold. 'fast' tier —
+  // this was a Haiku-class call.
+  const resolved = await getModelForFeature(user.id, 'coaching', 'fast')
+  if (!resolved) return noKeyResponse(suggestedProviderFor('coaching'))
 
   const userContent = isSummary
     ? context
@@ -155,9 +159,9 @@ export async function POST(request: NextRequest) {
   const profileBlock = await getProfileBlock(db, user.id, 'food')
   const baseSystem = isSummary ? SUMMARY_SYSTEM : ASK_SYSTEM
 
-  const stream = anthropic.messages.stream({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 150,
+  const result = streamText({
+    model: resolved.model,
+    maxOutputTokens: 150,
     system: profileBlock ? `${baseSystem}\n\n${profileBlock}` : baseSystem,
     messages: [{ role: 'user', content: userContent }],
   })
@@ -167,15 +171,9 @@ export async function POST(request: NextRequest) {
   const readable = new ReadableStream({
     async start(controller) {
       try {
-        for await (const event of stream) {
-          if (
-            event.type === 'content_block_delta' &&
-            event.delta.type === 'text_delta'
-          ) {
-            const text = event.delta.text
-            accumulated += text
-            controller.enqueue(new TextEncoder().encode(text))
-          }
+        for await (const text of result.textStream) {
+          accumulated += text
+          controller.enqueue(new TextEncoder().encode(text))
         }
         await db.from('food_coach_messages').insert({
           user_id: user.id,

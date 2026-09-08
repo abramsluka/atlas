@@ -10,6 +10,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.49",
+    "@ai-sdk/google": "^4.0.64",
+    "@ai-sdk/openai": "^4.0.60",
     "@anthropic-ai/sdk": "^0.97.1",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
@@ -22,6 +25,7 @@
     "@supabase/supabase-js": "^2.106.1",
     "@tanstack/react-query": "^5.100.11",
     "@types/three": "^0.184.1",
+    "ai": "^7.0.93",
     "barcode-detector": "^3.2.0",
     "date-fns": "^4.2.1",
     "date-fns-tz": "^3.2.0",

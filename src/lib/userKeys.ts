@@ -6,7 +6,13 @@ import { decryptSecret, encryptSecret } from '@/lib/secretCrypto'
 // Anthropic/OpenAI key; there is no global fallback). Stored encrypted in
 // user_secrets — RLS with no policies, service client only.
 
-export type KeyProvider = 'anthropic' | 'openai'
+export type KeyProvider = 'anthropic' | 'openai' | 'gemini'
+
+export const PROVIDER_LABEL: Record<KeyProvider, string> = {
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  gemini: 'Google Gemini',
+}
 
 // Thrown by helpers that can't proceed without a key (e.g. transcription deep
 // inside a route). Route catch blocks map it to noKeyResponse(err.provider).
@@ -28,6 +34,21 @@ export async function requireUserApiKey(userId: string, provider: KeyProvider): 
 const COLUMN: Record<KeyProvider, string> = {
   anthropic: 'anthropic_api_key_enc',
   openai: 'openai_api_key_enc',
+  gemini: 'gemini_api_key_enc',
+}
+
+// Which providers this user actually has a key for. Used to gate the provider
+// pickers in Settings and to build a useful "no key" error.
+export async function getUserProviders(userId: string): Promise<KeyProvider[]> {
+  const db = createServiceClient()
+  const { data } = await db
+    .from('user_secrets')
+    .select('anthropic_api_key_enc, openai_api_key_enc, gemini_api_key_enc')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (!data) return []
+  const row = data as Record<string, string | null>
+  return (Object.keys(COLUMN) as KeyProvider[]).filter((p) => !!row[COLUMN[p]])
 }
 
 export async function getUserApiKey(userId: string, provider: KeyProvider): Promise<string | null> {
@@ -68,12 +89,11 @@ export async function deleteUserApiKey(userId: string, provider: KeyProvider): P
 // Consistent "no key configured" response for AI routes. 428 so clients can
 // distinguish it from real failures and point the user at Settings.
 export function noKeyResponse(provider: KeyProvider): NextResponse {
-  const name = provider === 'anthropic' ? 'Anthropic' : 'OpenAI'
   return NextResponse.json(
     {
       code: 'no_api_key',
       provider,
-      error: `Add your ${name} API key in Settings to use this feature.`,
+      error: `Add your ${PROVIDER_LABEL[provider]} API key in Settings to use this feature.`,
     },
     { status: 428 }
   )

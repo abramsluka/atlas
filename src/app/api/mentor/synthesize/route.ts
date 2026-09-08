@@ -3,7 +3,8 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { subDays } from 'date-fns'
 import { formatInTimeZone } from 'date-fns-tz'
 import { getUserTimezone } from '@/lib/getUserTimezone'
-import { getAnthropicForUser } from '@/lib/anthropic'
+import { generateText } from 'ai'
+import { getModelForFeature, suggestedProviderFor } from '@/lib/aiProvider'
 import { noKeyResponse } from '@/lib/userKeys'
 import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
 
@@ -29,8 +30,8 @@ export async function POST() {
   const { data: { user } } = await authClient.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const anthropic = await getAnthropicForUser(user.id)
-  if (!anthropic) return noKeyResponse('anthropic')
+  const resolved = await getModelForFeature(user.id, 'coaching', 'fast')
+  if (!resolved) return noKeyResponse(suggestedProviderFor('coaching'))
 
   const db = createServiceClient()
   const TZ = await getUserTimezone(user.id)
@@ -51,11 +52,11 @@ export async function POST() {
     .map(j => `[${new Date(j.created_at).toDateString()}] ${j.content}`)
     .join('\n')
 
-  let res
+  let synthesisText: string
   try {
-    res = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 300,
+    const generated = await generateText({
+      model: resolved.model,
+      maxOutputTokens: 300,
       messages: [{
         role: 'user',
         content: `You are Atlas. Luka has been capturing thoughts in "The Void" over the past two weeks. Read them all and find the real patterns — not just surface themes, but what they reveal about where his head is at, what he keeps coming back to, what might be worth exploring. Be specific and honest. Write 3-5 sentences, conversational tone, no bullet points. Start directly — no preamble.
@@ -64,12 +65,11 @@ JOTS:
 ${jotList}`,
       }],
     })
+    synthesisText = generated.text.trim()
   } catch (err) {
     if (isAiLimitError(err)) return aiLimitResponse()
     throw err
   }
-
-  const synthesisText = res.content[0].type === 'text' ? res.content[0].text.trim() : ''
 
   const { data: synthesis } = await db
     .from('jot_syntheses')

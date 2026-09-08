@@ -1,9 +1,9 @@
 import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import Anthropic from '@anthropic-ai/sdk'
+import { streamText, type ModelMessage } from 'ai'
 import type { ConversationMessage } from '@/features/journal/types'
 import { transcribeAudio, ensureEntryTranscript, entryContentForAI } from '@/lib/journalAudio'
-import { getAnthropicForUser } from '@/lib/anthropic'
+import { getModelForFeature, suggestedProviderFor } from '@/lib/aiProvider'
 import { noKeyResponse, NoApiKeyError } from '@/lib/userKeys'
 import { isAiLimitError, aiLimitResponse, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
 import { getProfileBlock } from '@/lib/profile/getProfileBlock'
@@ -77,13 +77,13 @@ export async function POST(
   }
 
   const existingConversation: ConversationMessage[] = entry.conversation ?? []
-  const anthropic = await getAnthropicForUser(user.id)
-  if (!anthropic) return noKeyResponse('anthropic')
+  // Provider-agnostic: honors the user's "coaching" preference (Claude, GPT or
+  // Gemini) and falls back to whichever key they actually hold.
+  const resolved = await getModelForFeature(user.id, 'coaching')
+  if (!resolved) return noKeyResponse(suggestedProviderFor('coaching'))
 
   const profileBlock = await getProfileBlock(db, user.id, 'journal')
   const profileSuffix = profileBlock ? `\n\n${profileBlock}` : ''
-
-  let stream: ReturnType<Anthropic['messages']['stream']>
 
   if (makeLonger) {
     const targetIndex = messageIndex ?? -1
@@ -91,9 +91,9 @@ export async function POST(
       ? (entry.ai_reflection ?? '')
       : (existingConversation[targetIndex]?.content ?? '')
 
-    stream = anthropic.messages.stream({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 800,
+    const result = streamText({
+      model: resolved.model,
+      maxOutputTokens: 800,
       system: `You are Atlas, a personal AI coach and journal companion. The user wrote this journal entry on ${entry.date}: "${entry.body}". You are expanding one of your previous responses to give the user more depth.${profileSuffix}`,
       messages: [
         {
@@ -107,15 +107,9 @@ export async function POST(
     const readable = new ReadableStream({
       async start(controller) {
         try {
-          for await (const event of stream) {
-            if (
-              event.type === 'content_block_delta' &&
-              event.delta.type === 'text_delta'
-            ) {
-              const chunk = event.delta.text
-              fullText += chunk
-              controller.enqueue(new TextEncoder().encode(chunk))
-            }
+          for await (const chunk of result.textStream) {
+            fullText += chunk
+            controller.enqueue(new TextEncoder().encode(chunk))
           }
 
           // Persist BEFORE closing the stream so the client's refetch reads fresh data
@@ -169,7 +163,7 @@ export async function POST(
   }
   const entryContent = entryContentForAI(entry.body, entryTranscript)
 
-  const historyMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [
+  const historyMessages: ModelMessage[] = [
     {
       role: 'user',
       content: `Here is my journal entry for ${entry.date}:\n\n${entry.title ? `Title: ${entry.title}\n\n` : ''}${entryContent}`,
@@ -182,9 +176,9 @@ export async function POST(
     { role: 'user', content: message.trim() },
   ]
 
-  stream = anthropic.messages.stream({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 400,
+  const result = streamText({
+    model: resolved.model,
+    maxOutputTokens: 400,
     system: `You are Atlas, a personal AI coach and journal companion. The user wrote a journal entry and you already gave an initial reflection. Now you're continuing the conversation. Be thoughtful, direct, and push them to go deeper. Don't summarize what they said back to them — just engage with it. Keep responses concise but substantive. Never use bullet points or headers.${profileSuffix}`,
     messages: historyMessages,
   })
@@ -193,15 +187,9 @@ export async function POST(
   const readable = new ReadableStream({
     async start(controller) {
       try {
-        for await (const event of stream) {
-          if (
-            event.type === 'content_block_delta' &&
-            event.delta.type === 'text_delta'
-          ) {
-            const chunk = event.delta.text
-            fullText += chunk
-            controller.enqueue(new TextEncoder().encode(chunk))
-          }
+        for await (const chunk of result.textStream) {
+          fullText += chunk
+          controller.enqueue(new TextEncoder().encode(chunk))
         }
 
         // Persist BEFORE closing the stream so the client's refetch reads fresh data

@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getUserApiKey, setUserApiKey, deleteUserApiKey, type KeyProvider } from '@/lib/userKeys'
+import { getUserApiKey, setUserApiKey, deleteUserApiKey, PROVIDER_LABEL, type KeyProvider } from '@/lib/userKeys'
 
 // BYO API keys (multi-user): each user stores their own Anthropic/OpenAI key.
 // The plaintext key is never returned to the client — only set/last4.
 
 function parseProvider(value: unknown): KeyProvider | null {
-  return value === 'anthropic' || value === 'openai' ? value : null
+  return value === 'anthropic' || value === 'openai' || value === 'gemini' ? value : null
 }
 
 async function authedUser() {
@@ -19,12 +19,17 @@ export async function GET() {
   const user = await authedUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const [anthropic, openai] = await Promise.all([
+  const [anthropic, openai, gemini] = await Promise.all([
     getUserApiKey(user.id, 'anthropic'),
     getUserApiKey(user.id, 'openai'),
+    getUserApiKey(user.id, 'gemini'),
   ])
   const summarize = (key: string | null) => ({ set: !!key, last4: key ? key.slice(-4) : null })
-  return NextResponse.json({ anthropic: summarize(anthropic), openai: summarize(openai) })
+  return NextResponse.json({
+    anthropic: summarize(anthropic),
+    openai: summarize(openai),
+    gemini: summarize(gemini),
+  })
 }
 
 // Live-check the key against the provider so a typo'd key fails at save time,
@@ -32,16 +37,27 @@ export async function GET() {
 // save — network hiccups shouldn't lock users out of storing a valid key.
 async function keyIsRejected(provider: KeyProvider, key: string): Promise<boolean> {
   try {
-    const res =
-      provider === 'anthropic'
-        ? await fetch('https://api.anthropic.com/v1/models?limit=1', {
-            headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-            signal: AbortSignal.timeout(5000),
-          })
-        : await fetch('https://api.openai.com/v1/models', {
-            headers: { Authorization: `Bearer ${key}` },
-            signal: AbortSignal.timeout(5000),
-          })
+    const signal = AbortSignal.timeout(5000)
+    let res: Response
+    if (provider === 'anthropic') {
+      res = await fetch('https://api.anthropic.com/v1/models?limit=1', {
+        headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+        signal,
+      })
+    } else if (provider === 'openai') {
+      res = await fetch('https://api.openai.com/v1/models', {
+        headers: { Authorization: `Bearer ${key}` },
+        signal,
+      })
+    } else {
+      // Google passes the key as a query param, and returns 400 (not 401) for a
+      // malformed key, so treat that as a rejection too.
+      res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`,
+        { signal }
+      )
+      return res.status === 400 || res.status === 401 || res.status === 403
+    }
     return res.status === 401 || res.status === 403
   } catch {
     return false
@@ -59,10 +75,15 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'provider and key are required' }, { status: 400 })
   }
 
-  const expectedPrefix = provider === 'anthropic' ? 'sk-ant-' : 'sk-'
+  const PREFIX: Record<KeyProvider, string> = {
+    anthropic: 'sk-ant-',
+    openai: 'sk-',
+    gemini: 'AIza', // Google AI Studio keys
+  }
+  const expectedPrefix = PREFIX[provider]
   if (!key.startsWith(expectedPrefix) || key.length < 20) {
     return NextResponse.json(
-      { error: `That doesn't look like ${provider === 'anthropic' ? 'an Anthropic' : 'an OpenAI'} key (expected ${expectedPrefix}…)` },
+      { error: `That doesn't look like a ${PROVIDER_LABEL[provider]} key (expected ${expectedPrefix}…)` },
       { status: 400 }
     )
   }

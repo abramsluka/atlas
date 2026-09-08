@@ -4,7 +4,8 @@ import { subDays } from 'date-fns'
 import { formatInTimeZone } from 'date-fns-tz'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
-import { getAnthropicForUser } from '@/lib/anthropic'
+import { generateText } from 'ai'
+import { getModelForFeature, suggestedProviderFor } from '@/lib/aiProvider'
 import { noKeyResponse } from '@/lib/userKeys'
 import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
 import { getProfileBlock } from '@/lib/profile/getProfileBlock'
@@ -30,8 +31,8 @@ export async function GET() {
     return NextResponse.json({ prompts: cached.prompts })
   }
 
-  const anthropic = await getAnthropicForUser(user.id)
-  if (!anthropic) return noKeyResponse('anthropic')
+  const resolved = await getModelForFeature(user.id, 'coaching', 'fast')
+  if (!resolved) return noKeyResponse(suggestedProviderFor('coaching'))
 
   const db = createServiceClient()
   const TZ = await getUserTimezone(user.id)
@@ -71,9 +72,9 @@ export async function GET() {
   ].filter(Boolean).join('\n')
 
   try {
-    const res = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 200,
+    const { text: raw } = await generateText({
+      model: resolved.model,
+      maxOutputTokens: 200,
       messages: [{
         role: 'user',
         content: `Generate exactly 4 short, specific suggested questions Luka could ask his AI mentor right now, based on his current data. Make them feel personally relevant to what's actually going on with him, not generic. Return ONLY a JSON array of 4 strings, no other text.
@@ -91,7 +92,7 @@ Rules:
       }],
     })
 
-    const text = res.content[0].type === 'text' ? res.content[0].text.trim() : ''
+    const text = raw.trim()
     const match = text.match(/\[[\s\S]*\]/)
     if (match) {
       const prompts = JSON.parse(match[0]) as string[]

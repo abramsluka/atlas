@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { getAnthropicForUser } from '@/lib/anthropic'
+import { streamText } from 'ai'
+import { getModelForFeature, suggestedProviderFor } from '@/lib/aiProvider'
 import { noKeyResponse } from '@/lib/userKeys'
 import { isAiLimitError, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
 import { subDays } from 'date-fns'
@@ -193,14 +194,16 @@ export async function POST(_request: NextRequest) {
     waterLines.length > 0 ? `Water intake:\n${waterLines.join('\n')}` : 'Water intake: none logged',
   ].filter(Boolean).join('\n')
 
-  const anthropic = await getAnthropicForUser(user.id)
-  if (!anthropic) return noKeyResponse('anthropic')
+  // Provider-agnostic: honors the user's "coaching" preference (Claude, GPT or
+  // Gemini) and falls back to whichever key they actually hold.
+  const resolved = await getModelForFeature(user.id, 'coaching')
+  if (!resolved) return noKeyResponse(suggestedProviderFor('coaching'))
 
   const profileBlock = await getProfileBlock(db, user.id, 'food')
 
-  const stream = anthropic.messages.stream({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 500,
+  const result = streamText({
+    model: resolved.model,
+    maxOutputTokens: 500,
     system: `You are Atlas, a personal health coach. The user is sharing the last 7 days of their wearable, supplement, caffeine, hydration, and training data. Cross-reference everything and give direct, specific, observation-driven feedback in 4–6 sentences. Priorities:
 
 1. Training load vs recovery. If the user trained hard and readiness dropped the next day, name it with the numbers. If they haven't trained in 3+ days and readiness is still low, that's worth noting. Cross-reference training days with the Oura readiness for the following day.
@@ -217,13 +220,8 @@ Be specific with numbers. Don't list — write a tight paragraph. No bullet poin
   const readable = new ReadableStream({
     async start(controller) {
       try {
-        for await (const event of stream) {
-          if (
-            event.type === 'content_block_delta' &&
-            event.delta.type === 'text_delta'
-          ) {
-            controller.enqueue(new TextEncoder().encode(event.delta.text))
-          }
+        for await (const chunk of result.textStream) {
+          controller.enqueue(new TextEncoder().encode(chunk))
         }
       } catch (err) {
         if (isAiLimitError(err)) {

@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { getAnthropicForUser } from '@/lib/anthropic'
+import { generateText } from 'ai'
+import { getModelForFeature, suggestedProviderFor } from '@/lib/aiProvider'
 import { noKeyResponse } from '@/lib/userKeys'
 import { getProfileBlock } from '@/lib/profile/getProfileBlock'
+import { parseJsonLoose } from '@/lib/parseJsonLoose'
 
 export async function POST() {
   const authClient = await createClient()
@@ -74,15 +76,15 @@ export async function POST() {
     `Rep ranges configured across exercises: ${repRangeStr}`,
   ].filter(Boolean).join('\n')
 
-  const anthropic = await getAnthropicForUser(user.id)
-  if (!anthropic) return noKeyResponse('anthropic')
+  const resolved = await getModelForFeature(user.id, 'coaching', 'fast')
+  if (!resolved) return noKeyResponse(suggestedProviderFor('coaching'))
 
   const profileBlock = await getProfileBlock(db, user.id, 'gym')
 
   try {
-    const message = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 150,
+    const { text } = await generateText({
+      model: resolved.model,
+      maxOutputTokens: 150,
       system: `You are an expert strength and conditioning coach. Given a user's training data and their training preset, recommend a single "upgrade_at_reps" number — the rep ceiling at which they should increase weight. Match the ceiling to their training goal: Strength preset → ceiling around 5–6; Hypertrophy preset → ceiling around 10–12; Endurance preset → ceiling around 20–25. Progressions should happen roughly every 2–4 weeks. Return ONLY valid JSON with no markdown: { "reps": number, "reason": string }. The reason must be 1 concise sentence, specific to their data and preset.${profileBlock ? `\n\n${profileBlock}` : ''}`,
       messages: [{
         role: 'user',
@@ -90,8 +92,10 @@ export async function POST() {
       }],
     })
 
-    const text = (message.content[0] as { type: string; text: string }).text.trim()
-    const parsed = JSON.parse(text)
+    // Gemini often fences JSON; a bare JSON.parse would silently fall through
+    // to the default reps below.
+    const parsed = parseJsonLoose<{ reps?: number; reason?: string }>(text)
+    if (!parsed) throw new Error('no JSON in model response')
     return NextResponse.json({ reps: parsed.reps, reason: parsed.reason })
   } catch {
     return NextResponse.json({ reps: 12, reason: 'Default recommendation — not enough data yet.' })

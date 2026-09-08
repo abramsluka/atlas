@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { getAnthropicForUser } from '@/lib/anthropic'
+import { streamText } from 'ai'
+import { getModelForFeature, suggestedProviderFor } from '@/lib/aiProvider'
 import { noKeyResponse } from '@/lib/userKeys'
 import { isAiLimitError, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
 import { subDays } from 'date-fns'
@@ -170,8 +171,10 @@ export async function POST(request: NextRequest) {
 
   const angelSystem = `You are the voice of genuine, overwhelming belief in this person's head. Training means anything — lifting, climbing, running, whatever gets them moving. Your job is to light them up: make them feel the pull of who they're becoming and why it's worth protecting. Talk about momentum, about what consistency does to a person over months, about the version of themselves they're building one session at a time — stronger, leaner, harder to kill. If they've done something recently, use it: name the streak, the comeback, the discipline, and build on that real momentum — it beats empty hype every time. Paint the picture of where this goes if they keep showing up: the body, the confidence, the energy, the person who walks differently. Be real and specific, never hollow or generic. 5–7 sentences of building fire, ending with a charge to go get today's session. No data recitation — pure fire and forward motion.`
 
-  const anthropic = await getAnthropicForUser(user.id)
-  if (!anthropic) return noKeyResponse('anthropic')
+  // Provider-agnostic: honors the user's "coaching" preference (Claude, GPT or
+  // Gemini) and falls back to whichever key they actually hold.
+  const resolved = await getModelForFeature(user.id, 'coaching')
+  if (!resolved) return noKeyResponse(suggestedProviderFor('coaching'))
 
   const profileBlock = await getProfileBlock(db, user.id, 'gym')
 
@@ -190,9 +193,9 @@ MID-SESSION OVERRIDE — READ THIS FIRST. He is IN THE GYM RIGHT NOW, between se
 
   const baseSystem = (mode === 'devil' ? devilSystem : angelSystem) + (liveSession ? midSessionOverride : '')
 
-  const stream = anthropic.messages.stream({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 450,
+  const result = streamText({
+    model: resolved.model,
+    maxOutputTokens: 450,
     system: profileBlock ? `${baseSystem}\n\n${profileBlock}` : baseSystem,
     messages: [
       { role: 'user', content: `My training data:\n\n${context}` },
@@ -202,13 +205,8 @@ MID-SESSION OVERRIDE — READ THIS FIRST. He is IN THE GYM RIGHT NOW, between se
   const readable = new ReadableStream({
     async start(controller) {
       try {
-        for await (const event of stream) {
-          if (
-            event.type === 'content_block_delta' &&
-            event.delta.type === 'text_delta'
-          ) {
-            controller.enqueue(new TextEncoder().encode(event.delta.text))
-          }
+        for await (const chunk of result.textStream) {
+          controller.enqueue(new TextEncoder().encode(chunk))
         }
       } catch (streamErr) {
         console.error('[gym/coach] stream error:', streamErr)

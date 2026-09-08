@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { getAnthropicForUser } from '@/lib/anthropic'
+import { generateText } from 'ai'
+import { getModelForFeature, suggestedProviderFor } from '@/lib/aiProvider'
 import { noKeyResponse } from '@/lib/userKeys'
 import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
 
@@ -132,8 +133,8 @@ export async function POST() {
   }
 
   // ── Claude writes the reasoning sentence ─────────────────────────────────
-  const anthropic = await getAnthropicForUser(user.id)
-  if (!anthropic) return noKeyResponse('anthropic')
+  const resolved = await getModelForFeature(user.id, 'coaching', 'fast')
+  if (!resolved) return noKeyResponse(suggestedProviderFor('coaching'))
 
   const contextLines = [
     `Goal: ${goalLabel}`,
@@ -152,20 +153,21 @@ export async function POST() {
     maintain: 'Maintenance: keep current weight, stay fueled, hit protein to preserve muscle.',
   }
 
-  let reasoningRes
+  let reasoningText: string
   try {
-    reasoningRes = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 120,
+    const generated = await generateText({
+      model: resolved.model,
+      maxOutputTokens: 120,
       system: `You are a nutrition coach. Write 1-2 plain sentences explaining these pre-calculated macro targets to the user. Be specific and mention the goal. ${goalContext[goal]} Do not recalculate anything.`,
       messages: [{ role: 'user', content: contextLines }],
     })
+    reasoningText = generated.text
   } catch (err) {
     if (isAiLimitError(err)) return aiLimitResponse()
     throw err
   }
 
-  const reasoning = (reasoningRes.content[0] as { text: string }).text.trim()
+  const reasoning = reasoningText.trim()
 
   // ── Update linked goal for cut/lean_bulk ─────────────────────────────────
   const now = new Date().toISOString()

@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { getAnthropicForUser } from '@/lib/anthropic'
+import { streamText } from 'ai'
+import { getModelForFeature, suggestedProviderFor } from '@/lib/aiProvider'
 import { noKeyResponse } from '@/lib/userKeys'
 import { isAiLimitError, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
 import { getProfileBlock } from '@/lib/profile/getProfileBlock'
@@ -43,14 +44,17 @@ export async function POST(
     `logged at ${timeLabel}`,
   ].filter(Boolean).join(', ')
 
-  const anthropic = await getAnthropicForUser(user.id)
-  if (!anthropic) return noKeyResponse('anthropic')
+  // Provider-agnostic: honors the user's "coaching" preference (Claude, GPT or
+  // Gemini) and falls back to whichever key they actually hold. 'fast' tier —
+  // this was a Haiku-class call.
+  const resolved = await getModelForFeature(user.id, 'coaching', 'fast')
+  if (!resolved) return noKeyResponse(suggestedProviderFor('coaching'))
 
   const profileBlock = await getProfileBlock(db, user.id, 'food')
 
-  const stream = anthropic.messages.stream({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 100,
+  const result = streamText({
+    model: resolved.model,
+    maxOutputTokens: 100,
     system: profileBlock ? `${SYSTEM_PROMPT}\n\n${profileBlock}` : SYSTEM_PROMPT,
     messages: [{ role: 'user', content: parts }],
   })
@@ -60,15 +64,9 @@ export async function POST(
   const readable = new ReadableStream({
     async start(controller) {
       try {
-        for await (const event of stream) {
-          if (
-            event.type === 'content_block_delta' &&
-            event.delta.type === 'text_delta'
-          ) {
-            const text = event.delta.text
-            accumulated += text
-            controller.enqueue(new TextEncoder().encode(text))
-          }
+        for await (const text of result.textStream) {
+          accumulated += text
+          controller.enqueue(new TextEncoder().encode(text))
         }
         await db
           .from('food_logs')

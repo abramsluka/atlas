@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { getAnthropicForUser } from '@/lib/anthropic'
+import { streamText } from 'ai'
+import { getModelForFeature, suggestedProviderFor } from '@/lib/aiProvider'
 import { noKeyResponse } from '@/lib/userKeys'
 import { isAiLimitError, AI_LIMIT_MESSAGE } from '@/lib/aiErrors'
 import { getUserTimezone } from '@/lib/getUserTimezone'
@@ -289,12 +290,14 @@ Your job: give him a real daily briefing in 4–6 sentences. Be specific to his 
 
 Tone: direct, warm, grounded. Like someone who has been watching your data every day and isn't going to bullshit you. No hollow phrases like "great job keeping up with your habits" — be specific. No bullet points, no headers — just a flowing paragraph or two that feels like a voice memo from someone who knows your life.${profileBlock ? `\n\n${profileBlock}` : ''}`
 
-  const anthropic = await getAnthropicForUser(user.id)
-  if (!anthropic) return noKeyResponse('anthropic')
+  // Provider-agnostic: honors the user's "coaching" preference (Claude, GPT or
+  // Gemini) and falls back to whichever key they actually hold.
+  const resolved = await getModelForFeature(user.id, 'coaching')
+  if (!resolved) return noKeyResponse(suggestedProviderFor('coaching'))
 
-  const stream = anthropic.messages.stream({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 350,
+  const result = streamText({
+    model: resolved.model,
+    maxOutputTokens: 350,
     system: systemPrompt,
     messages: [
       {
@@ -308,11 +311,9 @@ Tone: direct, warm, grounded. Like someone who has been watching your data every
     async start(controller) {
       let fullText = ''
       try {
-        for await (const event of stream) {
-          if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-            fullText += event.delta.text
-            controller.enqueue(new TextEncoder().encode(event.delta.text))
-          }
+        for await (const chunk of result.textStream) {
+          fullText += chunk
+          controller.enqueue(new TextEncoder().encode(chunk))
         }
         if (fullText) {
           await db.from('daily_briefings').upsert(

@@ -2,7 +2,8 @@ import { NextRequest, after } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getOuraForDate, summarizeOuraForDate } from '@/features/health/ouraContext'
 import { ensureEntryTranscript, entryContentForAI } from '@/lib/journalAudio'
-import { getAnthropicForUser } from '@/lib/anthropic'
+import { streamText } from 'ai'
+import { getModelForFeature, suggestedProviderFor } from '@/lib/aiProvider'
 import { getProfileBlock } from '@/lib/profile/getProfileBlock'
 import { ingestJournalEntry } from '@/lib/profile/ingestJournalEntry'
 import { noKeyResponse, NoApiKeyError } from '@/lib/userKeys'
@@ -53,12 +54,14 @@ export async function POST(
 
   const userMessage = `Here is my journal entry for ${entry.date}:\n\n${entry.title ? `Title: ${entry.title}\n\n` : ''}${content}${bodySummary ? `\n\n[Body data for this day: ${bodySummary}]` : ''}`
 
-  const anthropic = await getAnthropicForUser(user.id)
-  if (!anthropic) return noKeyResponse('anthropic')
+  // Provider-agnostic: honors the user's "coaching" preference (Claude, GPT or
+  // Gemini) and falls back to whichever key they actually hold.
+  const resolved = await getModelForFeature(user.id, 'coaching')
+  if (!resolved) return noKeyResponse(suggestedProviderFor('coaching'))
 
-  const stream = anthropic.messages.stream({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 300,
+  const result = streamText({
+    model: resolved.model,
+    maxOutputTokens: 300,
     system: `You are Atlas, a personal AI coach. The user has just written a journal entry. Read it carefully and give a short, honest reflection — 2–3 sentences, no more. You are not a therapist. Sound like a thoughtful friend who actually read what they wrote. Be direct. If something stands out, say so. If body data (sleep, readiness, HRV) is provided and it's notable — low sleep, big HRV drop, low readiness — weave it into your reflection naturally where it's relevant, but don't list it out. End with one open question that might be worth sitting with. Never use bullet points or headers.${profileBlock ? `\n\n${profileBlock}\n\nUse what you know about them to make the reflection specific rather than generic. Don't recite it back at them.` : ''}`,
     messages: [{ role: 'user', content: userMessage }],
   })
@@ -68,15 +71,9 @@ export async function POST(
   const readable = new ReadableStream({
     async start(controller) {
       try {
-        for await (const event of stream) {
-          if (
-            event.type === 'content_block_delta' &&
-            event.delta.type === 'text_delta'
-          ) {
-            const chunk = event.delta.text
-            fullText += chunk
-            controller.enqueue(new TextEncoder().encode(chunk))
-          }
+        for await (const chunk of result.textStream) {
+          fullText += chunk
+          controller.enqueue(new TextEncoder().encode(chunk))
         }
       } catch (err) {
         // A usage/spend cap or rate limit surfaces here mid-stream. Emit the

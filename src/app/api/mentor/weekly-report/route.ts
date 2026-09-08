@@ -6,7 +6,8 @@ import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
 import { getOuraContextRange, summarizeOuraForCoach } from '@/features/health/ouraContext'
 import { fetchGymLogs, groupByDay, sessionLabel, sessionVolumeLbs } from '@/lib/gymActivity'
-import { getAnthropicForUser } from '@/lib/anthropic'
+import { generateText } from 'ai'
+import { getModelForFeature, suggestedProviderFor } from '@/lib/aiProvider'
 import { noKeyResponse } from '@/lib/userKeys'
 import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
 import { getProfileBlock } from '@/lib/profile/getProfileBlock'
@@ -33,8 +34,8 @@ export async function POST() {
   const existing = await db.from('weekly_reports').select('id, report_text, week_of').eq('user_id', user.id).eq('week_of', weekOf).maybeSingle()
   if (existing.data) return NextResponse.json({ report_text: existing.data.report_text, week_of: existing.data.week_of })
 
-  const anthropic = await getAnthropicForUser(user.id)
-  if (!anthropic) return noKeyResponse('anthropic')
+  const resolved = await getModelForFeature(user.id, 'coaching')
+  if (!resolved) return noKeyResponse(suggestedProviderFor('coaching'))
 
   // Fetch all data in parallel
   const [workoutsRes, ouraData, waterRes, weightRes, foodRes, jotsRes, contextRes, prevReportRes, profileBlock] = await Promise.all([
@@ -82,11 +83,11 @@ export async function POST() {
   const prevReport = prevReportRes.data
   const prevReportSection = prevReport ? `\nPREVIOUS WEEK'S REPORT (${prevReport.week_of}):\n${prevReport.report_text.slice(0, 500)}...` : ''
 
-  let reportRes
+  let reportText: string
   try {
-    reportRes = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1200,
+    const generated = await generateText({
+      model: resolved.model,
+      maxOutputTokens: 1200,
       system: `You are Atlas. Generate Luka's weekly life report for the week ending ${today}. This is a real document he will read and keep. Be specific, use actual numbers, and give him genuine insight — not a summary of what happened, but what it means. Structure it exactly as shown with these sections using markdown bold headers: **The Week in Numbers**, **What Went Well**, **What to Watch**, **Goal Check-In**, **Focus for Next Week**.`,
       messages: [{
         role: 'user',
@@ -115,12 +116,11 @@ ${jotsSummary}
 ${prevReportSection}`,
       }],
     })
+    reportText = generated.text
   } catch (err) {
     if (isAiLimitError(err)) return aiLimitResponse()
     throw err
   }
-
-  const reportText = reportRes.content[0].type === 'text' ? reportRes.content[0].text : ''
 
   await db.from('weekly_reports').upsert({ user_id: user.id, week_of: weekOf, report_text: reportText }, { onConflict: 'user_id,week_of' })
 

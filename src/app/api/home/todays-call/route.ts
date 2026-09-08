@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import Anthropic from '@anthropic-ai/sdk'
-import { getAnthropicForUser } from '@/lib/anthropic'
+import { generateText, type LanguageModel } from 'ai'
+import { getModelForFeature, suggestedProviderFor } from '@/lib/aiProvider'
 import { noKeyResponse } from '@/lib/userKeys'
 import { isAiLimitError, aiLimitResponse } from '@/lib/aiErrors'
 import { getUserTimezone } from '@/lib/getUserTimezone'
@@ -32,7 +32,7 @@ function verdictFor(oura: OuraData | null): Verdict | null {
 }
 
 async function generateCall(
-  anthropic: Anthropic,
+  model: LanguageModel,
   verdict: Verdict,
   oura: OuraData | null,
   profileBlock: string,
@@ -61,16 +61,15 @@ Write a Today's Call card:
 Return as JSON: { "headline": "...", "bullets": ["✓ ...", "✓ ...", "✓ ..."] }
 No hedging, no "consider", no "might". Direct statements only.`
 
-  const msg = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 200,
+  const { text: raw } = await generateText({
+    model,
+    maxOutputTokens: 200,
     ...(profileBlock ? { system: profileBlock } : {}),
     messages: [{ role: 'user', content: prompt }],
   })
 
-  const raw = msg.content[0].type === 'text' ? msg.content[0].text : ''
   const jsonMatch = raw.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) throw new Error('No JSON in Claude response')
+  if (!jsonMatch) throw new Error('No JSON in model response')
   const parsed = JSON.parse(jsonMatch[0])
   return {
     headline: String(parsed.headline ?? '').trim(),
@@ -133,14 +132,14 @@ export async function POST(req: Request) {
 
   if (!verdict) return NextResponse.json({ noData: true })
 
-  const anthropic = await getAnthropicForUser(user.id)
-  if (!anthropic) return noKeyResponse('anthropic')
+  const resolved = await getModelForFeature(user.id, 'coaching')
+  if (!resolved) return noKeyResponse(suggestedProviderFor('coaching'))
 
   const profileBlock = await getProfileBlock(db, user.id, 'home')
 
   let call: { headline: string; bullets: string[] }
   try {
-    call = await generateCall(anthropic, verdict, oura, profileBlock, provider)
+    call = await generateCall(resolved.model, verdict, oura, profileBlock, provider)
   } catch (err) {
     if (isAiLimitError(err)) return aiLimitResponse()
     throw err

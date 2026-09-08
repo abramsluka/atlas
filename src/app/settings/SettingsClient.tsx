@@ -4,9 +4,15 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
-type KeyProvider = 'anthropic' | 'openai'
+type KeyProvider = 'anthropic' | 'openai' | 'gemini'
 type KeyStatus = { set: boolean; last4: string | null }
-type KeysResponse = { anthropic: KeyStatus; openai: KeyStatus }
+type KeysResponse = { anthropic: KeyStatus; openai: KeyStatus; gemini: KeyStatus }
+type AiCategory = 'coaching' | 'analysis' | 'voice'
+type PrefsResponse = {
+  prefs: Partial<Record<AiCategory, KeyProvider>>
+  owned: KeyProvider[]
+  allowed: Record<AiCategory, KeyProvider[]>
+}
 
 const PROVIDERS: Array<{
   id: KeyProvider
@@ -32,7 +38,21 @@ const PROVIDERS: Array<{
     consoleLabel: 'platform.openai.com',
     placeholder: 'sk-…',
   },
+  {
+    id: 'gemini',
+    name: 'Google Gemini',
+    powers: 'Can run the coaching instead of Anthropic. Has a free tier — no credit card needed.',
+    consoleUrl: 'https://aistudio.google.com/app/apikey',
+    consoleLabel: 'aistudio.google.com',
+    placeholder: 'AIza…',
+  },
 ]
+
+const PROVIDER_NAME: Record<KeyProvider, string> = {
+  anthropic: 'Claude',
+  openai: 'GPT',
+  gemini: 'Gemini',
+}
 
 function KeyCard({ provider, status }: { provider: (typeof PROVIDERS)[number]; status: KeyStatus | undefined }) {
   const qc = useQueryClient()
@@ -152,6 +172,83 @@ function KeyCard({ provider, status }: { provider: (typeof PROVIDERS)[number]; s
   )
 }
 
+// Which provider runs which kind of work. Phase 1 wires 'coaching' only —
+// photos and voice still run on their existing fixed paths.
+const CATEGORY_COPY: Record<AiCategory, { title: string; blurb: string }> = {
+  coaching: {
+    title: 'Coaching & chat',
+    blurb: 'Daily briefing, gym and health coaches, journal reflections.',
+  },
+  analysis: { title: 'Photos & analysis', blurb: 'Food photos and receipt scanning.' },
+  voice: { title: 'Voice', blurb: 'Voice notes and journal audio.' },
+}
+
+function ProviderPicker() {
+  const qc = useQueryClient()
+  const [error, setError] = useState<string | null>(null)
+  const { data } = useQuery<PrefsResponse>({
+    queryKey: ['ai-prefs'],
+    queryFn: async () => (await fetch('/api/user/ai-prefs')).json(),
+    staleTime: 30_000,
+  })
+
+  const save = useMutation({
+    mutationFn: async (v: { category: AiCategory; provider: KeyProvider }) => {
+      const res = await fetch('/api/user/ai-prefs', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(v),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Could not save')
+      return json
+    },
+    onSuccess: () => { setError(null); qc.invalidateQueries({ queryKey: ['ai-prefs'] }) },
+    onError: (e: Error) => setError(e.message),
+  })
+
+  if (!data) return null
+  const owned = data.owned ?? []
+  const category: AiCategory = 'coaching'
+  const allowed = data.allowed?.[category] ?? []
+  const current = data.prefs?.[category] ?? (owned.includes('anthropic') ? 'anthropic' : owned[0])
+
+  return (
+    <div className="cosmic-card p-4">
+      <div className="text-[13px] font-semibold text-white">{CATEGORY_COPY[category].title}</div>
+      <p className="mt-1 text-[11.5px] leading-relaxed text-zinc-500">{CATEGORY_COPY[category].blurb}</p>
+
+      {owned.length === 0 ? (
+        <p className="mt-2.5 text-[11.5px] text-zinc-600">Add a key below to choose a provider.</p>
+      ) : (
+        <div className="mt-2.5 flex gap-1.5">
+          {allowed.map((p) => {
+            const has = owned.includes(p)
+            const active = current === p
+            return (
+              <button
+                key={p}
+                disabled={!has || save.isPending}
+                onClick={() => save.mutate({ category, provider: p })}
+                title={has ? undefined : `Add your ${p} key first`}
+                className="rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-colors disabled:opacity-30"
+                style={
+                  active
+                    ? { color: '#eafff2', background: 'rgba(74,222,128,0.13)', boxShadow: 'inset 0 0 0 1px rgba(74,222,128,0.32)' }
+                    : { color: 'rgba(255,255,255,0.5)', background: 'rgba(255,255,255,0.04)' }
+                }
+              >
+                {PROVIDER_NAME[p]}
+              </button>
+            )
+          })}
+        </div>
+      )}
+      {error && <p className="mt-1.5 text-[11px] text-red-400/90">{error}</p>}
+    </div>
+  )
+}
+
 export default function SettingsClient({ email }: { email: string }) {
   const { data: keys } = useQuery<KeysResponse>({
     queryKey: ['user-keys'],
@@ -168,11 +265,16 @@ export default function SettingsClient({ email }: { email: string }) {
       <p className="mt-0.5 text-[11.5px] text-zinc-500">{email}</p>
 
       <h2 className="mt-6 mb-2 font-mono text-[9.5px] font-extrabold tracking-[0.16em] uppercase text-zinc-500">
+        Which AI
+      </h2>
+      <ProviderPicker />
+
+      <h2 className="mt-6 mb-2 font-mono text-[9.5px] font-extrabold tracking-[0.16em] uppercase text-zinc-500">
         API keys
       </h2>
       <p className="mb-3 text-[11.5px] text-zinc-500 leading-relaxed">
         Atlas runs its AI on your own keys, billed to your own accounts. Nothing here is shared
-        between users.
+        between users. <span className="text-zinc-400">No credit card? Gemini has a free tier.</span>
       </p>
       <div className="space-y-3">
         {PROVIDERS.map((p) => (

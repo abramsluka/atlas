@@ -1,4 +1,5 @@
-import { getAnthropicForUser } from '@/lib/anthropic'
+import { generateText } from 'ai'
+import { getModelForFeature } from '@/lib/aiProvider'
 
 const PROMPTS = {
   // Reflective entries: theme or feeling
@@ -10,23 +11,22 @@ const PROMPTS = {
 } as const
 
 // Short title for untitled journal entries. Returns null on any failure — never
-// block saves on this (including when the user has no Anthropic key yet).
+// block saves on this (including when the user has no AI key yet).
 export async function generateTitle(
   userId: string,
   content: string,
   style: keyof typeof PROMPTS = 'entry'
 ): Promise<string | null> {
   try {
-    const anthropic = await getAnthropicForUser(userId)
-    if (!anthropic) return null
-    const res = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 24,
+    const resolved = await getModelForFeature(userId, 'coaching', 'fast')
+    if (!resolved) return null
+    const { text } = await generateText({
+      model: resolved.model,
+      maxOutputTokens: 24,
       system: PROMPTS[style],
       messages: [{ role: 'user', content: content.slice(0, 4000) }],
     })
-    const block = res.content[0]
-    const title = block?.type === 'text' ? block.text.trim().replace(/^["']|["']$/g, '') : null
+    const title = text ? text.trim().replace(/^["']|["']$/g, '') : null
     return title && title.length <= 80 ? title : null
   } catch (err) {
     console.error('[journal] title generation failed:', err)
