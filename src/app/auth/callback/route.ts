@@ -27,5 +27,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL('/login?error=not-invited', request.url))
   }
 
-  return NextResponse.redirect(new URL('/', request.url))
+  // Honor a same-origin, path-only ?next= so the password-recovery link can land
+  // on /auth/reset instead of the dashboard. Anything absolute or
+  // protocol-relative is ignored (open-redirect guard).
+  const next = searchParams.get('next')
+  const dest = next && next.startsWith('/') && !next.startsWith('//') ? next : '/'
+  return NextResponse.redirect(new URL(dest, request.url))
 }

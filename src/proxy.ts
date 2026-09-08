@@ -38,7 +38,8 @@ export async function proxy(request: NextRequest) {
   // Public surfaces that must never bounce to /login: the MCP endpoint does its
   // own Bearer auth (and must 401, not 307), OAuth + discovery are pre-auth,
   // /demo/<token> is the shareable demo auto-login (it checks its own secret).
-  const PUBLIC_PREFIXES = ['/api/mcp', '/api/oauth', '/.well-known', '/demo']
+  // /join is the invite signup (it checks its own token); /api/join is its POST.
+  const PUBLIC_PREFIXES = ['/api/mcp', '/api/oauth', '/.well-known', '/demo', '/join', '/api/join']
 
   if (
     !user &&

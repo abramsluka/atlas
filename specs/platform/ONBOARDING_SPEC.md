@@ -102,11 +102,26 @@ zero access to any other user's data under RLS + audited per-user scoping, and
 no usable AI without the attacker supplying their own paid API key), the extra
 friction is not worth it for a link texted to known people.
 
-Revisit if the link is ever posted somewhere semi-public (a club Slack, a group
-chat Luka does not control). At that point add a short human-friendly code on
-the form — and note that a short code makes the per-IP limiting genuinely
-load-bearing, because a guessable-length secret is brute-forceable in a way a
-32-char token is not.
+#### Follow-up: typed invite code (build only when triggered)
+
+**Trigger condition:** the link is going somewhere semi-public — a club Slack, a
+group chat Luka does not control, a bio link, anything not a direct message to a
+known person. Until then this is friction with no matching gain.
+
+**When triggered, the ~20 minute add:**
+- Public `/join` page (no token in the URL at all), with a code field.
+- A short human-friendly code, e.g. `ATLAS-7K42`, stored as `INVITE_CODE`.
+- **Rate limiting becomes load-bearing here**, not optional: a 10-character
+  friendly code has orders of magnitude less entropy than a 32-char token and is
+  genuinely brute-forceable. Needs a DB-backed attempt counter (per IP and
+  global), not the in-memory limiter, for the same per-instance reason above.
+- Constant-time compare, generic failure message, and a lockout after N failed
+  attempts.
+- Keep the DB signup cap regardless. It stays the real ceiling.
+
+Do not ship the friendly code without the DB-backed attempt counter. A short
+secret with only in-memory rate limiting is weaker than the URL token it
+replaced, which is the failure mode worth avoiding.
 
 ---
 
