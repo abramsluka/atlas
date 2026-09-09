@@ -99,7 +99,7 @@ range, so cost does not grow with the window:
 
 | OuraData field | Fitbit source | Endpoint |
 |---|---|---|
-| sleep.score | **derived** (see below) | — |
+| sleep.score | **null on purpose** (see below) | — |
 | sleep.total_sleep_duration (s) | `minutesAsleep` × 60 | `/1.2/user/-/sleep/date/{start}/{end}.json` |
 | sleep.deep_sleep_duration (s) | `levels.summary.deep.minutes` × 60 (stages logs only) | same |
 | sleep.rem_sleep_duration (s) | `levels.summary.rem.minutes` × 60 (stages logs only) | same |
@@ -123,7 +123,37 @@ Extra, stored under `data.fitbit`:
 `{ scores_estimated: true, log_type: 'stages' | 'classic' | null, hrv_baseline, rhr_baseline }`.
 `scores_estimated` is what the UI reads to label the two headline numbers.
 
-## Derived scores — the part that needs to be honest
+## Update 2026-09-09: the sleep score was removed
+
+The first real user reported the sleep score as "wrong" within a day of
+connecting. It was not wrong in the sense of a bug — the pipeline was verified
+field-by-field against Google's raw response and every value matched — but it
+disagreed with the number in his Fitbit app, which is the only comparison a
+user can actually make.
+
+Re-verified at that point against the live v4 discovery document rather than
+the prose docs: no schema or property anywhere in the 221KB contract contains
+"score", "readiness" or "quality". `SleepSummary` is exactly `minutesAsleep`,
+`minutesAwake`, `minutesInSleepPeriod`, `minutesToFallAsleep`,
+`minutesAfterWakeUp`, `stagesSummary`. Release notes through 2026-08-17 add no
+score and announce none. Fitbit's own docs: "Sleep score is not supported
+through the Web API."
+
+So Fitbit's score is unobtainable and ours could never equal it. **`sleep.score`
+is now published as null for Fitbit and the card shows hours slept in that
+slot** — a fact the user can verify against their own phone.
+
+**Readiness is still derived** and still labelled an Atlas estimate. The
+difference that matters: Fitbit exposes no readiness anywhere either (Daily
+Readiness is Premium and app-only), so there is no competing number for it to
+contradict. The internal sleep-quality figure below still feeds it, it is just
+never displayed as a score of its own.
+
+Also fixed in the same pass: the 15-minute sync cache keyed off
+`sleep.score != null`, which would have re-synced (six API calls) on every
+single request once the score became null. It keys off `score_day` now.
+
+## Derived scores — the original reasoning, kept for the record
 
 WHOOP v1 died because the card showed dashes for the headline numbers. If
 Fitbit's sleep and readiness are simply null, the same thing happens: the two

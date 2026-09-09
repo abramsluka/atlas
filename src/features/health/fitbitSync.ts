@@ -11,10 +11,20 @@ type DbClient = ReturnType<typeof import('@/lib/supabase/server').createServiceC
 // (see specs/health/FITBIT_INTEGRATION_SPEC.md).
 //
 // Neither the old nor the new API exposes a sleep score or a readiness score
-// (both are app/Premium only). Leaving them null would blank the two headline
-// numbers on the card forever, which is how the first WHOOP integration died.
-// So both are derived here from the same inputs the vendors' own composites
-// use, with the formulas below, and flagged `scores_estimated` so the UI says so.
+// (verified against the live v4 discovery document: no schema or property
+// anywhere contains "score" or "readiness"; both are app/Premium only).
+//
+// READINESS is derived here and labelled as an Atlas estimate. There is no
+// Fitbit readiness exposed anywhere for it to disagree with, so it is a useful
+// composite rather than a contradiction.
+//
+// SLEEP SCORE is deliberately NOT published. It was, briefly, and it was the
+// first thing a real user reported as "wrong": Fitbit's app shows its own
+// proprietary sleep score, ours could never equal it, and a number that
+// disagrees with the number on their wrist is worse than no number. The card
+// shows hours slept instead, which is a fact they can verify. The internal
+// quality figure below still feeds readiness, it is just never displayed as a
+// score of its own.
 
 const HEALTH_API = 'https://health.googleapis.com/v4/users/me/dataTypes'
 export const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token'
@@ -183,9 +193,11 @@ async function rollupDaily(dataType: string, start: string, endExclusive: string
 
 // ── derived scores ──────────────────────────────────────────────────────────
 /**
- * Sleep score, 0–100. Stages sleeps weight duration 50 / efficiency 25 / depth
- * 25, where 8h asleep and 45% of sleep in deep+REM each earn full credit.
- * Classic sleeps (older trackers, no stages) split duration 65 / efficiency 35.
+ * Internal sleep-quality figure, 0–100, used ONLY as the base for readiness.
+ * Never stored as `sleep.score` and never shown: see the note at the top of
+ * this file. Stages sleeps weight duration 50 / efficiency 25 / depth 25, where
+ * 8h asleep and 45% of sleep in deep+REM each earn full credit. Classic sleeps
+ * (older trackers, no stages) split duration 65 / efficiency 35.
  */
 export function deriveSleepScore(s: SleepFacts): number | null {
   const asleep = s.minutesAsleep
@@ -274,7 +286,9 @@ export async function syncFitbitToday(
   if (!force && cached) {
     const age = Date.now() - new Date(cached.fetched_at).getTime()
     const d = cached.data as OuraData
-    if (age < 15 * 60 * 1000 && d?.sleep?.score != null && d.sleep.score_day === today) return d
+    // score_day, not score: sleep.score is intentionally null for Fitbit, so
+    // keying the cache off it would re-sync (six API calls) on every request.
+    if (age < 15 * 60 * 1000 && d?.sleep?.score_day === today) return d
   }
 
   const { data: tokenRow } = await db
@@ -382,13 +396,16 @@ export async function syncFitbitToday(
     const facts = s ? sleepFacts(s) : null
     const hrvBaseline = baselineBefore(hrvByDay, day)
     const rhrBaseline = baselineBefore(rhrByDay, day)
-    const sleepScore = facts ? deriveSleepScore(facts) : null
+    // Feeds readiness only — never published as sleep.score.
+    const sleepQuality = facts ? deriveSleepScore(facts) : null
     const efficiency = facts?.minutesInBed && facts.minutesInBed > 0
       ? Math.round((100 * facts.minutesAsleep) / facts.minutesInBed) : null
 
     const data: OuraData = {
       sleep: {
-        score: sleepScore,
+        // Deliberately null: Fitbit's own sleep score is not exposed by any
+        // API, so any number here would contradict the one in their app.
+        score: null,
         score_day: s ? day : null,
         detail_day: s ? day : null,
         total_sleep_duration: facts ? facts.minutesAsleep * 60 : null,
@@ -401,7 +418,7 @@ export async function syncFitbitToday(
         bedtime_end: s ? localIso(s.interval.endTime, s.interval.endUtcOffset, tz) : null,
       },
       readiness: {
-        score: deriveReadiness({ sleepScore, hrv: hrvV, hrvBaseline, rhr: rhrV, rhrBaseline, tempDelta: tempV }),
+        score: deriveReadiness({ sleepScore: sleepQuality, hrv: hrvV, hrvBaseline, rhr: rhrV, rhrBaseline, tempDelta: tempV }),
         temperature_deviation: tempV,
       },
       activity: {

@@ -103,6 +103,16 @@ function fmtInt(n: number | null | undefined): string {
   return n == null ? '--' : Math.round(n).toLocaleString('en-US')
 }
 
+// "6h 55m" from seconds. Shown in the Sleep slot for providers that expose no
+// sleep score (Fitbit), where a derived number would contradict the one in the
+// user's own app.
+function fmtSleepDuration(seconds: number | null | undefined): string | null {
+  if (seconds == null || seconds <= 0) return null
+  const h = Math.floor(seconds / 3600)
+  const m = Math.round((seconds % 3600) / 60)
+  return h > 0 ? `${h}h ${m}m` : `${m}m`
+}
+
 function relTimeShort(iso: string | null | undefined): string {
   if (!iso) return ''
   const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
@@ -271,10 +281,7 @@ function WearablesSection({
                 <div>
                   <p className="text-[10px] uppercase tracking-wide text-zinc-500">Sleep</p>
                   <p className="text-sm font-semibold text-white">
-                    {oura.sleep?.score ?? '--'}
-                    {estimated && oura.sleep?.score != null && (
-                      <span className="ml-1 text-[10px] font-normal text-zinc-600">est.</span>
-                    )}
+                    {oura.sleep?.score ?? fmtSleepDuration(oura.sleep?.total_sleep_duration) ?? '--'}
                   </p>
                 </div>
                 <div>

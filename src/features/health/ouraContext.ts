@@ -77,7 +77,7 @@ export function summarizeOuraForCoach(rows: CacheRow[]): string | null {
   const tempDev = s.readiness?.temperature_deviation
 
   lines.push(
-    `Most recent (${latest.date}): readiness ${readiness ?? '?'}, sleep score ${sleepScore ?? '?'}, slept ${formatSleep(sleepDur)}, HRV ${hrv != null ? Math.round(hrv) + 'ms' : '?'}, deep ${formatSleep(deep)}, REM ${formatSleep(rem)}, latency ${latency != null ? Math.round(latency / 60) + 'min' : '?'}, RHR ${rhr != null ? Math.round(rhr) + 'bpm' : '?'}${tempDev != null ? `, temp deviation ${tempDev >= 0 ? '+' : ''}${tempDev.toFixed(2)}°C` : ''}`,
+    `Most recent (${latest.date}): readiness ${readiness ?? '?'}${sleepScore != null ? `, sleep score ${sleepScore}` : ''}, slept ${formatSleep(sleepDur)}, HRV ${hrv != null ? Math.round(hrv) + 'ms' : '?'}, deep ${formatSleep(deep)}, REM ${formatSleep(rem)}, latency ${latency != null ? Math.round(latency / 60) + 'min' : '?'}, RHR ${rhr != null ? Math.round(rhr) + 'bpm' : '?'}${tempDev != null ? `, temp deviation ${tempDev >= 0 ? '+' : ''}${tempDev.toFixed(2)}°C` : ''}`,
   )
 
   // 30-day baseline vs 7-day recent comparison
@@ -97,7 +97,7 @@ export function summarizeOuraForCoach(rows: CacheRow[]): string | null {
     const sleepScoreAvg = avg(rows.map(r => r.data?.sleep?.score))
     const hrvAvg = avg(rows.map(r => r.data?.sleep?.average_hrv))
     lines.push(
-      `${rows.length}-day avg: readiness ${readinessAvg != null ? Math.round(readinessAvg) : '?'}, sleep score ${sleepScoreAvg != null ? Math.round(sleepScoreAvg) : '?'}, HRV ${hrvAvg != null ? Math.round(hrvAvg) + 'ms' : '?'}`,
+      `${rows.length}-day avg: readiness ${readinessAvg != null ? Math.round(readinessAvg) : '?'}${sleepScoreAvg != null ? `, sleep score ${Math.round(sleepScoreAvg)}` : ''}, HRV ${hrvAvg != null ? Math.round(hrvAvg) + 'ms' : '?'}`,
     )
   }
 
@@ -139,5 +139,5 @@ export function summarizeOuraForDate(data: OuraData | null): string | null {
   const dur = data.sleep?.total_sleep_duration
   const hrv = data.sleep?.average_hrv
   if (r == null && s == null && dur == null && hrv == null) return null
-  return `readiness ${r ?? '?'}, sleep score ${s ?? '?'}, slept ${formatSleep(dur)}, HRV ${hrv != null ? Math.round(hrv) + 'ms' : '?'}`
+  return `readiness ${r ?? '?'}${s != null ? `, sleep score ${s}` : ''}, slept ${formatSleep(dur)}, HRV ${hrv != null ? Math.round(hrv) + 'ms' : '?'}`
 }

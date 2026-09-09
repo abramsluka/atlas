@@ -48,6 +48,13 @@ async function generateCall(
   if (oura?.readiness?.score != null) lines.push(`${WEARABLE_LABEL[provider].recovery}: ${oura.readiness.score}`)
   if (oura?.readiness?.temperature_deviation != null) lines.push(`${w} temperature deviation: ${oura.readiness.temperature_deviation.toFixed(2)}°C`)
   if (oura?.sleep?.score != null) lines.push(`${w} sleep score: ${oura.sleep.score}`)
+  else if (oura?.sleep?.total_sleep_duration != null) {
+    // Fitbit publishes no sleep score, so the model gets the duration instead
+    // of nothing. Never invent a score here — it would contradict their app.
+    const h = Math.floor(oura.sleep.total_sleep_duration / 3600)
+    const m = Math.floor((oura.sleep.total_sleep_duration % 3600) / 60)
+    lines.push(`${w} sleep duration: ${h}h ${m}m (this device reports no sleep score)`)
+  }
   if (oura?.sleep?.average_hrv != null) lines.push(`${w} HRV: ${Math.round(oura.sleep.average_hrv)}ms`)
   if (oura?.sleep?.resting_heart_rate != null) lines.push(`${w} RHR: ${Math.round(oura.sleep.resting_heart_rate)}bpm`)
   if (oura?.activity?.steps != null) lines.push(`${w} steps yesterday: ${oura.activity.steps.toLocaleString()}`)
