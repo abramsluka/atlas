@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { WEARABLE_PROVIDERS } from '@/features/health/wearableProvider'
 import { subDays } from 'date-fns'
 import { formatInTimeZone } from 'date-fns-tz'
 import type { OuraData } from '@/features/health/types'
@@ -98,7 +99,7 @@ export async function computeCorrelations(
   const sinceIso = subDays(new Date(), 90).toISOString()
 
   const [ouraRes, gymRes, moodRes, waterRes, caffeineRes, appleRes, cardioRes] = await Promise.all([
-    db.from('wearable_data').select('date, data').eq('user_id', userId).eq('provider', 'oura').gte('date', since).order('date'),
+    db.from('wearable_data').select('date, data').eq('user_id', userId).in('provider', WEARABLE_PROVIDERS).gte('date', since).order('date'),
     db.from('gym_logs').select('logged_at, weight, reps').eq('user_id', userId).gte('logged_at', sinceIso),
     db.from('journal_entries').select('date, mood').eq('user_id', userId).not('mood', 'is', null).gte('date', since),
     db.from('water_logs').select('date, amount_oz').eq('user_id', userId).gte('date', since),

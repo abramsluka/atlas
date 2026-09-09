@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { WEARABLE_PROVIDERS } from '@/features/health/wearableProvider'
 import { subDays } from 'date-fns'
 import { formatInTimeZone } from 'date-fns-tz'
 
@@ -96,7 +97,7 @@ export async function computePatterns(
           .from('wearable_data')
           .select('date, provider, data')
           .eq('user_id', userId)
-          .eq('provider', 'oura')
+          .in('provider', WEARABLE_PROVIDERS)
           .gte('date', sixtyDaysAgo)
           .order('date', { ascending: true }),
 

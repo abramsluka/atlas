@@ -32,37 +32,54 @@ export async function GET() {
   })
 }
 
-// Live-check the key against the provider so a typo'd key fails at save time,
-// not silently at first coach call. Only an explicit auth rejection blocks the
-// save — network hiccups shouldn't lock users out of storing a valid key.
-async function keyIsRejected(provider: KeyProvider, key: string): Promise<boolean> {
+// Live-check the key against the provider so a bad key fails at save time, not
+// silently at the first coach call. Returns null when the key is usable, or the
+// message to show when it is not. A network hiccup returns null — a blip
+// shouldn't lock someone out of saving a valid key.
+//
+// This checks USABILITY, not just authentication. An Anthropic key that isn't
+// scoped to a workspace authenticates fine and then 400s on every real call,
+// which is exactly how a user ends up with a green checkmark in Settings and
+// "Mentor hit an error" everywhere else.
+async function keyRejectionReason(provider: KeyProvider, key: string): Promise<string | null> {
   try {
     const signal = AbortSignal.timeout(5000)
-    let res: Response
     if (provider === 'anthropic') {
-      res = await fetch('https://api.anthropic.com/v1/models?limit=1', {
+      const res = await fetch('https://api.anthropic.com/v1/models?limit=1', {
         headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
         signal,
       })
-    } else if (provider === 'openai') {
-      res = await fetch('https://api.openai.com/v1/models', {
+      if (res.status === 401 || res.status === 403) return AUTH_REJECTED
+      if (res.status === 400) {
+        const body = await res.json().catch(() => null)
+        const msg = String(body?.error?.message ?? '')
+        if (/not scoped to a workspace/i.test(msg)) {
+          return 'That Anthropic key is not tied to a workspace, so Anthropic rejects every request made with it. In the Anthropic console go to API keys, create a new key, and pick a Workspace (not the organization) when it asks.'
+        }
+        return `Anthropic rejected this key: ${msg || 'unusable key'}`
+      }
+      return null
+    }
+    if (provider === 'openai') {
+      const res = await fetch('https://api.openai.com/v1/models', {
         headers: { Authorization: `Bearer ${key}` },
         signal,
       })
-    } else {
-      // Google passes the key as a query param, and returns 400 (not 401) for a
-      // malformed key, so treat that as a rejection too.
-      res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`,
-        { signal }
-      )
-      return res.status === 400 || res.status === 401 || res.status === 403
+      return res.status === 401 || res.status === 403 ? AUTH_REJECTED : null
     }
-    return res.status === 401 || res.status === 403
+    // Google passes the key as a query param, and returns 400 (not 401) for a
+    // malformed key, so treat that as a rejection too.
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`,
+      { signal }
+    )
+    return res.status === 400 || res.status === 401 || res.status === 403 ? AUTH_REJECTED : null
   } catch {
-    return false
+    return null
   }
 }
+
+const AUTH_REJECTED = 'The provider rejected this key — double-check it and try again'
 
 export async function PUT(req: NextRequest) {
   const user = await authedUser()
@@ -88,9 +105,8 @@ export async function PUT(req: NextRequest) {
     )
   }
 
-  if (await keyIsRejected(provider, key)) {
-    return NextResponse.json({ error: 'The provider rejected this key — double-check it and try again' }, { status: 400 })
-  }
+  const rejection = await keyRejectionReason(provider, key)
+  if (rejection) return NextResponse.json({ error: rejection }, { status: 400 })
 
   await setUserApiKey(user.id, provider, key)
   return NextResponse.json({ ok: true, last4: key.slice(-4) })

@@ -1,4 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/server'
+import { WEARABLE_PROVIDERS, resolveWearableProvider } from '@/features/health/wearableProvider'
 import { subDays } from 'date-fns'
 import type { OuraData } from '@/features/health/types'
 import { fetchGymLogs, sessionLabel, groupByDay } from '@/lib/gymActivity'
@@ -36,7 +37,7 @@ export async function computeBentoStats(db: DB, userId: string, today: string): 
       .select('data, provider')
       .eq('user_id', userId)
       .eq('date', today)
-      .eq('provider', 'oura'),
+      .in('provider', WEARABLE_PROVIDERS),
 
     db.from('journal_entries')
       .select('title, body, audio_transcript, created_at, mood')
@@ -93,8 +94,12 @@ export async function computeBentoStats(db: DB, userId: string, today: string): 
   let sleepScore: number | null = null
   let recoveryScore: number | null = null
   const rows = (wearableRes.data ?? []) as Array<{ provider: string; data: Record<string, unknown> }>
+  // Whichever wearable this user actually has a row for. On a switch day two
+  // providers can both have today's row, so take them in priority order rather
+  // than letting undefined row order pick a winner.
+  const winner = resolveWearableProvider(rows)
   for (const row of rows) {
-    if (row.provider === 'oura') {
+    if (row.provider === winner) {
       const oura = row.data as OuraData
       if (oura.readiness?.score != null) recoveryScore = oura.readiness.score
       if (oura.sleep?.score != null) sleepScore = oura.sleep.score

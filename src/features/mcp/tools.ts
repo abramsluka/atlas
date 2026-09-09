@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { WEARABLE_PROVIDERS, resolveWearableProvider } from '@/features/health/wearableProvider'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js'
 import { fromZonedTime } from 'date-fns-tz'
@@ -451,7 +452,7 @@ export function registerAtlasTools(server: McpServer) {
 
         const [wearables, food, water, caffeine, weight, suppLogs, suppList, checkin, gym, apple] =
           await Promise.all([
-            db.from('wearable_data').select('provider, data').eq('user_id', userId).eq('date', date),
+            db.from('wearable_data').select('provider, data').eq('user_id', userId).in('provider', WEARABLE_PROVIDERS).eq('date', date),
             db.from('food_logs').select('item_name, calories, protein_g, carbs_g').eq('user_id', userId).eq('date', date),
             db.from('water_logs').select('amount_oz').eq('user_id', userId).eq('date', date),
             db.from('caffeine_logs').select('source, amount_mg').eq('user_id', userId).eq('date', date),
@@ -465,7 +466,8 @@ export function registerAtlasTools(server: McpServer) {
 
         const summary: Record<string, unknown> = { date }
 
-        const ouraRaw = wearables.data?.find((r) => r.provider === 'oura')?.data as OuraData | undefined
+        const wearableWinner = resolveWearableProvider(wearables.data ?? [])
+        const ouraRaw = wearables.data?.find((r) => r.provider === wearableWinner)?.data as OuraData | undefined
         if (ouraRaw) {
           const oura = compact({
             sleep_score: ouraRaw.sleep?.score,
