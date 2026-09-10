@@ -97,23 +97,20 @@ function eToYScaled(e: number, yMin: number, yMax: number): number {
   return SVG_H - ((e - yMin) / Math.max(1, yMax - yMin)) * SVG_H
 }
 
-// ── Dose modal presets ────────────────────────────────────────────────────────
-const MODAL_PRESETS = [
-  { source: 'Espresso', amount_mg: 75 },
+// ── Caffeine presets ──────────────────────────────────────────────────────────
+// One list, used by both the Add Dose modal and the quick-log chips, so a source
+// never shows two different mg on the same page.
+const CAFFEINE_PRESETS = [
+  { source: 'Espresso', amount_mg: 60 },
   { source: 'Coffee', amount_mg: 100 },
   { source: 'Large coffee', amount_mg: 150 },
-  { source: 'Double shot', amount_mg: 200 },
-  { source: 'Tea', amount_mg: 80 },
-  { source: 'Energy drink', amount_mg: 150 },
-]
-
-// ── Quick-log presets (bottom card) ──────────────────────────────────────────
-const CAFFEINE_PRESETS = [
-  { source: 'Coffee', amount_mg: 90 },
+  { source: 'Double shot', amount_mg: 120 },
+  { source: 'Tea', amount_mg: 50 },
+  { source: 'Energy drink', amount_mg: 200 },
   { source: 'Pre-workout', amount_mg: 200 },
-  { source: 'Energy drink', amount_mg: 150 },
-  { source: 'Espresso', amount_mg: 60 },
 ] as const
+
+const DEFAULT_PRESET_IDX = 1 // Coffee
 
 // ── Component ─────────────────────────────────────────────────────────────────
 interface Props {
@@ -338,19 +335,19 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
   // ── Dose modal state ──────────────────────────────────────────────────────
   const [doseModalOpen, setDoseModalOpen] = useState(false)
   const [modalTime, setModalTime] = useState(nowTimeString)
-  const [modalPresetIdx, setModalPresetIdx] = useState(1) // Coffee 100mg default
-  const [modalLabel, setModalLabel] = useState('Coffee')
+  const [modalPresetIdx, setModalPresetIdx] = useState(DEFAULT_PRESET_IDX)
+  const [modalLabel, setModalLabel] = useState<string>(CAFFEINE_PRESETS[DEFAULT_PRESET_IDX].source)
 
   function openModal() {
     setModalTime(nowTimeString())
-    setModalPresetIdx(1)
-    setModalLabel(MODAL_PRESETS[1].source)
+    setModalPresetIdx(DEFAULT_PRESET_IDX)
+    setModalLabel(CAFFEINE_PRESETS[DEFAULT_PRESET_IDX].source)
     setDoseModalOpen(true)
   }
 
   function handleModalPresetChange(idx: number) {
     setModalPresetIdx(idx)
-    setModalLabel(MODAL_PRESETS[idx].source)
+    setModalLabel(CAFFEINE_PRESETS[idx].source)
   }
 
   function handleModalAdd() {
@@ -364,8 +361,8 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
       logged.setDate(logged.getDate() - 1)
     }
     logCaffeine.mutate({
-      source: modalLabel || MODAL_PRESETS[modalPresetIdx].source,
-      amount_mg: MODAL_PRESETS[modalPresetIdx].amount_mg,
+      source: modalLabel || CAFFEINE_PRESETS[modalPresetIdx].source,
+      amount_mg: CAFFEINE_PRESETS[modalPresetIdx].amount_mg,
       logged_at: logged.toISOString(),
     })
     setDoseModalOpen(false)
@@ -483,16 +480,23 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
                       </div>
                       <div>
                         <p className="text-[9px] font-mono text-zinc-500 tracking-[0.15em] uppercase mb-1.5">Caffeine (mg)</p>
-                        <select
-                          value={modalPresetIdx}
-                          onChange={e => handleModalPresetChange(Number(e.target.value))}
-                          style={{ background: '#131316' }}
-                          className="w-full rounded-[10px] border border-white/[0.08] px-3 py-2 text-sm text-white outline-none focus:border-white/25"
-                        >
-                          {MODAL_PRESETS.map((p, i) => (
-                            <option key={p.source} value={i} style={{ background: '#131316' }}>{p.source} · {p.amount_mg}mg</option>
-                          ))}
-                        </select>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {CAFFEINE_PRESETS.map((p, i) => {
+                            const selected = i === modalPresetIdx
+                            return (
+                              <button
+                                key={p.source}
+                                type="button"
+                                onClick={() => handleModalPresetChange(i)}
+                                style={{ background: selected ? 'rgba(34,197,94,0.14)' : '#131316' }}
+                                className={`rounded-[10px] border px-2.5 py-2 text-left active:opacity-70 transition-colors ${selected ? 'border-green-500/60' : 'border-white/[0.08]'}`}
+                              >
+                                <span className={`block text-[11px] font-medium leading-tight ${selected ? 'text-white' : 'text-zinc-300'}`}>{p.source}</span>
+                                <span className={`block text-[10px] font-mono ${selected ? 'text-green-400' : 'text-zinc-500'}`}>{p.amount_mg}mg</span>
+                              </button>
+                            )
+                          })}
+                        </div>
                       </div>
                       <div>
                         <p className="text-[9px] font-mono text-zinc-500 tracking-[0.15em] uppercase mb-1.5">Label</p>

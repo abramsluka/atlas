@@ -1785,7 +1785,7 @@ function WaterSection({
               ) : (
                 <WSettingField
                   label="Average caffeine per day (mg)"
-                  hint="~1 cup of coffee = 95mg · espresso shot = 75mg · energy drink = 160mg. Above 200mg/day starts to add a small water requirement."
+                  hint="~1 cup of coffee = 100mg · espresso shot = 60mg · energy drink = 200mg. Above 200mg/day starts to add a small water requirement."
                 >
                   <WNumInput inputMode="numeric" min="0" max="1000" step="10"
                     value={localProfile.caffeine_mg_per_day}

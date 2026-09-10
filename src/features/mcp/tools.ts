@@ -237,7 +237,7 @@ export function registerAtlasTools(server: McpServer) {
     'log_caffeine',
     {
       description:
-        'Log caffeine intake. Call when the user mentions coffee, espresso, tea, an energy drink or pre-workout. Estimate amount_mg from the drink if not stated (coffee ≈ 95mg, espresso shot ≈ 65mg, energy drink ≈ 160mg).',
+        'Log caffeine intake. Call when the user mentions coffee, espresso, tea, an energy drink or pre-workout. Estimate amount_mg from the drink if not stated (coffee ≈ 100mg, espresso shot ≈ 60mg, energy drink ≈ 200mg).',
       inputSchema: {
         amount_mg: z.number().positive(),
         source: z.string().min(1).describe('What it came from, e.g. "coffee", "espresso", "Celsius"'),

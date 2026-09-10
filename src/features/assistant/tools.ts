@@ -284,7 +284,7 @@ export function buildAssistantTools(units: string): Anthropic.Tool[] {
     },
     {
       name: 'log_caffeine',
-      description: 'Propose logging caffeine. Call when Luka mentions coffee/energy drink/pre-workout. Estimate mg from the source if he doesn\'t give one (coffee ≈ 95mg, espresso shot ≈ 63mg, energy drink ≈ 160mg).',
+      description: 'Propose logging caffeine. Call when Luka mentions coffee/energy drink/pre-workout. Estimate mg from the source if he doesn\'t give one (coffee ≈ 100mg, espresso shot ≈ 60mg, energy drink ≈ 200mg).',
       input_schema: {
         type: 'object',
         properties: {

@@ -31,7 +31,7 @@ ${PORTION_STYLE_RULES}
 - HARD LIMIT: if ${MAX_QUESTIONS} questions have already been asked (answered or skipped), you MUST return FINAL using reasonable defaults; set confidence to "low" if you had to guess.
 - item_name: short (under 60 chars), title-style. portion_desc: human-readable relatable portion, e.g. "palm-sized grilled chicken breast" or "1 tall glass".
 - is_hydrating: true for water, juice, milk, sports drinks, iced tea, soda; false for espresso shots, alcohol, milkshakes-as-dessert. volume_oz: fluid ounces, only when is_hydrating is true, else null.
-- caffeine_mg: estimated caffeine in milligrams, scaled to the portion (drip coffee ~95 for 8oz, espresso shot ~65, latte/cappuccino ~75, cold brew ~150-200, black tea ~45, green tea ~30, cola ~35, energy drink ~150, decaf ~3). Use 0 for water, juice, milk, alcohol, and all food.
+- caffeine_mg: estimated caffeine in milligrams, scaled to the portion (drip coffee ~100 for 8oz, espresso shot ~60, latte/cappuccino ~75, cold brew ~150-200, black tea ~50, green tea ~30, cola ~35, energy drink ~200, decaf ~3). Use 0 for water, juice, milk, alcohol, and all food.
 - notes: one short sentence on what drove the estimate.`
 
 export async function POST(request: NextRequest) {
