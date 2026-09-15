@@ -121,9 +121,10 @@ interface Props {
   workouts: WorkoutPoint[]
   meals: MealPoint[]
   typicalWakeHour: number | null
+  sleepHour: number | null // Settings bedtime in energy-day hours (24+ = past midnight); null = midnight
 }
 
-export default function CaffeineClient({ initialCaffeine, initialRatings, today, ouraData, workouts, meals, typicalWakeHour }: Props) {
+export default function CaffeineClient({ initialCaffeine, initialRatings, today, ouraData, workouts, meals, typicalWakeHour, sleepHour }: Props) {
   const qc = useQueryClient()
   // ── Model inputs ──────────────────────────────────────────────────────────
   const sleepQuality = deriveSleepQuality(ouraData)
@@ -142,8 +143,14 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
     return () => clearInterval(id)
   }, [])
 
-  // Past midnight the chart grows to cover the energy day's post-midnight tail
-  const dayEndH = currentHour >= 24 ? 24 + ENERGY_DAY_END_HOUR : 24
+  // The chart runs to bedtime (Settings, else midnight). Once you're up past
+  // it the chart grows to keep "now" on screen, capped at the 3am rollover.
+  const bedHour = sleepHour ?? 24
+  const dayEndH = currentHour >= bedHour
+    ? Math.min(24 + ENERGY_DAY_END_HOUR, Math.max(bedHour, Math.ceil(currentHour) + 1))
+    : bedHour
+  // Bedtime the caffeine cutoff aims at (the model's long-standing 11pm when unset)
+  const cutoffBedHour = sleepHour ?? 23
 
   // ── Data ─────────────────────────────────────────────────────────────────
   const { data: caffeineLogs } = useCaffeineLogs(today, initialCaffeine)
@@ -269,14 +276,15 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
       else if (!pastPeak && e < peakE - 5) pastPeak = true
       if (pastPeak && e < 50) { crashHour = h; break }
     }
-    let lo = wakeHour, hi = 23
+    // Latest coffee whose residual has cleared by bedtime
+    let lo = wakeHour, hi = cutoffBedHour
     for (let i = 0; i < 30; i++) {
       const mid = (lo + hi) / 2
-      if (caffeineConc(23 - mid, 100) < 25) lo = mid; else hi = mid
+      if (caffeineConc(cutoffBedHour - mid, 100) < 25) lo = mid; else hi = mid
     }
     const peakFocusWindow = peakWindows.find(w => w.end > currentHour) ?? null
     return { crashHour, lastCoffeeHour: lo, peakFocusWindow }
-  }, [wakeHour, sleepQuality, doses, workouts, meals, currentHour, peakWindows, dayEndH])
+  }, [wakeHour, sleepQuality, doses, workouts, meals, currentHour, peakWindows, dayEndH, cutoffBedHour])
 
   // ── Model contributors at current hour ────────────────────────────────────
   const contributors = useMemo(() => {
@@ -804,7 +812,7 @@ export default function CaffeineClient({ initialCaffeine, initialRatings, today,
               <p className={`font-serif italic text-base leading-tight ${lastCoffeeHour < currentHour ? 'text-orange-400' : 'text-sky-400'}`}>
                 {formatHour(lastCoffeeHour)}
               </p>
-              <p className="text-[10px] text-zinc-500 mt-1">&lt;25mg at 11pm bedtime</p>
+              <p className="text-[10px] text-zinc-500 mt-1">&lt;25mg at {formatHourShort(cutoffBedHour)} bedtime</p>
             </div>
           </div>
         </div>

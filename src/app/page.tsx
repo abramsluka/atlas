@@ -4,6 +4,7 @@ import HomeClient from './HomeClient'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toLocalDate } from '@/lib/date'
 import { getHomeInitialData } from '@/lib/home/getHomeInitialData'
+import { scheduleHours } from '@/lib/schedule'
 
 export default async function HomePage() {
   const user = await getPageUser()
@@ -19,8 +20,10 @@ export default async function HomePage() {
   const [checkinRes, home, settingsRes] = await Promise.all([
     db.from('daily_checkins').select('*').eq('user_id', user.id).eq('date', today).maybeSingle(),
     getHomeInitialData(db, user.id, today, tz),
-    db.from('user_settings').select('first_name, onboarding_completed_at').eq('user_id', user.id).maybeSingle(),
+    db.from('user_settings').select('first_name, onboarding_completed_at, wake_time, sleep_time').eq('user_id', user.id).maybeSingle(),
   ])
+  // Wake/sleep from Settings drive the day ring and the energy arc.
+  const schedule = scheduleHours(settingsRes.data?.wake_time ?? null, settingsRes.data?.sleep_time ?? null)
 
   // First run: a brand-new account lands on empty states with every AI feature
   // returning 428, so send them through setup first. Gated on the row EXISTING
@@ -47,6 +50,7 @@ export default async function HomePage() {
       initialWeeklyReports={home.weeklyReports}
       initialStreaks={home.streaks}
       initialDayPlan={home.dayPlan}
+      schedule={schedule}
     />
   )
 }

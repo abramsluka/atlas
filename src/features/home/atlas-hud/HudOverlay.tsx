@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { computeRing, CIRC, type RingState } from '@/features/home/dayRing'
+import type { ScheduleHours } from '@/lib/schedule'
 import type { BentoStats } from '@/app/api/home/bento-stats/route'
 
 // ─── Jarvis HUD overlay: crisp DOM/SVG on top of the 3D globe canvas ───────────
@@ -186,16 +187,16 @@ function RawData() {
   )
 }
 
-export default function HudOverlay() {
+export default function HudOverlay({ schedule }: { schedule?: ScheduleHours | null }) {
   const [ring, setRing] = useState<RingState | null>(null)
   const [stats, setStats] = useState<BentoStats | null>(null)
   const [call, setCall] = useState<TodaysCall | null>(null)
 
   useEffect(() => {
-    setRing(computeRing())
-    const id = setInterval(() => setRing(computeRing()), 30_000)
+    setRing(computeRing(schedule))
+    const id = setInterval(() => setRing(computeRing(schedule)), 30_000)
     return () => clearInterval(id)
-  }, [])
+  }, [schedule])
 
   useEffect(() => {
     fetch('/api/home/bento-stats', { cache: 'no-store' })

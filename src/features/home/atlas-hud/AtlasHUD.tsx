@@ -4,13 +4,14 @@ import { Canvas } from '@react-three/fiber'
 import { useRouter } from 'next/navigation'
 import Scene from './Scene'
 import HudOverlay from './HudOverlay'
+import type { ScheduleHours } from '@/lib/schedule'
 
 /**
  * Top-level Atlas HUD view: a full-screen <Canvas> hosting the 3D scene (the
  * holographic Atlas globe + orbiting module planets) with the HUD panel overlay
  * layered on top. Exit back to the bento dashboard via the top-right toggle button.
  */
-export default function AtlasHUD() {
+export default function AtlasHUD({ schedule }: { schedule?: ScheduleHours | null }) {
   const router = useRouter()
 
   return (
@@ -33,7 +34,7 @@ export default function AtlasHUD() {
       >
         <Scene onNavigate={(href) => router.push(href)} />
       </Canvas>
-      <HudOverlay />
+      <HudOverlay schedule={schedule} />
     </div>
   )
 }

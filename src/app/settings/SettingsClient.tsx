@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { startWalkthrough } from '@/components/Walkthrough'
+import { fmtClockHour, scheduleHours } from '@/lib/schedule'
 
 type KeyProvider = 'anthropic' | 'openai' | 'gemini'
 type KeyStatus = { set: boolean; last4: string | null }
@@ -251,6 +252,93 @@ function ProviderPicker() {
   )
 }
 
+// Wake / sleep times. Drives the home day ring, the energy curve's start and
+// end of day, and the caffeine cutoff. Wake is a fallback only: a real
+// measured wake from the wearable still wins on mornings it has synced.
+type ScheduleResponse = { timezone: string | null; wake_time: string | null; sleep_time: string | null }
+
+function ScheduleCard() {
+  const qc = useQueryClient()
+  const [error, setError] = useState<string | null>(null)
+  const { data } = useQuery<ScheduleResponse>({
+    queryKey: ['user-settings'],
+    queryFn: async () => (await fetch('/api/user/settings')).json(),
+    staleTime: 30_000,
+  })
+
+  const save = useMutation({
+    mutationFn: async (patch: Partial<Pick<ScheduleResponse, 'wake_time' | 'sleep_time'>>) => {
+      const res = await fetch('/api/user/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Could not save')
+      return patch
+    },
+    onMutate: async (patch) => {
+      await qc.cancelQueries({ queryKey: ['user-settings'] })
+      const prev = qc.getQueryData<ScheduleResponse>(['user-settings'])
+      if (prev) qc.setQueryData<ScheduleResponse>(['user-settings'], { ...prev, ...patch })
+      return { prev }
+    },
+    onError: (e: Error, _patch, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['user-settings'], ctx.prev)
+      setError(e.message)
+    },
+    onSuccess: () => setError(null),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['user-settings'] }),
+  })
+
+  const wake = data?.wake_time ?? ''
+  const sleep = data?.sleep_time ?? ''
+  const hours = scheduleHours(wake || null, sleep || null)
+  const summary =
+    hours.wakeHour != null && hours.sleepHour != null
+      ? `${fmtClockHour(hours.wakeHour)} – ${fmtClockHour(hours.sleepHour)} · ${((hours.sleepHour - hours.wakeHour)).toFixed(1).replace(/\.0$/, '')}h awake`
+      : 'Unset — Atlas assumes 8:00 AM – 12:00 AM'
+
+  const field = (label: string, key: 'wake_time' | 'sleep_time', value: string) => (
+    <label className="flex-1 min-w-0">
+      <span className="block text-[10.5px] font-semibold tracking-wide uppercase text-zinc-500">{label}</span>
+      <input
+        type="time"
+        value={value}
+        disabled={!data}
+        onChange={(e) => save.mutate({ [key]: e.target.value || null })}
+        className="mt-1 w-full rounded-lg bg-black/40 border border-white/10 px-2.5 py-2 text-[13px] font-mono text-zinc-200 focus:outline-none focus:border-white/25 disabled:opacity-40 [color-scheme:dark]"
+      />
+    </label>
+  )
+
+  return (
+    <div className="cosmic-card p-4">
+      <div className="flex items-center gap-2">
+        <span className="text-[13px] font-semibold text-white">Wake &amp; sleep</span>
+        {(wake || sleep) && (
+          <button
+            onClick={() => save.mutate({ wake_time: null, sleep_time: null })}
+            className="ml-auto text-[11px] font-semibold text-white/40 hover:text-white/60 underline"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+      <p className="mt-1 text-[11.5px] leading-relaxed text-zinc-500">
+        Sets the day ring on Home and where the energy curve starts and ends. If your wearable
+        recorded last night, that wake time is used for the day instead.
+      </p>
+      <div className="mt-2.5 flex gap-3">
+        {field('Wake', 'wake_time', wake)}
+        {field('Sleep', 'sleep_time', sleep)}
+      </div>
+      <p className="mt-2 text-[10.5px] font-mono text-zinc-600">{summary}</p>
+      {error && <p className="mt-1.5 text-[11px] text-red-400/90">{error}</p>}
+    </div>
+  )
+}
+
 export default function SettingsClient({ email }: { email: string }) {
   const router = useRouter()
   const { data: keys } = useQuery<KeysResponse>({
@@ -266,6 +354,11 @@ export default function SettingsClient({ email }: { email: string }) {
       </Link>
       <h1 className="mt-1 text-[17px] font-bold text-white">Settings</h1>
       <p className="mt-0.5 text-[11.5px] text-zinc-500">{email}</p>
+
+      <h2 className="mt-6 mb-2 font-mono text-[9.5px] font-extrabold tracking-[0.16em] uppercase text-zinc-500">
+        Your day
+      </h2>
+      <ScheduleCard />
 
       <h2 className="mt-6 mb-2 font-mono text-[9.5px] font-extrabold tracking-[0.16em] uppercase text-zinc-500">
         Which AI

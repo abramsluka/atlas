@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { getUserTimezone } from '@/lib/getUserTimezone'
 import { toEnergyDate, nextCalendarDate, isoToEnergyDayHour, energyDayUtcWindow } from '@/features/health/energyModel'
 import { getTypicalWakeHour } from '@/features/health/typicalWake'
+import { getUserSchedule } from '@/lib/getUserSchedule'
 import type { OuraData } from '@/features/health/types'
 import type { FoodLog } from '@/features/food/types'
 import { sessionLabel, sessionVolumeLbs, type GymActivityLog } from '@/lib/gymActivity'
@@ -39,7 +40,7 @@ export default async function CaffeinePage() {
   // instants so timestamp windows catch post-midnight sets and meals.
   const { start: dayStart, end: dayEnd } = energyDayUtcWindow(today, tz)
 
-  const [caffeineResult, wearableTokensResult, workoutsResult, foodResult, ratingsResult, typicalWakeHour] = await Promise.all([
+  const [caffeineResult, wearableTokensResult, workoutsResult, foodResult, ratingsResult, typicalWakeHour, schedule] = await Promise.all([
     // Post-midnight doses can carry either date tag depending on where they
     // were logged from; the hour mapping folds both onto this energy day.
     db.from('caffeine_logs')
@@ -75,9 +76,11 @@ export default async function CaffeinePage() {
       .eq('date_key', today)
       .order('logged_at', { ascending: true }),
 
-    // Median wake hour from recent Oura history — fallback for mornings
-    // where the ring hasn't synced yet
+    // Fallback wake hour for mornings where the wearable hasn't synced: the
+    // Settings wake time, else the median of recent nights
     getTypicalWakeHour(db, user.id, tz),
+    // Settings bedtime — where the curve ends and the caffeine cutoff aims
+    getUserSchedule(db, user.id),
   ])
 
   const provider = resolveWearableProvider(wearableTokensResult.data as Array<{ provider: string }> | null)
@@ -123,6 +126,7 @@ export default async function CaffeinePage() {
       workouts={workoutPoints}
       meals={mealPoints}
       typicalWakeHour={typicalWakeHour}
+      sleepHour={schedule.sleepHour}
     />
   )
 }

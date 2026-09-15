@@ -1,8 +1,19 @@
 // Shared day-progress ring math — used by both the list-view DayRing and the
 // Atlas HUD's DayArc, so there's one source of truth (spec §7).
+// Wake/sleep come from the user's Settings (user_settings.wake_time /
+// sleep_time via getUserSchedule); these are the defaults when unset.
 
-const WAKE_HOUR = 8
-const SLEEP_HOUR = 24
+import type { ScheduleHours } from '@/lib/schedule'
+
+export const DEFAULT_WAKE_HOUR = 8
+export const DEFAULT_SLEEP_HOUR = 24
+
+export function ringBounds(schedule?: ScheduleHours | null): { wake: number; sleep: number } {
+  return {
+    wake: schedule?.wakeHour ?? DEFAULT_WAKE_HOUR,
+    sleep: schedule?.sleepHour ?? DEFAULT_SLEEP_HOUR,
+  }
+}
 export const CIRC = 2 * Math.PI * 52
 
 const PALETTE: [number, [number, number, number]][] = [
@@ -64,9 +75,13 @@ export interface RingState {
   remaining: string
 }
 
-export function computeRing(): RingState {
+export function computeRing(schedule?: ScheduleHours | null): RingState {
+  const { wake: WAKE_HOUR, sleep: SLEEP_HOUR } = ringBounds(schedule)
   const now = new Date()
-  const hrs = now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600
+  let hrs = now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600
+  // A bedtime past midnight is expressed as 24+, so the small hours belong to
+  // the day still in progress rather than reading as "still sleeping" at 1am.
+  if (SLEEP_HOUR > 24 && hrs < SLEEP_HOUR - 24 + 1) hrs += 24
   const clock = fmtClock(now)
 
   if (hrs < WAKE_HOUR) {

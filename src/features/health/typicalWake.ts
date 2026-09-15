@@ -2,24 +2,30 @@ import type { createServiceClient } from '@/lib/supabase/server'
 import type { OuraData } from './types'
 import { plausibleWakeHour } from './energyModel'
 import { getActiveWearableProvider } from './wearableProvider'
+import { getUserSchedule } from '@/lib/getUserSchedule'
 
-// Median wake hour from the user's recent wearable history — the fallback the
-// energy model uses on mornings where the device hasn't synced yet, so the
-// curve starts near when this user actually wakes instead of a hardcoded 7am.
-// Reads the ACTIVE provider (this was hard-coded to Oura, which made it come
-// back empty for anyone on WHOOP).
+// The energy model's fallback wake hour for mornings where the wearable hasn't
+// synced (a measured wake from last night still wins in deriveWake). The wake
+// time the user set in Settings takes precedence; otherwise the median wake
+// from the ACTIVE provider's recent history (this was hard-coded to Oura,
+// which made it come back empty for anyone on WHOOP). Null → the model's 7am.
 // Median over mean: one 4am flight or skipped night shouldn't drag it around.
 export async function getTypicalWakeHour(
   db: ReturnType<typeof createServiceClient>,
   userId: string,
   timezone: string,
 ): Promise<number | null> {
-  const provider = (await getActiveWearableProvider(db, userId)) ?? 'oura'
+  const [manual, provider] = await Promise.all([
+    getUserSchedule(db, userId),
+    getActiveWearableProvider(db, userId),
+  ])
+  if (manual.wakeHour != null) return manual.wakeHour
+
   const { data } = await db
     .from('wearable_data')
     .select('provider, data')
     .eq('user_id', userId)
-    .eq('provider', provider)
+    .eq('provider', provider ?? 'oura')
     .order('date', { ascending: false })
     .limit(28) // ~2 weeks of nights
 

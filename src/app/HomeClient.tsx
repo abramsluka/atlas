@@ -14,7 +14,8 @@ import type { BentoStats } from '@/lib/home/bentoStats'
 import type { Streaks } from '@/lib/home/streaks'
 import StreakStrip from './StreakStrip'
 import ApiKeyBanner from './ApiKeyBanner'
-import { computeRing, CIRC, type RingState } from '@/features/home/dayRing'
+import { computeRing, CIRC, ringBounds, type RingState } from '@/features/home/dayRing'
+import { fmtClockHour, type ScheduleHours } from '@/lib/schedule'
 import { checkNoApiKey, checkAiLimit, type KeyProvider } from '@/lib/apiKeyError'
 import NoApiKeyNotice from '@/components/NoApiKeyNotice'
 import AiLimitNotice from '@/components/AiLimitNotice'
@@ -29,13 +30,14 @@ const AtlasHUD = dynamic(() => import('@/features/home/atlas-hud/AtlasHUD'), {
 
 // ─── Day Ring ────────────────────────────────────────────────────────────────
 
-function DayRing() {
+function DayRing({ schedule }: { schedule: ScheduleHours }) {
   const [ring, setRing] = useState<RingState | null>(null)
   useEffect(() => {
-    setRing(computeRing())
-    const id = setInterval(() => setRing(computeRing()), 30_000)
+    setRing(computeRing(schedule))
+    const id = setInterval(() => setRing(computeRing(schedule)), 30_000)
     return () => clearInterval(id)
-  }, [])
+  }, [schedule])
+  const bounds = ringBounds(schedule)
 
   return (
     <div className="flex flex-wrap items-center justify-center gap-[26px] p-[22px] mb-[18px] cosmic-card">
@@ -73,7 +75,7 @@ function DayRing() {
       <div className="flex flex-col gap-1.5 max-w-[280px]">
         <div className="text-[14px] font-bold text-white">{ring?.status ?? ''}</div>
         <div className="font-mono text-[12px] text-zinc-400">{ring?.remaining ?? ''}</div>
-        <div className="font-mono text-[11px] text-zinc-500">8:00 AM – 12:00 AM</div>
+        <div className="font-mono text-[11px] text-zinc-500">{fmtClockHour(bounds.wake)} – {fmtClockHour(bounds.sleep)}</div>
       </div>
     </div>
   )
@@ -296,9 +298,11 @@ function JournalMood({ mood, color }: { mood: number | null; color: string }) {
 }
 
 /** ENERGY: Mini circadian energy arc with current-position dot */
-function EnergyArc({ color }: { color: string }) {
+function EnergyArc({ color, schedule }: { color: string; schedule: ScheduleHours }) {
   const W = 82, H = 48
-  const totalAwake = 17
+  // Wake → bedtime from Settings; the energy model's own defaults when unset.
+  const wakeHour = schedule.wakeHour ?? 6.5
+  const totalAwake = Math.max(4, (schedule.sleepHour ?? 23.5) - wakeHour)
   // Time-dependent — resolve only after mount so the server HTML and the first
   // client render match (otherwise the gradient offset + marker position differ
   // and React throws a hydration mismatch). Before mount we render a neutral midday.
@@ -308,7 +312,7 @@ function EnergyArc({ color }: { color: string }) {
     const id = setInterval(() => setNow(new Date()), 60_000)
     return () => clearInterval(id)
   }, [])
-  const hoursAwake = now ? Math.max(0, now.getHours() + now.getMinutes() / 60 - 6.5) : totalAwake / 2
+  const hoursAwake = now ? Math.max(0, now.getHours() + now.getMinutes() / 60 - wakeHour) : totalAwake / 2
 
   function energyAt(t: number): number {
     // Circadian model: peaks ~3h after wake, gentle afternoon dip, evening decline
@@ -429,7 +433,7 @@ function BentoCard({ href, color, label, headline, sub, wide, loading, dim, visu
   )
 }
 
-function BentoGrid({ initial }: { initial?: BentoStats }) {
+function BentoGrid({ initial, schedule }: { initial?: BentoStats; schedule: ScheduleHours }) {
   const [stats, setStats] = useState<BentoStats | null>(initial ?? null)
   const [loading, setLoading] = useState(initial === undefined)
 
@@ -504,7 +508,7 @@ function BentoGrid({ initial }: { initial?: BentoStats }) {
         href="/health/caffeine" color="#fb923c" label="Energy"
         headline="Energy curve" sub="Caffeine · circadian · meals"
         loading={false} dim={false}
-        visual={<EnergyArc color="#fb923c" />}
+        visual={<EnergyArc color="#fb923c" schedule={schedule} />}
       />
     </div>
   )
@@ -1037,10 +1041,12 @@ export default function HomeClient({
   initialWeeklyReports,
   initialStreaks,
   initialDayPlan,
+  schedule,
 }: {
   today: string
   timezone: string
   displayName: string
+  schedule: ScheduleHours
   initialCheckin: DailyCheckin | null
   initialBento?: BentoStats
   initialTodaysCall?: TodaysCallData | null
@@ -1107,7 +1113,7 @@ export default function HomeClient({
             <line x1="3" y1="18" x2="3.01" y2="18" />
           </svg>
         </motion.button>
-        <AtlasHUD />
+        <AtlasHUD schedule={schedule} />
         {showSundayModal && (
           <SundayModal initialReports={initialWeeklyReports} onDismiss={() => {
             setShowSundayModal(false)
@@ -1167,7 +1173,7 @@ export default function HomeClient({
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease: 'easeOut' }}
         >
-          <DayRing />
+          <DayRing schedule={schedule} />
           <TodaysCallCard initial={initialTodaysCall} />
           <DayPlanCard initial={initialDayPlan} />
         </motion.div>
@@ -1189,7 +1195,7 @@ export default function HomeClient({
           transition={{ duration: 0.4, ease: 'easeOut', delay: 0.08 }}
         >
           <SectionTitle label="Modules" />
-          <BentoGrid initial={initialBento} />
+          <BentoGrid initial={initialBento} schedule={schedule} />
         </motion.div>
 
         {/* Check-in */}
