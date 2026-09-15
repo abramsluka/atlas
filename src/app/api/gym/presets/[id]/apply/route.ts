@@ -13,7 +13,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!preset) return NextResponse.json({ error: 'Preset not found' }, { status: 404 })
 
   const body = await req.json().catch(() => ({}))
-  const gymId: string = body.gymId ?? 'g_default'
+  // Pin the preset to the gym it was applied from; 'both'/absent = every gym
+  const gymId: string | undefined = body.gymId
+  const gymIds = gymId && gymId !== 'both' ? [gymId] : []
 
   const db = createServiceClient()
 
@@ -40,7 +42,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const rows = toInsert.map((ex, i) => ({
     user_id: user.id,
     name: ex.name,
-    gym_id: gymId,
+    gym_ids: gymIds,
     day_ids: [],
     bodyweight: ex.bodyweight,
     start_weight: ex.start_weight,

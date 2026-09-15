@@ -31,7 +31,7 @@ export interface GymExercise {
   id: string
   user_id?: string
   name: string
-  gym_id: string   // gym id or 'both'
+  gym_ids: string[]  // gyms this exercise is available at; empty = every gym
   day_ids: string[]
   bodyweight: boolean
   start_weight: number

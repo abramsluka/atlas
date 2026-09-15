@@ -39,7 +39,7 @@ function exercise(over: Partial<GymExercise> = {}): GymExercise {
   return {
     id: 'ex',
     name: 'Bench Press',
-    gym_id: 'both',
+    gym_ids: [],
     day_ids: [],
     bodyweight: false,
     start_weight: 45,

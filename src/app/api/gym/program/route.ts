@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
       if (newByName.has(key)) continue
       const dayIds = session.day_id ? [session.day_id] : []
       const insert: Omit<GymExercise, 'id' | 'user_id'> = {
-        name: ex.name, gym_id: 'both', day_ids: dayIds, bodyweight: false,
+        name: ex.name, gym_ids: [], day_ids: dayIds, bodyweight: false,
         start_weight: 0, rep_min: ex.rep_min, rep_max: ex.rep_max, step: 5, order_index: nextOrder++,
       }
       const { data: created } = await db.from('gym_exercises').insert({ ...insert, user_id: user.id }).select('id').single()

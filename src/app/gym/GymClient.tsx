@@ -283,7 +283,7 @@ interface ExModalState {
   mode: 'add' | 'edit'
   id?: string
   name: string
-  gymId: string
+  gymIds: string[]
   dayIds: string[]
   bodyweight: boolean
   repMin: number
@@ -293,7 +293,7 @@ interface ExModalState {
 }
 
 const EMPTY_EX_MODAL: ExModalState = {
-  open: false, mode: 'add', name: '', gymId: 'g_default', dayIds: [],
+  open: false, mode: 'add', name: '', gymIds: [], dayIds: [],
   bodyweight: false, repMin: 8, repMax: 12, step: 2.5, libraryId: null,
 }
 
@@ -518,7 +518,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     const ex = exercises.find(e => e.id === saved!.exId)
     if (!ex) return
     autoAdvancedRef.current = true // last-exercise restore wins over split auto-advance
-    if (ex.gym_id && ex.gym_id !== 'both') setFilterGym(ex.gym_id)
+    const exGyms = (ex.gym_ids ?? []).filter(id => config.gyms.some(g => g.id === id))
+    if (exGyms.length && !exGyms.includes(filterGym)) setFilterGym(exGyms[0])
     const dayId = ex.day_ids?.find(id => config.days.some(d => d.id === id))
     setFilterDay(dayId ?? '')
     setCurrentExId(ex.id)
@@ -763,11 +764,14 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     return map
   }, [allLogs, today])
 
+  // Empty gym_ids = every gym. Gyms since deleted from the config are ignored,
+  // so an exercise pinned only to a removed gym doesn't vanish from every list.
   const filteredExercises = useMemo(() => exercises.filter(ex => {
-    const gymOk = ex.gym_id === 'both' || ex.gym_id === filterGym
+    const gyms = (ex.gym_ids ?? []).filter(id => config.gyms.some(g => g.id === id))
+    const gymOk = gyms.length === 0 || gyms.includes(filterGym)
     const dayOk = !filterDay || (ex.day_ids ?? []).includes(filterDay)
     return gymOk && dayOk
-  }), [exercises, filterGym, filterDay])
+  }), [exercises, filterGym, filterDay, config.gyms])
 
   const currentEx = useMemo(() =>
     filteredExercises.find(e => e.id === currentExId) ?? filteredExercises[0] ?? null,
@@ -963,7 +967,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     setExModal({
       ...EMPTY_EX_MODAL,
       open: true, mode: 'add',
-      gymId: filterGym,
+      gymIds: [filterGym],
       dayIds: filterDay ? [filterDay] : [],
     })
   }
@@ -975,7 +979,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
       open: true, mode: 'edit',
       id: currentEx.id,
       name: currentEx.name,
-      gymId: currentEx.gym_id,
+      // Stored empty means "every gym" — show that as all chips selected
+      gymIds: currentEx.gym_ids?.length ? currentEx.gym_ids : config.gyms.map(g => g.id),
       dayIds: currentEx.day_ids ?? [],
       bodyweight: currentEx.bodyweight,
       repMin: currentEx.rep_min,
@@ -986,13 +991,13 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   }
 
   function saveEx() {
-    const { mode, id, name, gymId, dayIds, bodyweight, repMin, repMax, step, libraryId } = exModal
-    if (!name.trim() || !gymId || !dayIds.length) return
+    const { mode, id, name, gymIds, dayIds, bodyweight, repMin, repMax, step, libraryId } = exModal
+    if (!name.trim() || !gymIds.length || !dayIds.length) return
     if (mode === 'edit' && id) {
-      updateEx.mutate({ id, name: name.trim(), gym_id: gymId, day_ids: dayIds, bodyweight, start_weight: 0, rep_min: repMin, rep_max: repMax, step, library_id: libraryId })
+      updateEx.mutate({ id, name: name.trim(), gym_ids: gymIds, day_ids: dayIds, bodyweight, start_weight: 0, rep_min: repMin, rep_max: repMax, step, library_id: libraryId })
     } else {
       createEx.mutate(
-        { name: name.trim(), gym_id: gymId, day_ids: dayIds, bodyweight, start_weight: 0, rep_min: repMin, rep_max: repMax, step, library_id: libraryId, order_index: exercises.length },
+        { name: name.trim(), gym_ids: gymIds, day_ids: dayIds, bodyweight, start_weight: 0, rep_min: repMin, rep_max: repMax, step, library_id: libraryId, order_index: exercises.length },
         { onSuccess: (ex) => setCurrentExId(ex.id) } // prefill effect handles weight/reps
       )
     }
@@ -1565,7 +1570,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
             {/* Gym filter */}
             <div className="flex items-center gap-3 mb-3">
               <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30 w-10 flex-shrink-0">GYM</span>
-              <div className="flex-1 flex rounded-xl bg-white/5 border border-white/8 p-1 gap-1">
+              {/* Scrolls sideways once there are more gyms than fit */}
+              <div className="flex-1 min-w-0 flex rounded-xl bg-white/5 border border-white/8 p-1 gap-1 overflow-x-auto [scrollbar-width:none]">
                 {config.gyms.map((g, i) => (
                   <motion.button
                     key={g.id}
@@ -1573,7 +1579,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ duration: 0.32, ease: EASE_OUT, delay: 0.15 + i * 0.06 }}
                     onClick={() => setFilterGym(g.id)}
-                    className={`flex-1 rounded-lg py-2.5 text-sm font-semibold transition-colors ${
+                    className={`flex-1 shrink-0 min-w-[72px] px-3 rounded-lg py-2.5 text-sm font-semibold whitespace-nowrap transition-colors ${
                       filterGym === g.id
                         ? 'bg-white text-black shadow-sm'
                         : 'text-white/40'
@@ -2642,18 +2648,39 @@ export default function GymClient({ today, initialConfig, initialExercises, init
               </div>
 
               <div>
-                <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Gym</label>
-                <div className="flex gap-2 flex-wrap">
-                  {config.gyms.map(g => (
-                    <button key={g.id} onClick={() => setExModal(m => ({ ...m, gymId: g.id }))}
-                      className={`rounded-full px-3 py-1.5 text-xs border ${exModal.gymId === g.id ? 'bg-white text-black border-transparent' : 'border-white/15 text-white/50'}`}>
-                      {g.name}
+                <div className="flex items-baseline justify-between mb-1">
+                  <label className="text-xs text-white/40 uppercase tracking-wider block">Gyms</label>
+                  {config.gyms.length > 1 && (
+                    <button
+                      onClick={() => setExModal(m => ({
+                        ...m,
+                        gymIds: m.gymIds.length === config.gyms.length ? [] : config.gyms.map(g => g.id),
+                      }))}
+                      className="text-[10px] text-white/40 underline active:opacity-60"
+                    >
+                      {exModal.gymIds.length === config.gyms.length ? 'Clear' : 'All gyms'}
                     </button>
-                  ))}
-                  <button onClick={() => setExModal(m => ({ ...m, gymId: 'both' }))}
-                    className={`rounded-full px-3 py-1.5 text-xs border ${exModal.gymId === 'both' ? 'bg-white text-black border-transparent' : 'border-white/15 text-white/50'}`}>
-                    Both
-                  </button>
+                  )}
+                </div>
+                <p className="text-[10px] text-white/25 mb-2">Select every gym where you do this exercise</p>
+                <div className="flex gap-2 flex-wrap">
+                  {config.gyms.map(g => {
+                    const selected = exModal.gymIds.includes(g.id)
+                    return (
+                      <button
+                        key={g.id}
+                        onClick={() => setExModal(m => ({
+                          ...m,
+                          gymIds: selected
+                            ? m.gymIds.filter(id => id !== g.id)
+                            : [...m.gymIds, g.id],
+                        }))}
+                        className={`rounded-full px-3 py-1.5 text-xs border transition-colors ${selected ? 'bg-white text-black border-transparent' : 'border-white/15 text-white/50'}`}
+                      >
+                        {selected && <span className="mr-1">✓</span>}{g.name}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
 
@@ -2784,7 +2811,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
               </button>
               <button
                 onClick={saveEx}
-                disabled={!exModal.name.trim() || !exModal.gymId || !exModal.dayIds.length}
+                disabled={!exModal.name.trim() || !exModal.gymIds.length || !exModal.dayIds.length}
                 className="flex-1 rounded-xl bg-white text-black font-bold py-3 text-sm active:opacity-70 disabled:opacity-40"
               >
                 Save

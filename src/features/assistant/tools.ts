@@ -423,7 +423,7 @@ export function buildAssistantTools(units: string): Anthropic.Tool[] {
         properties: {
           name: { type: 'string' },
           day_id: { type: 'string', description: 'Day [id] to add it to' },
-          gym_id: { type: 'string', description: "Gym [id], or 'both'. Defaults to 'both'." },
+          gym_ids: { type: 'array', items: { type: 'string' }, description: 'Gym [id]s it is available at. Omit or empty = every gym.' },
           rep_min: { type: 'number' },
           rep_max: { type: 'number' },
           step: { type: 'number' },
@@ -449,7 +449,7 @@ export function buildAssistantTools(units: string): Anthropic.Tool[] {
         properties: {
           out_exercise_id: { type: 'string', description: 'Exercise [id] being replaced' },
           in_name: { type: 'string', description: 'Name of the replacement exercise' },
-          gym_id: { type: 'string' },
+          gym_ids: { type: 'array', items: { type: 'string' }, description: 'Gym [id]s; omit to inherit from the outgoing exercise' },
           rep_min: { type: 'number' },
           rep_max: { type: 'number' },
           step: { type: 'number' },
@@ -466,7 +466,7 @@ export function buildAssistantTools(units: string): Anthropic.Tool[] {
         properties: {
           day_name: { type: 'string', description: 'Label for the workout / new day, e.g. "Full Body A"' },
           existing_day_id: { type: 'string', description: 'Day [id] to append to, or omit to create a new day' },
-          gym_id: { type: 'string' },
+          gym_ids: { type: 'array', items: { type: 'string' }, description: 'Gym [id]s. Omit or empty = every gym.' },
           exercises: {
             type: 'array',
             items: {
@@ -505,6 +505,10 @@ export function buildAssistantTools(units: string): Anthropic.Tool[] {
 // ── Resolve a raw tool call into a validated proposal ────────────────────────
 
 const num = (v: unknown): number | null => (typeof v === 'number' && !Number.isNaN(v) ? v : null)
+// Model-supplied gym ids → clean string list. Anything else (absent, the old
+// 'both' string) collapses to [] = every gym.
+const gymIdsFrom = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x !== 'both' && x.trim() !== '') : []
 
 export type ResolvedToolCall =
   | { type: 'action'; action: AssistantAction }
@@ -625,7 +629,7 @@ export function resolveToolCall(name: string, input: Record<string, unknown>, ct
         if (!config?.days.some(d => d.id === dayId)) return null
         return {
           kind: 'add_exercise', name: String(input.name || '').trim(),
-          gym_id: String(input.gym_id || 'both'), day_ids: [dayId], day_label: dayName(dayId),
+          gym_ids: gymIdsFrom(input.gym_ids), day_ids: [dayId], day_label: dayName(dayId),
           rep_min: num(input.rep_min) ?? 8, rep_max: num(input.rep_max) ?? 12, step: num(input.step) ?? 5,
           bodyweight: !!input.bodyweight,
         }
@@ -640,7 +644,7 @@ export function resolveToolCall(name: string, input: Record<string, unknown>, ct
         if (!out || !String(input.in_name || '').trim()) return null
         return {
           kind: 'swap_exercise', out_exercise_id: out.id, out_name: out.name, in_name: String(input.in_name).trim(),
-          gym_id: String(input.gym_id || out.gym_id || 'both'), day_ids: out.day_ids, day_label: out.day_ids.map(dayName).join('/') || '—',
+          gym_ids: input.gym_ids != null ? gymIdsFrom(input.gym_ids) : (out.gym_ids ?? []), day_ids: out.day_ids, day_label: out.day_ids.map(dayName).join('/') || '—',
           rep_min: num(input.rep_min) ?? out.rep_min, rep_max: num(input.rep_max) ?? out.rep_max, step: num(input.step) ?? out.step,
           bodyweight: input.bodyweight != null ? !!input.bodyweight : out.bodyweight,
         }
@@ -658,7 +662,7 @@ export function resolveToolCall(name: string, input: Record<string, unknown>, ct
         return {
           kind: 'propose_workout',
           day_name: String(input.day_name || (validExisting ? dayName(validExisting) : 'New Workout')),
-          existing_day_id: validExisting, gym_id: String(input.gym_id || 'both'), exercises: exs,
+          existing_day_id: validExisting, gym_ids: gymIdsFrom(input.gym_ids), exercises: exs,
         }
       }
       case 'generate_program': {

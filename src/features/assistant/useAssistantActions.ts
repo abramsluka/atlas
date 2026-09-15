@@ -124,7 +124,7 @@ export function useAssistantActions() {
       }
       case 'add_exercise':
         await createEx.mutateAsync({
-          name: a.name, gym_id: a.gym_id, day_ids: a.day_ids, bodyweight: a.bodyweight,
+          name: a.name, gym_ids: a.gym_ids, day_ids: a.day_ids, bodyweight: a.bodyweight,
           start_weight: 0, rep_min: a.rep_min, rep_max: a.rep_max, step: a.step, order_index: nextOrder(),
         })
         return
@@ -134,7 +134,7 @@ export function useAssistantActions() {
       case 'swap_exercise':
         await deleteEx.mutateAsync(a.out_exercise_id)
         await createEx.mutateAsync({
-          name: a.in_name, gym_id: a.gym_id, day_ids: a.day_ids, bodyweight: a.bodyweight,
+          name: a.in_name, gym_ids: a.gym_ids, day_ids: a.day_ids, bodyweight: a.bodyweight,
           start_weight: 0, rep_min: a.rep_min, rep_max: a.rep_max, step: a.step, order_index: nextOrder(),
         })
         return
@@ -149,7 +149,7 @@ export function useAssistantActions() {
         let order = nextOrder()
         for (const ex of a.exercises) {
           await createEx.mutateAsync({
-            name: ex.name, gym_id: a.gym_id, day_ids: [dayId], bodyweight: ex.bodyweight,
+            name: ex.name, gym_ids: a.gym_ids, day_ids: [dayId], bodyweight: ex.bodyweight,
             start_weight: 0, rep_min: ex.rep_min, rep_max: ex.rep_max, step: ex.step, order_index: order++,
           })
         }

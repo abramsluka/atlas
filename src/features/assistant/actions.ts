@@ -76,7 +76,7 @@ export type AssistantAction =
   | {
       kind: 'add_exercise'
       name: string
-      gym_id: string
+      gym_ids: string[]
       day_ids: string[]
       day_label: string
       rep_min: number
@@ -94,7 +94,7 @@ export type AssistantAction =
       out_exercise_id: string
       out_name: string
       in_name: string
-      gym_id: string
+      gym_ids: string[]
       day_ids: string[]
       day_label: string
       rep_min: number
@@ -106,7 +106,7 @@ export type AssistantAction =
       kind: 'propose_workout'
       day_name: string
       existing_day_id: string | null
-      gym_id: string
+      gym_ids: string[]
       exercises: Array<{
         name: string
         rep_min: number
