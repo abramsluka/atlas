@@ -15,7 +15,7 @@ import ChatText from '@/components/ChatText'
 import { usePersistentChat } from '@/lib/usePersistentChat'
 import { rolledDate } from '@/features/food/date'
 import { useVoiceRecorder, formatElapsed } from '@/features/journal/useVoiceRecorder'
-import { describeAction, type AssistantStreamEvent, type ProposedAction } from './actions'
+import { actionHistoryNote, isDuplicateProposal, type AssistantStreamEvent, type ProposedAction } from './actions'
 import { useAssistantActions } from './useAssistantActions'
 import { useOrbChips } from './queries'
 import { getOrbHints, bandOf, GYM_SESSION_HINTS } from './hints'
@@ -68,11 +68,7 @@ export default function OrbAssistant() {
   // ── History with action outcomes, so the model knows what happened ──
   const historyForApi = (msgs: OrbMsg[]) =>
     msgs.map(m => {
-      const notes = (m.actions ?? []).map(pa => {
-        const d = describeAction(pa.action, units)
-        const verb = pa.status === 'done' ? 'EXECUTED' : pa.status === 'dismissed' ? 'DISMISSED by user' : 'proposed'
-        return `[${verb}: ${d.title}${d.detail ? ` — ${d.detail}` : ''}]`
-      }).join(' ')
+      const notes = (m.actions ?? []).map(pa => actionHistoryNote(pa, units)).join(' ')
       return { role: m.role, content: m.content + (notes ? `\n${notes}` : '') }
     })
 
@@ -125,8 +121,15 @@ export default function OrbAssistant() {
           if (ev.t === 'text') {
             updateMsg(assistantId, m => ({ ...m, content: m.content + ev.v }))
           } else if (ev.t === 'action') {
+            // Backstop against the model re-proposing an earlier item ("now add
+            // a milkshake" → banana + milkshake): a card that is still pending
+            // anywhere in today's thread is not added a second time.
             const pa: ProposedAction = { id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, action: ev.action, status: 'pending' }
-            updateMsg(assistantId, m => ({ ...m, actions: [...(m.actions ?? []), pa] }))
+            setMessages(prev => {
+              const existing = prev.flatMap(m => m.actions ?? [])
+              if (isDuplicateProposal(ev.action, existing)) return prev
+              return prev.map(m => (m.id === assistantId ? { ...m, actions: [...(m.actions ?? []), pa] } : m))
+            })
           } else if (ev.t === 'clarify') {
             updateMsg(assistantId, m => ({ ...m, clarify: { question: ev.question, options: ev.options } }))
           } else if (ev.t === 'suggestions') {

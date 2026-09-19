@@ -20,7 +20,7 @@ import {
 } from '@/features/mentor/queries'
 import { useCreateJot, useGenerateWeeklyReport, useRunSynthesis } from '@/features/mentor/mutations'
 import type { ChatMessage } from '@/features/mentor/types'
-import type { AssistantStreamEvent, ProposedAction } from '@/features/assistant/actions'
+import { actionHistoryNote, isDuplicateProposal, type AssistantStreamEvent, type ProposedAction } from '@/features/assistant/actions'
 import { useAssistantActions } from '@/features/assistant/useAssistantActions'
 import ActionCard from '@/features/assistant/ActionCard'
 
@@ -772,7 +772,12 @@ export default function MentorClient() {
     setMessages(prev => [...prev, { id: assistantId, role: 'assistant', content: '', actions: [], clarify: null }])
 
     try {
-      const history = messages.slice(-10).map(m => ({ role: m.role, content: m.content }))
+      // Card outcomes ride along with each assistant turn so the model knows
+      // what was logged / declined and doesn't re-propose it next turn.
+      const history = messages.slice(-10).map(m => {
+        const notes = (m.actions ?? []).map(pa => actionHistoryNote(pa, actionUnits)).join(' ')
+        return { role: m.role, content: m.content + (notes ? `\n${notes}` : '') }
+      })
       const res = await fetch('/api/mentor/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -810,8 +815,13 @@ export default function MentorClient() {
           } else if (ev.t === 'text') {
             patchMsg(assistantId, m => ({ ...m, content: m.content + ev.v }))
           } else if (ev.t === 'action') {
+            // Same backstop as the Orb: never a second card for a proposal
+            // that is still pending somewhere in this conversation.
             const pa: ProposedAction = { id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, action: ev.action, status: 'pending' }
-            patchMsg(assistantId, m => ({ ...m, actions: [...(m.actions ?? []), pa] }))
+            setMessages(prev => {
+              if (isDuplicateProposal(ev.action, prev.flatMap(m => m.actions ?? []))) return prev
+              return prev.map(m => (m.id === assistantId ? { ...m, actions: [...(m.actions ?? []), pa] } : m))
+            })
           } else if (ev.t === 'clarify') {
             patchMsg(assistantId, m => ({ ...m, clarify: { question: ev.question, options: ev.options } }))
           } else if (ev.t === 'error') {
@@ -822,7 +832,7 @@ export default function MentorClient() {
     } finally {
       setStreaming(false)
     }
-  }, [streaming, messages, conversationId, patchMsg, urlConvId, router])
+  }, [streaming, messages, conversationId, patchMsg, urlConvId, router, actionUnits, setMessages])
 
   const handlePromptClick = useCallback((prompt: string) => {
     setInput(prompt)

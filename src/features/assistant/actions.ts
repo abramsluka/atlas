@@ -137,6 +137,49 @@ export type AssistantStreamEvent =
 export type ActionStatus = 'pending' | 'done' | 'dismissed' | 'error'
 export interface ProposedAction { id: string; action: AssistantAction; status: ActionStatus }
 
+// ── Duplicate proposals ───────────────────────────────────────────────────────
+// A follow-up like "now add a milkshake" makes the model re-propose the banana
+// from the previous turn alongside the milkshake. The prompt tells it not to;
+// this is the backstop. Two actions are the same proposal when every field
+// matches (the model emits identical numbers when it repeats itself).
+
+export function actionKey(a: AssistantAction): string {
+  return stableJson(a)
+}
+
+// JSON with keys sorted at every level, so field order never breaks equality.
+function stableJson(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stableJson).join(',')}]`
+  if (v && typeof v === 'object') {
+    const o = v as Record<string, unknown>
+    return `{${Object.keys(o).sort().map(k => `${JSON.stringify(k)}:${stableJson(o[k])}`).join(',')}}`
+  }
+  return JSON.stringify(v) ?? 'null'
+}
+
+// True when `a` already sits in the thread as a live (pending) card — a second
+// card for the same thing would double-log it on "Confirm all". Done cards are
+// deliberately NOT matched: "another 20 oz" or a second set at the same
+// weight × reps is byte-identical and legitimate; the prompt's [LOGGED …] note
+// is what stops the model repeating those.
+export function isDuplicateProposal(a: AssistantAction, existing: ProposedAction[]): boolean {
+  const key = actionKey(a)
+  return existing.some(pa => pa.status === 'pending' && actionKey(pa.action) === key)
+}
+
+// One-line outcome note per card, appended to the assistant turn in the
+// history sent back to the model, so it knows what actually happened.
+export function actionHistoryNote(pa: ProposedAction, units: string): string {
+  const d = describeAction(pa.action, units)
+  const label = `${d.title}${d.detail ? ` — ${d.detail}` : ''}`
+  switch (pa.status) {
+    case 'done': return `[LOGGED: ${label} — already saved, do NOT propose again]`
+    case 'dismissed': return `[DISMISSED by user: ${label} — do NOT propose again]`
+    case 'pending': return `[AWAITING CONFIRM: ${label} — card already on screen, do NOT propose again]`
+    case 'error': return `[FAILED: ${label}]`
+  }
+}
+
 // ── Card copy per action kind ─────────────────────────────────────────────────
 
 export function describeAction(a: AssistantAction, units: string): { title: string; detail: string; confirmLabel: string; doneLabel: string } {
