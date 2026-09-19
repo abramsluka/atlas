@@ -43,3 +43,9 @@ next-env.d.ts
 
 # Claude Code session journal — local only, contains other people's account details
 CLAUDE_CODE_MEMORY.md
+
+# local agent state / editor-local settings / coverage output
+.agents/
+.claude/settings.local.json
+**/.coverage
+**/coverage-ui.json

@@ -87,20 +87,10 @@ in app code (the env vars remain only for scripts/ CLI tools).
 
 After changing .env.local, always restart the dev server.
 
-## Security Posture & Threat Model
-
-Atlas is **invite-only for a small circle (~5 family/friends)**, NOT a public SaaS. Accounts are created by hand (Supabase admin API + the `allowed_emails` gate); there is no self-serve signup. Judge all security advice through that lens — generic "harden your SaaS" checklists mostly do not apply here.
-
-**Already handled — do NOT redo, migrate, or "upgrade":**
-- **Auth:** Supabase Auth *is* a real, production auth provider — do NOT migrate to Clerk/Firebase (a pointless rewrite that fights the Postgres/RLS setup). Login is rate-limited by Supabase; signup is closed/allowlisted.
-- **Data isolation:** RLS enabled on every table; API routes bypass RLS via the service client and enforce per-user scoping in code — audited across all ~112 routes, 0 cross-user leaks (2026-07). `user_secrets` is policy-less on purpose (server-only).
-- **Secrets:** all server-side env vars; per-user AI keys AES-256-GCM encrypted in `user_secrets`, never sent to the browser (only last-4). Only `NEXT_PUBLIC_{SUPABASE_URL,SUPABASE_ANON_KEY,APP_URL}` reach the client — all safe to be public. Verified 2026-07: no server secret in any client bundle.
-
-**Deliberately deferred — premature at this scale.** Revisit ONLY if Atlas opens to public self-serve signup (that flips the threat model): Redis/response caching, async job queues for AI (Atlas AI is interactive + streamed by design), load testing.
-
-**The one optional guardrail with real value:** a light *per-user* rate limit on the expensive streaming AI routes — protects a friend's own capped budget from a runaway client loop. Cost is otherwise already bounded by per-user Anthropic/OpenAI spend caps.
-
-**Discipline that DOES matter:** the app-layer per-user scoping is what actually protects data — re-audit route scoping whenever new API routes are added.
+## Security Posture
+Invite-only. RLS on all tables; API routes bypass it via the service client and
+enforce per-user scoping in code — re-audit route scoping whenever routes are added.
+Per-user AI keys are AES-256-GCM encrypted in `user_secrets`, never sent to the browser.
 
 ## File Structure
 

@@ -37,4 +37,4 @@ iterated on, then implemented ("run the spec").
 ## _archive/
 Stale plans, handoffs, and superseded context docs kept for reference:
 `PLAN_gym_coach_fix.md`, `PLAN_whoop_token_fix.md`, `WHOOP_ISSUE_HANDOFF.md`, `SESSION.md`,
-`ATLAS_CONTEXT.md`, `LEARNING_CONTEXT.md`. (The living project context is `CLAUDE.md` at root.)
+`ATLAS_CONTEXT.md`. (The living project context is `CLAUDE.md` at root.)
