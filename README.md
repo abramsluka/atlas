@@ -7,11 +7,13 @@ Think of it as what a Whoop or Oura app would look like if it had Claude sitting
 > **Status:** live in production and in daily use. Invite-only for a small group of family and friends, so there is no public signup.
 
 <p align="center">
-  <img src="docs/screenshots/home.png" width="24%" alt="Home dashboard" />
-  <img src="docs/screenshots/gym.png" width="24%" alt="Gym progressive overload" />
-  <img src="docs/screenshots/health.png" width="24%" alt="Health module" />
-  <img src="docs/screenshots/mentor.png" width="24%" alt="Mentor chat" />
+  <img src="docs/screenshots/home.jpg" width="19%" alt="Home dashboard" />
+  <img src="docs/screenshots/gym.jpg" width="19%" alt="Gym and body composition" />
+  <img src="docs/screenshots/health.jpg" width="19%" alt="Health module" />
+  <img src="docs/screenshots/journal.jpg" width="19%" alt="Journal" />
+  <img src="docs/screenshots/mentor.jpg" width="19%" alt="Mentor chat" />
 </p>
+<p align="center"><sub>Home · Gym · Health · Journal · Mentor</sub></p>
 
 ---
 
@@ -25,7 +27,7 @@ Think of it as what a Whoop or Oura app would look like if it had Claude sitting
 
 **Journal** supports typed and voice entries with mood tracking, and Claude writes a reflection on each entry that you can then continue as a conversation thread.
 
-**Mentor** is the cross-module coach. On every message it pulls training logs, Oura data, food, water, weight, journal entries, check-ins and health profile, so it can reason across domains and notice that your bad week of lifting lines up with three nights of poor sleep.
+**Mentor** is the cross-module coach. On every message it pulls training logs, wearable data, food, water, weight, journal entries, check-ins and health profile, so it can reason across domains and notice that your bad week of lifting lines up with three nights of poor sleep.
 
 ---
 
@@ -58,7 +60,7 @@ The parts of this project that were actually interesting to build.
 | Data | Supabase (Postgres, Auth, Storage, RLS), 48 migrations |
 | Client state | TanStack Query v5 |
 | AI | Anthropic Claude (coaching, reflection, mentor), OpenAI (food vision) |
-| Integrations | Oura API (OAuth), Apple Health (iOS Shortcuts), MCP |
+| Integrations | Oura, WHOOP and Fitbit (OAuth), Apple Health (iOS Shortcuts), MCP |
 | Hosting | Vercel |
 
 Roughly 118 API routes, 16 pages, and 25 tables.
