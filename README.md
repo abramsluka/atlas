@@ -47,6 +47,8 @@ The parts of this project that were actually interesting to build.
 
 **MCP server.** Atlas exposes its own Model Context Protocol server, so Claude can log food, water, supplements, weight and gym sets directly, or read back gym progress and daily summaries, without going through the UI.
 
+**Three-layer state model.** Durable records go to Postgres, in-progress conversation state stays in device `localStorage`, and the daily briefing is cached server-side against the calendar date so it reads identically on every device until it regenerates the next day. [ARCHITECTURE.md](ARCHITECTURE.md) covers the reasoning.
+
 **Mobile-first with real motion design.** Built as a PWA with a cosmic/nebula visual language, a Three.js starfield, orbiting module nodes on the home screen, and Framer Motion transitions throughout. A recurring lesson was that transformed ancestors break `position: fixed`, which is why every modal and overlay portals to `document.body`.
 
 ---
@@ -85,4 +87,4 @@ Atlas is built around one person's data model and habits, so it is shared here a
 
 ## License
 
-MIT
+Source-available, not open source. The code is public so it can be read and evaluated, but it is not licensed for use, copying, modification, or deployment. I retain full ownership and all commercial rights. See [LICENSE](LICENSE) for the specifics, and get in touch if you want to discuss anything beyond that.

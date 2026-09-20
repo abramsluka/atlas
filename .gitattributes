@@ -1,0 +1,12 @@
+# Legacy static HTML dashboards kept for reference only. Excluded from
+# GitHub's language statistics so they don't misrepresent the codebase.
+reference/** linguist-vendored
+docs/labs/** linguist-vendored
+
+# Vendored agent skill tooling, not application code.
+.claude/skills/** linguist-vendored
+ui-ux-pro-max/** linguist-vendored
+
+# Generated, not authored.
+package-lock.json linguist-generated
+supabase/migrations/** linguist-detectable=false
