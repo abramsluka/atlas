@@ -162,6 +162,13 @@ straight through. Detailed prompts and specs mean skip the questions and build.
 
 ## Committing — multiple agents may share this tree
 
+**Auto-commit and push.** After any build session or meaningful set of changes,
+stage by feature (not blind `git add -A`), commit with a descriptive
+`feat:`/`fix:`/`chore:` message, and push to `origin main` immediately. Do this as
+the final step without being asked. Use a `Co-Authored-By:` trailer for the active
+Claude model. If the session is on a `claude/*` branch, "push to main" means the
+landing step in "Deploying" below.
+
 Several Claude agents (and Luka) can be working in this repo at once. EVERY commit
 or push must follow the `/commit-mine` skill (`.claude/skills/commit-mine/`),
 whether or not it is mentioned: stage only files you created or edited this
