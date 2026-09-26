@@ -34,7 +34,11 @@ const CATEGORY_DEFAULT: Record<AiCategory, KeyProvider> = {
 const MODELS: Record<KeyProvider, { strong: string; fast: string }> = {
   anthropic: { strong: 'claude-sonnet-4-6', fast: 'claude-haiku-4-5' },
   openai: { strong: 'gpt-4o', fast: 'gpt-4o-mini' },
-  gemini: { strong: 'gemini-2.0-flash', fast: 'gemini-2.0-flash-lite' },
+  // gemini-2.0-flash / -lite were shut down 2026-06-01; these are Google's
+  // designated replacements from its deprecation table. Every Gemini call
+  // failed from that date until this line changed, so check that table
+  // (ai.google.dev/gemini-api/docs/deprecations) whenever bumping these.
+  gemini: { strong: 'gemini-3.6-flash', fast: 'gemini-3.1-flash-lite' },
 }
 
 export type ResolvedModel = {
