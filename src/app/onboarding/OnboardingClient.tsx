@@ -35,7 +35,7 @@ const KEY_PROVIDERS = [
     name: 'Google Gemini',
     tag: 'Free',
     blurb: 'Free tier, no credit card. The easiest place to start — you can switch later.',
-    placeholder: 'AIza…',
+    placeholder: 'Paste your Gemini key',
     console: 'https://aistudio.google.com/app/apikey',
   },
   {

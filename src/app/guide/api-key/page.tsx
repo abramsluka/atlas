@@ -100,7 +100,9 @@ export default function ApiKeyGuidePage() {
         </Step>
         <Step n={3} title="Copy it and paste it into Atlas">
           <p>
-            The key starts with <span className="font-mono text-zinc-300">AIza</span>. Copy it now —
+            Use the copy button next to the key rather than selecting it by hand, so none of it
+            gets cut off. Older keys start with <span className="font-mono text-zinc-300">AIza</span>;
+            newer ones look different, and both work. Copy it now —
             paste it into Atlas during setup, or later under Settings → API keys.
           </p>
         </Step>

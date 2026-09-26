@@ -67,13 +67,23 @@ async function keyRejectionReason(provider: KeyProvider, key: string): Promise<s
       })
       return res.status === 401 || res.status === 403 ? AUTH_REJECTED : null
     }
-    // Google passes the key as a query param, and returns 400 (not 401) for a
-    // malformed key, so treat that as a rejection too.
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`,
-      { signal }
-    )
-    return res.status === 400 || res.status === 401 || res.status === 403 ? AUTH_REJECTED : null
+    // Same transport the runtime uses: @ai-sdk/google sends x-goog-api-key, so
+    // the save-time check is a rehearsal of the real call rather than of the
+    // legacy ?key= form. Google returns 400 (not 401) for a bad key, with a
+    // structured reason worth surfacing instead of a generic "rejected".
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1', {
+      headers: { 'x-goog-api-key': key },
+      signal,
+    })
+    if (res.ok) return null
+    if (res.status !== 400 && res.status !== 401 && res.status !== 403) return null
+    const body = await res.json().catch(() => null)
+    const reason = String(body?.error?.details?.find((d: { reason?: string }) => d?.reason)?.reason ?? '')
+    const msg = String(body?.error?.message ?? '')
+    if (reason === 'API_KEY_INVALID') {
+      return 'Google says that key is not valid. Copy it again from aistudio.google.com/app/apikey (use the copy button, so nothing gets cut off).'
+    }
+    return `Google rejected this key: ${msg || 'unusable key'}`
   } catch {
     return null
   }
@@ -92,15 +102,26 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'provider and key are required' }, { status: 400 })
   }
 
-  const PREFIX: Record<KeyProvider, string> = {
+  // Prefix checks only for formats that are stable and worth catching early:
+  // an OpenAI key pasted into the Anthropic slot is a real, common mistake.
+  //
+  // No prefix for Gemini. Google's keys used to start with "AIza", but since
+  // 2026-05-28 AI Studio issues "auth keys" bound to a service account, and a
+  // hard "AIza" check was rejecting every freshly created key before Google
+  // was even asked. The live call below is the real test; this only screens
+  // out obvious junk (a truncated paste, a sentence, a stray space).
+  const PREFIX: Partial<Record<KeyProvider, string>> = {
     anthropic: 'sk-ant-',
     openai: 'sk-',
-    gemini: 'AIza', // Google AI Studio keys
   }
   const expectedPrefix = PREFIX[provider]
-  if (!key.startsWith(expectedPrefix) || key.length < 20) {
+  if (key.length < 20 || /\s/.test(key) || (expectedPrefix && !key.startsWith(expectedPrefix))) {
     return NextResponse.json(
-      { error: `That doesn't look like a ${PROVIDER_LABEL[provider]} key (expected ${expectedPrefix}…)` },
+      {
+        error: expectedPrefix
+          ? `That doesn't look like a valid ${PROVIDER_LABEL[provider]} key (expected ${expectedPrefix}…)`
+          : `That doesn't look like a complete ${PROVIDER_LABEL[provider]} key. Copy it again with the copy button so none of it gets cut off.`,
+      },
       { status: 400 }
     )
   }

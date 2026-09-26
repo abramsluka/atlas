@@ -47,7 +47,7 @@ const PROVIDERS: Array<{
     powers: 'Can run the coaching instead of Anthropic. Has a free tier — no credit card needed.',
     consoleUrl: 'https://aistudio.google.com/app/apikey',
     consoleLabel: 'aistudio.google.com',
-    placeholder: 'AIza…',
+    placeholder: 'Paste your Gemini key',
   },
 ]
 
