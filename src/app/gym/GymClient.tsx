@@ -14,7 +14,7 @@ import {
   useLogSet, useDeleteLog, useFinishWorkout,
   useLogBodyWeight, useLogBodyMeasurement, useUploadPhoto, useDeletePhoto,
 } from '@/features/gym/mutations'
-import type { GymConfig, GymExercise, GymLog, BodyWeight, ProgressPhoto } from '@/features/gym/types'
+import type { GymConfig, GymEntry, GymExercise, GymLog, BodyWeight, ProgressPhoto } from '@/features/gym/types'
 import {
   buildSessionHistory, decideProgression, nextSetGuidance, specFromExercise,
 } from '@/features/gym/progression'
@@ -365,6 +365,44 @@ function ReorderRow({ ex }: { ex: GymExercise }) {
         style={{ touchAction: 'none' }}
         aria-label="Drag to reorder"
       >⠿</span>
+    </Reorder.Item>
+  )
+}
+
+// One gym in settings — rename inline, drag the ⠿ handle to reorder.
+function GymSettingsRow({ gym, draggable, onRename, onRemove }: {
+  gym: GymEntry
+  draggable: boolean
+  onRename: (name: string) => void
+  onRemove: () => void
+}) {
+  const controls = useDragControls()
+  return (
+    <Reorder.Item
+      value={gym.id}
+      as="div"
+      dragListener={false}
+      dragControls={controls}
+      whileDrag={{ scale: 1.03 }}
+      className="flex items-center gap-2"
+    >
+      {draggable && (
+        <span
+          onPointerDown={(e) => controls.start(e)}
+          className="cursor-grab text-white/30 text-lg leading-none px-1 select-none"
+          style={{ touchAction: 'none' }}
+          aria-label="Drag to reorder"
+        >⠿</span>
+      )}
+      <input
+        value={gym.name}
+        onChange={e => onRename(e.target.value)}
+        className="flex-1 min-w-0 rounded-xl bg-white/8 border border-white/10 px-4 py-3 text-sm text-white focus:outline-none"
+      />
+      <button
+        onClick={onRemove}
+        className="rounded-xl bg-white/5 border border-white/10 px-3 py-3 text-white/40 active:opacity-70"
+      >×</button>
     </Reorder.Item>
   )
 }
@@ -2985,45 +3023,23 @@ export default function GymClient({ today, initialConfig, initialExercises, init
               {/* Gyms */}
               <div>
                 <label className="text-xs text-white/40 uppercase tracking-wider block mb-2">Gyms</label>
-                <div className="space-y-2 mb-2">
-                  {settingsGyms.map((g, i) => (
-                    <div key={g.id} className="flex gap-2">
-                      {settingsGyms.length > 1 && (
-                        <div className="flex flex-col gap-1">
-                          {([-1, 1] as const).map(dir => {
-                            const j = i + dir
-                            const disabled = j < 0 || j >= settingsGyms.length
-                            return (
-                              <button
-                                key={dir}
-                                disabled={disabled}
-                                aria-label={dir < 0 ? `Move ${g.name} up` : `Move ${g.name} down`}
-                                onClick={() => setSettingsGyms(gs => {
-                                  const next = [...gs]
-                                  ;[next[i], next[j]] = [next[j], next[i]]
-                                  return next
-                                })}
-                                className="flex-1 rounded-lg bg-white/5 border border-white/10 px-2 text-[10px] leading-none text-white/50 active:opacity-70 disabled:opacity-20"
-                              >{dir < 0 ? '▲' : '▼'}</button>
-                            )
-                          })}
-                        </div>
-                      )}
-                      <input
-                        value={g.name}
-                        onChange={e => setSettingsGyms(gs => gs.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
-                        className="flex-1 min-w-0 rounded-xl bg-white/8 border border-white/10 px-4 py-3 text-sm text-white focus:outline-none"
-                      />
-                      <button
-                        onClick={() => {
-                          if (settingsGyms.length <= 1) return
-                          setSettingsGyms(gs => gs.filter((_, j) => j !== i))
-                        }}
-                        className="rounded-xl bg-white/5 border border-white/10 px-3 py-3 text-white/40 active:opacity-70"
-                      >×</button>
-                    </div>
+                <Reorder.Group
+                  as="div"
+                  axis="y"
+                  values={settingsGyms.map(g => g.id)}
+                  onReorder={(ids: string[]) => setSettingsGyms(gs => ids.map(id => gs.find(g => g.id === id)!))}
+                  className="space-y-2 mb-2"
+                >
+                  {settingsGyms.map(g => (
+                    <GymSettingsRow
+                      key={g.id}
+                      gym={g}
+                      draggable={settingsGyms.length > 1}
+                      onRename={name => setSettingsGyms(gs => gs.map(x => x.id === g.id ? { ...x, name } : x))}
+                      onRemove={() => setSettingsGyms(gs => gs.length <= 1 ? gs : gs.filter(x => x.id !== g.id))}
+                    />
                   ))}
-                </div>
+                </Reorder.Group>
                 <button
                   onClick={() => setSettingsGyms(gs => [...gs, { id: 'g_' + Date.now(), name: 'New Gym' }])}
                   className="text-xs text-white/40 underline active:opacity-60"
