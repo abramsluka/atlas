@@ -37,6 +37,11 @@ import { checkNoApiKey, checkAiLimit } from '@/lib/apiKeyError'
 
 type SetTimerState = { phase: TimerPhase; phaseStart: number | null; sessionStart: number | null }
 const GYM_LAST_KEY = 'atlas.gym.last' // last-open exercise, restored on app open (weight/reps come from the prefill effect)
+const GYM_LAST_GYM_KEY = 'atlas.gym.lastGym' // gym the last set was logged at on this device — logs don't store a gym
+
+function readLastGym(): string | null {
+  try { return localStorage.getItem(GYM_LAST_GYM_KEY) } catch { return null }
+}
 const GYM_ENTERED_KEY = 'atlas.gym.entered' // per-exercise last *typed* weight/reps — what you entered, not what you logged
 const GYM_RX_KEY = 'atlas.gym.rxCollapsed' // prescription card collapsed? sticky across exercises + sessions
 
@@ -519,12 +524,36 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     if (!ex) return
     autoAdvancedRef.current = true // last-exercise restore wins over split auto-advance
     const exGyms = (ex.gym_ids ?? []).filter(id => config.gyms.some(g => g.id === id))
-    if (exGyms.length && !exGyms.includes(filterGym)) setFilterGym(exGyms[0])
+    const lastGym = readLastGym()
+    if (lastGym && config.gyms.some(g => g.id === lastGym) && (!exGyms.length || exGyms.includes(lastGym))) setFilterGym(lastGym)
+    else if (exGyms.length && !exGyms.includes(filterGym)) setFilterGym(exGyms[0])
     const dayId = ex.day_ids?.find(id => config.days.some(d => d.id === id))
     setFilterDay(dayId ?? '')
     setCurrentExId(ex.id)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exercises])
+
+  // Open on the gym the most recent set was logged at. Logs carry no gym, so it's
+  // inferred: an exercise pinned to exactly one gym settles it (works across
+  // devices and MCP); otherwise the gym this device last logged at, if that
+  // exercise is available there. A manual gym tap before logs arrive wins.
+  const gymPickedRef = useRef(false)
+  const lastGymResolvedRef = useRef(false)
+  useEffect(() => {
+    if (lastGymResolvedRef.current || !logsFetched || exercises.length === 0) return
+    lastGymResolvedRef.current = true
+    if (gymPickedRef.current || config.gyms.length <= 1) return
+    const valid = (id: string | null): id is string => !!id && config.gyms.some(g => g.id === id)
+    const saved = readLastGym()
+    let chosen: string | null = valid(saved) ? saved : null
+    if (allLogs.length > 0) {
+      const latest = allLogs.reduce((a, b) => a.logged_at > b.logged_at ? a : b)
+      const exGyms = (exercises.find(e => e.id === latest.exercise_id)?.gym_ids ?? []).filter(valid)
+      if (exGyms.length === 1) chosen = exGyms[0]
+      else if (exGyms.length > 1 && !(chosen && exGyms.includes(chosen))) chosen = exGyms[0]
+    }
+    if (chosen) setFilterGym(chosen)
+  }, [logsFetched, allLogs, exercises, config.gyms])
 
   // Modals
   const [exModal, setExModal] = useState<ExModalState>(EMPTY_EX_MODAL)
@@ -946,6 +975,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     const w = ex.bodyweight ? 0 : (parseFloat(weightInput) || 0)
     const prior = exLogs        // captured pre-insert — PR check runs against these
     const swap = activeSwap
+    try { localStorage.setItem(GYM_LAST_GYM_KEY, filterGym) } catch {}
     logSet.mutate({
       exercise_id: ex.id, weight: w, reps,
       ...(swap ? { performed_exercise: swap.name, performed_library_id: swap.library_id } : {}),
@@ -1578,7 +1608,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     initial={{ opacity: 0, x: -12 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ duration: 0.32, ease: EASE_OUT, delay: 0.15 + i * 0.06 }}
-                    onClick={() => setFilterGym(g.id)}
+                    onClick={() => { gymPickedRef.current = true; setFilterGym(g.id) }}
                     className={`flex-1 shrink-0 min-w-[72px] px-3 rounded-lg py-2.5 text-sm font-semibold whitespace-nowrap transition-colors ${
                       filterGym === g.id
                         ? 'bg-white text-black shadow-sm'
@@ -2958,10 +2988,31 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 <div className="space-y-2 mb-2">
                   {settingsGyms.map((g, i) => (
                     <div key={g.id} className="flex gap-2">
+                      {settingsGyms.length > 1 && (
+                        <div className="flex flex-col gap-1">
+                          {([-1, 1] as const).map(dir => {
+                            const j = i + dir
+                            const disabled = j < 0 || j >= settingsGyms.length
+                            return (
+                              <button
+                                key={dir}
+                                disabled={disabled}
+                                aria-label={dir < 0 ? `Move ${g.name} up` : `Move ${g.name} down`}
+                                onClick={() => setSettingsGyms(gs => {
+                                  const next = [...gs]
+                                  ;[next[i], next[j]] = [next[j], next[i]]
+                                  return next
+                                })}
+                                className="flex-1 rounded-lg bg-white/5 border border-white/10 px-2 text-[10px] leading-none text-white/50 active:opacity-70 disabled:opacity-20"
+                              >{dir < 0 ? '▲' : '▼'}</button>
+                            )
+                          })}
+                        </div>
+                      )}
                       <input
                         value={g.name}
                         onChange={e => setSettingsGyms(gs => gs.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
-                        className="flex-1 rounded-xl bg-white/8 border border-white/10 px-4 py-3 text-sm text-white focus:outline-none"
+                        className="flex-1 min-w-0 rounded-xl bg-white/8 border border-white/10 px-4 py-3 text-sm text-white focus:outline-none"
                       />
                       <button
                         onClick={() => {
