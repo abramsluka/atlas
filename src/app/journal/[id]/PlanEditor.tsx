@@ -1,6 +1,23 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import {
+  DndContext,
+  KeyboardSensor,
+  MouseSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
 import type { PlanItem } from '@/features/journal/types'
 
 interface Props {
@@ -127,6 +144,23 @@ export default function PlanEditor({ plan, planning, onChange }: Props) {
     containerRef.current?.focus({ preventScroll: true })
   }
 
+  // Mouse drags start after a few pixels of movement. Touch needs a short
+  // press-and-hold on the grip so a normal swipe still scrolls the page.
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  function handleDragEnd({ active, over }: DragEndEvent) {
+    if (!over || active.id === over.id) return
+    const from = plan.findIndex(p => p.id === active.id)
+    const to = plan.findIndex(p => p.id === over.id)
+    if (from < 0 || to < 0) return
+    commit(arrayMove(plan, from, to), null, null)
+    containerRef.current?.focus({ preventScroll: true })
+  }
+
   function addItem() {
     const item: PlanItem = { id: crypto.randomUUID(), text: '', done: false }
     commit([...plan, item], { id: item.id, caret: 0 }, null)
@@ -208,57 +242,101 @@ export default function PlanEditor({ plan, planning, onChange }: Props) {
       <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-600">
         ☀️ Today&apos;s plan
       </p>
-      <div className={`space-y-1 ${planning ? 'opacity-50' : ''}`}>
-        {plan.map((item, index) => (
-          <div key={item.id} className="group flex items-start gap-3 rounded-xl px-1 py-1.5">
-            <button
-              onClick={() => toggleItem(item.id)}
-              className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md transition-colors"
-              style={{
-                background: item.done ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.06)',
-                border: item.done ? '1px solid rgba(251,191,36,0.4)' : '1px solid rgba(255,255,255,0.15)',
-              }}
-            >
-              {item.done && <span className="text-[11px] leading-none text-amber-300">✓</span>}
-            </button>
-            <textarea
-              value={item.text}
-              rows={1}
-              ref={(el) => {
-                if (el) {
-                  itemRefs.current.set(item.id, el)
-                  autoGrow(el)
-                } else {
-                  itemRefs.current.delete(item.id)
-                }
-              }}
-              placeholder="What's the move?"
-              onChange={(e) => {
-                editItem(item.id, e.target.value)
-                autoGrow(e.target)
-              }}
-              onKeyDown={(e) => handleKeyDown(e, index)}
-              className={`min-w-0 flex-1 resize-none bg-transparent text-[15px] leading-snug outline-none placeholder:text-zinc-700 transition-colors ${
-                item.done
-                  ? 'text-zinc-500 line-through decoration-zinc-600'
-                  : 'text-white'
-              }`}
-            />
-            <button
-              onClick={() => deleteItem(item.id)}
-              className="px-1 text-zinc-700 active:text-zinc-400"
-            >
-              ×
-            </button>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={plan.map(p => p.id)} strategy={verticalListSortingStrategy}>
+          <div className={`space-y-1 ${planning ? 'opacity-50' : ''}`}>
+            {plan.map((item, index) => (
+              <SortableRow key={item.id} id={item.id}>
+                <button
+                  onClick={() => toggleItem(item.id)}
+                  className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md transition-colors"
+                  style={{
+                    background: item.done ? 'rgba(251,191,36,0.25)' : 'rgba(255,255,255,0.06)',
+                    border: item.done ? '1px solid rgba(251,191,36,0.4)' : '1px solid rgba(255,255,255,0.15)',
+                  }}
+                >
+                  {item.done && <span className="text-[11px] leading-none text-amber-300">✓</span>}
+                </button>
+                <textarea
+                  value={item.text}
+                  rows={1}
+                  ref={(el) => {
+                    if (el) {
+                      itemRefs.current.set(item.id, el)
+                      autoGrow(el)
+                    } else {
+                      itemRefs.current.delete(item.id)
+                    }
+                  }}
+                  placeholder="What's the move?"
+                  onChange={(e) => {
+                    editItem(item.id, e.target.value)
+                    autoGrow(e.target)
+                  }}
+                  onKeyDown={(e) => handleKeyDown(e, index)}
+                  className={`min-w-0 flex-1 resize-none bg-transparent text-[15px] leading-snug outline-none placeholder:text-zinc-700 transition-colors ${
+                    item.done
+                      ? 'text-zinc-500 line-through decoration-zinc-600'
+                      : 'text-white'
+                  }`}
+                />
+                <button
+                  onClick={() => deleteItem(item.id)}
+                  className="px-1 text-zinc-700 active:text-zinc-400"
+                >
+                  ×
+                </button>
+              </SortableRow>
+            ))}
           </div>
-        ))}
-      </div>
+        </SortableContext>
+      </DndContext>
       <button
         onClick={addItem}
         className="mt-2 px-1 text-sm text-zinc-600 active:text-zinc-400"
       >
         + Add a task
       </button>
+    </div>
+  )
+}
+
+// One plan line. Only the six-dot grip starts a drag, so clicking into the
+// text, the checkbox, or × behaves exactly as before. The transform is locked
+// to the y axis so a dragged row can't wander sideways.
+function SortableRow({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
+    useSortable({ id })
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: transform ? `translate3d(0, ${transform.y}px, 0)` : undefined,
+        transition,
+        position: 'relative',
+        zIndex: isDragging ? 10 : undefined,
+      }}
+      className={`group flex items-start gap-2 rounded-xl px-1 py-1.5 ${
+        isDragging ? 'bg-zinc-900 shadow-lg shadow-black/60 ring-1 ring-white/10' : ''
+      }`}
+    >
+      <button
+        ref={setActivatorNodeRef}
+        {...attributes}
+        {...listeners}
+        aria-label="Drag to reorder"
+        className={`mt-0.5 flex h-5 w-4 flex-shrink-0 touch-none select-none items-center justify-center rounded transition-opacity ${
+          isDragging ? 'cursor-grabbing text-zinc-400' : 'cursor-grab text-zinc-600 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100'
+        }`}
+      >
+        <svg width="8" height="14" viewBox="0 0 8 14" fill="currentColor" aria-hidden>
+          <circle cx="2" cy="2" r="1.2" /><circle cx="6" cy="2" r="1.2" />
+          <circle cx="2" cy="7" r="1.2" /><circle cx="6" cy="7" r="1.2" />
+          <circle cx="2" cy="12" r="1.2" /><circle cx="6" cy="12" r="1.2" />
+        </svg>
+      </button>
+      {children}
     </div>
   )
 }
