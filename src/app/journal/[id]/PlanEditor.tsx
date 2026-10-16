@@ -47,6 +47,8 @@ export default function PlanEditor({ plan, planning, onChange }: Props) {
   const itemRefs = useRef(new Map<string, HTMLTextAreaElement>())
   const containerRef = useRef<HTMLDivElement>(null)
   const [focusRequest, setFocusRequest] = useState<FocusPoint | null>(null)
+  const [copied, setCopied] = useState(false)
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const past = useRef<Snapshot[]>([])
   const future = useRef<Snapshot[]>([])
@@ -166,6 +168,39 @@ export default function PlanEditor({ plan, planning, onChange }: Props) {
     commit([...plan, item], { id: item.id, caret: 0 }, null)
   }
 
+  useEffect(() => () => { if (copyTimer.current) clearTimeout(copyTimer.current) }, [])
+
+  // Each task is its own textarea, so native selection can't span rows — this
+  // is the only way to grab them all at once. Copies the unchecked tasks as
+  // plain lines (no bullets, no "[ ]"), which pastes into a Google Docs
+  // checklist as one checkbox per task. Falls back to every task when nothing
+  // is left unchecked.
+  async function copyRemaining() {
+    const trimmed = (items: PlanItem[]) => items.map(p => p.text.trim()).filter(Boolean)
+    const remaining = trimmed(plan.filter(p => !p.done))
+    const lines = remaining.length ? remaining : trimmed(plan)
+    const text = lines.join('\n')
+    if (!text) return
+
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      // Insecure context or older webview: fall back to a throwaway textarea.
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      try { document.execCommand('copy') } catch { /* give up silently */ }
+      document.body.removeChild(ta)
+    }
+
+    setCopied(true)
+    if (copyTimer.current) clearTimeout(copyTimer.current)
+    copyTimer.current = setTimeout(() => setCopied(false), 1500)
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>, index: number) {
     if (e.nativeEvent.isComposing) return
     const el = e.currentTarget
@@ -237,11 +272,38 @@ export default function PlanEditor({ plan, planning, onChange }: Props) {
     }
   }
 
+  const remainingCount = plan.filter(p => !p.done && p.text.trim()).length
+  const anyText = plan.some(p => p.text.trim())
+
   return (
     <div ref={containerRef} tabIndex={-1} onKeyDown={handleHistoryKeys} className="outline-none">
-      <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-600">
-        ☀️ Today&apos;s plan
-      </p>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-600">
+          ☀️ Today&apos;s plan
+        </p>
+        {anyText && (
+          <button
+            onClick={copyRemaining}
+            className="flex flex-shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 transition-colors active:text-amber-300"
+            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
+          >
+            {copied ? (
+              <>
+                <span className="leading-none text-amber-300">✓</span>
+                Copied
+              </>
+            ) : (
+              <>
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
+                  <path d="M10.5 5.5V3.5a1.5 1.5 0 0 0-1.5-1.5H3.5A1.5 1.5 0 0 0 2 3.5v5.5a1.5 1.5 0 0 0 1.5 1.5h2" />
+                </svg>
+                {remainingCount > 0 ? 'Copy remaining' : 'Copy all'}
+              </>
+            )}
+          </button>
+        )}
+      </div>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={plan.map(p => p.id)} strategy={verticalListSortingStrategy}>
           <div className={`space-y-1 ${planning ? 'opacity-50' : ''}`}>
