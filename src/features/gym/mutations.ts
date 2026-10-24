@@ -85,6 +85,40 @@ export function useReorderExercises() {
   })
 }
 
+export type ExerciseAssignment = Pick<GymExercise, 'id' | 'gym_ids' | 'day_ids'>
+
+// Program grid save: writes day/gym assignments for many exercises in one call.
+export function useBulkAssignExercises() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (updates: ExerciseAssignment[]) => {
+      const res = await fetch('/api/gym/exercises/bulk', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ updates }),
+      })
+      if (!res.ok) throw new Error('Failed to save program')
+      return res.json()
+    },
+    onMutate: async (updates: ExerciseAssignment[]) => {
+      await qc.cancelQueries({ queryKey: ['gym-exercises'] })
+      const prev = qc.getQueryData<GymExercise[]>(['gym-exercises'])
+      if (prev) {
+        const byId = new Map(updates.map(u => [u.id, u]))
+        qc.setQueryData<GymExercise[]>(['gym-exercises'], prev.map(e => {
+          const u = byId.get(e.id)
+          return u ? { ...e, gym_ids: u.gym_ids, day_ids: u.day_ids } : e
+        }))
+      }
+      return { prev }
+    },
+    onError: (_err, _updates, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['gym-exercises'], ctx.prev)
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['gym-exercises'] }),
+  })
+}
+
 export function useDeleteExercise() {
   const qc = useQueryClient()
   return useMutation({

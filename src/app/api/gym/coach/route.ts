@@ -13,6 +13,36 @@ import { getLiveSession, liveSessionBlock } from '@/lib/liveGymSession'
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
+type ThreadEntry = { mode: 'devil' | 'angel'; text: string }
+
+const MAX_HISTORY = 4
+const MAX_HISTORY_CHARS = 1500
+
+// "Don't repeat yourself" alone isn't enough — the model drifts back to the same
+// few ideas. Each continuation is pinned to the voice's next unused angle, so
+// the thread is forced into new territory.
+const ANGEL_ANGLES = [
+  'Future self: who they are a year from now if they keep showing up, in concrete physical detail.',
+  'Momentum math: how small sessions compound, and why today is a deposit, not a chore.',
+  'Identity: the kind of person who trains when nobody is watching, and that they are already becoming them.',
+  'The walk: how their body, posture and energy change the way they move through a room.',
+  'Protect the streak: what they have already built and why it is worth guarding today.',
+  'The hard part is already done: most of the work was deciding, and they have decided.',
+  'The people around them: what it means to the people who watch them keep their word to themselves.',
+  'Today specifically: the one session in front of them and how good walking out of it will feel.',
+]
+
+const DEVIL_ANGLES = [
+  'The cost of skipping: exactly what today\'s excuse buys them, in the body and in the mirror.',
+  'The before photo: they are choosing, today, whether they stay it.',
+  'Excuses as a pattern: this one sounds exactly like the last ten, and the pattern is the real enemy.',
+  'The version who quit: paint them a year out after stopping, soft and full of reasons.',
+  'Self-respect: every promise they break to themselves makes the next one easier to break.',
+  'Comfort is the trap: the couch, the phone, the "later", and how they are losing to furniture.',
+  'Nobody is coming: no one else will do this for them, and waiting for motivation is a coward\'s plan.',
+  'Pure command: stop thinking, stop reading this, move. Short, brutal, no metaphors.',
+]
+
 export async function POST(request: NextRequest) {
   try {
   const authClient = await createClient()
@@ -21,6 +51,13 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json()
   const mode: 'devil' | 'angel' = body.mode === 'angel' ? 'angel' : 'devil'
+  // Earlier spiels from this visit's thread (either voice), oldest first. Sent
+  // back so a continuation takes new ground instead of repeating itself.
+  const history: ThreadEntry[] = (Array.isArray(body.history) ? body.history : [])
+    .filter((h: Partial<ThreadEntry> | null) =>
+      (h?.mode === 'angel' || h?.mode === 'devil') && typeof h.text === 'string' && h.text.trim().length > 0)
+    .slice(-MAX_HISTORY)
+    .map((h: ThreadEntry) => ({ mode: h.mode, text: h.text.trim().slice(0, MAX_HISTORY_CHARS) }))
 
   const db = createServiceClient()
   const TZ = await getUserTimezone(user.id)
@@ -193,12 +230,34 @@ MID-SESSION OVERRIDE — READ THIS FIRST. He is IN THE GYM RIGHT NOW, between se
 
   const baseSystem = (mode === 'devil' ? devilSystem : angelSystem) + (liveSession ? midSessionOverride : '')
 
+  let userContent = `My training data:\n\n${context}`
+  if (history.length) {
+    const angles = mode === 'devil' ? DEVIL_ANGLES : ANGEL_ANGLES
+    const angle = angles[history.filter(h => h.mode === mode).length % angles.length]
+    const said = history.map((h, i) => {
+      const who = h.mode === mode ? 'You' : h.mode === 'devil' ? 'The drill sergeant (the other voice)' : 'The believer (the other voice)'
+      return `[${i + 1}] ${who} said:\n"""\n${h.text}\n"""`
+    }).join('\n\n')
+    const switched = history[history.length - 1].mode !== mode
+    userContent += `
+
+THIS IS A CONTINUATION. In this same sitting they already heard the following and asked for more:
+
+${said}
+
+Rules for this one:
+- Do NOT reuse any point, image, metaphor, phrase or closing line from above. If it was said, it is spent.
+- Take this angle instead: ${angle}
+- Build on what came before and escalate. Do not restart or re-introduce yourself.${switched ? '\n- The other voice just spoke. You may react to it in one line, then make your own case.' : ''}
+- ${liveSession ? '3–4 sentences.' : '4–5 sentences.'}`
+  }
+
   const result = streamText({
     model: resolved.model,
     maxOutputTokens: 450,
     system: profileBlock ? `${baseSystem}\n\n${profileBlock}` : baseSystem,
     messages: [
-      { role: 'user', content: `My training data:\n\n${context}` },
+      { role: 'user', content: userContent },
     ],
   })
 

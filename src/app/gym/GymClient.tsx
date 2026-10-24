@@ -29,6 +29,7 @@ import ExerciseAutocomplete from './ExerciseAutocomplete'
 import ExerciseInfoSheet from './ExerciseInfoSheet'
 import ExerciseDetailSheet, { type DetailTab } from './ExerciseDetailSheet'
 import SwapSheet, { type SwapChoice } from './SwapSheet'
+import ProgramGrid from './ProgramGrid'
 import NewBestBurst from './NewBestBurst'
 import { detectNewBest, type NewBest } from '@/features/gym/history'
 import { SPRING_POP } from './motion'
@@ -36,6 +37,7 @@ import ChatText from '@/components/ChatText'
 import { checkNoApiKey, checkAiLimit } from '@/lib/apiKeyError'
 
 type SetTimerState = { phase: TimerPhase; phaseStart: number | null; sessionStart: number | null }
+type CoachEntry = { mode: 'devil' | 'angel'; text: string; error?: boolean }
 const GYM_LAST_KEY = 'atlas.gym.last' // last-open exercise, restored on app open (weight/reps come from the prefill effect)
 const GYM_LAST_GYM_KEY = 'atlas.gym.lastGym' // gym the last set was logged at on this device — logs don't store a gym
 
@@ -608,6 +610,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   useEffect(() => { setMounted(true) }, [])
 
   const [showSettings, setShowSettings] = useState(false)
+  const [programGridOpen, setProgramGridOpen] = useState(false)
   const [showRotation, setShowRotation] = useState(false)
   const [rotDraft, setRotDraft] = useState<string[]>([])
   const [rotTodayIdx, setRotTodayIdx] = useState(0)
@@ -662,9 +665,12 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const [pastExpanded, setPastExpanded] = useState(false)
 
   // Coach (devil / angel)
-  const [coachText, setCoachText] = useState('')
+  // One thread per visit, shared by both voices: every spiel is sent back with
+  // the next request so a continuation (or the other voice) takes new ground.
+  const [coachThread, setCoachThread] = useState<CoachEntry[]>([])
   const [coachStreaming, setCoachStreaming] = useState(false)
-  const [coachMode, setCoachMode] = useState<'devil' | 'angel' | null>(null)
+  const lastCoach = coachThread[coachThread.length - 1]
+  const coachMode = lastCoach?.mode ?? null
   const [logSetFlash, setLogSetFlash] = useState(false)
 
   // Prescription card collapse — sticky, so "I just want the call" survives
@@ -729,28 +735,35 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   }
 
   async function streamCoach(mode: 'devil' | 'angel') {
-    setCoachMode(mode)
+    const history = coachThread
+      .filter(e => !e.error && e.text.trim())
+      .slice(-4)
+      .map(({ mode, text }) => ({ mode, text }))
+    const updateLast = (fn: (e: CoachEntry) => CoachEntry) =>
+      setCoachThread(t => [...t.slice(0, -1), fn(t[t.length - 1])])
+    const fail = (message: string) => updateLast(e => ({ ...e, text: message, error: true }))
+
+    setCoachThread(t => [...t, { mode, text: '' }])
     setCoachStreaming(true)
-    setCoachText('')
     try {
       const res = await fetch('/api/gym/coach', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode }),
+        body: JSON.stringify({ mode, history }),
       })
       if (!res.ok || !res.body) {
         const noKey = await checkNoApiKey(res)
         if (noKey) {
-          setCoachText(noKey.message)
+          fail(noKey.message)
           return
         }
         const limit = await checkAiLimit(res)
         if (limit) {
-          setCoachText(limit.message)
+          fail(limit.message)
           return
         }
         const errBody = await res.text().catch(() => '')
-        setCoachText(`Error ${res.status}${errBody ? ': ' + errBody.slice(0, 120) : ''}. Try again.`)
+        fail(`Error ${res.status}${errBody ? ': ' + errBody.slice(0, 120) : ''}. Try again.`)
         return
       }
       const reader = res.body.getReader()
@@ -758,8 +771,11 @@ export default function GymClient({ today, initialConfig, initialExercises, init
       while (true) {
         const { value, done } = await reader.read()
         if (done) break
-        setCoachText(prev => prev + decoder.decode(value))
+        const chunk = decoder.decode(value)
+        updateLast(e => ({ ...e, text: e.text + chunk }))
       }
+    } catch {
+      fail('Connection dropped. Try again.')
     } finally {
       setCoachStreaming(false)
     }
@@ -1585,8 +1601,19 @@ export default function GymClient({ today, initialConfig, initialExercises, init
               </span>
             </motion.button>
           </div>
+          {coachThread.map((entry, i) => entry.text && (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.3 }}
+              className={`px-5 py-4 border-t border-white/8 ${entry.mode === 'devil' ? 'bg-red-950/30' : 'bg-emerald-950/30'}`}
+            >
+              <ChatText text={entry.text} className="text-sm leading-relaxed text-white/90" />
+            </motion.div>
+          ))}
           <AnimatePresence mode="wait">
-            {coachStreaming && !coachText && (
+            {coachStreaming && !lastCoach?.text && (
               <motion.div
                 key="orb"
                 initial={{ opacity: 0 }}
@@ -1609,15 +1636,34 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 </div>
               </motion.div>
             )}
-            {coachText && (
+            {!coachStreaming && lastCoach && (
               <motion.div
-                key="text"
+                key="more"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ duration: 0.3 }}
-                className={`px-5 py-4 border-t border-white/8 ${coachMode === 'devil' ? 'bg-red-950/30' : 'bg-emerald-950/30'}`}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="px-5 py-3 border-t border-white/8 flex items-center justify-between"
               >
-                <ChatText text={coachText} className="text-sm leading-relaxed text-white/90" />
+                {lastCoach.error ? <span /> : (
+                  <motion.button
+                    onClick={() => streamCoach(lastCoach.mode)}
+                    whileTap={{ scale: 0.97 }}
+                    className={`rounded-full px-4 py-2 text-xs font-semibold tracking-widest uppercase border ${
+                      lastCoach.mode === 'devil'
+                        ? 'text-red-400 border-red-400/30 bg-red-400/10'
+                        : 'text-emerald-400 border-emerald-400/30 bg-emerald-400/10'
+                    }`}
+                  >
+                    {lastCoach.mode === 'devil' ? 'Keep yelling' : 'Hit me again'} ↓
+                  </motion.button>
+                )}
+                <button
+                  onClick={() => setCoachThread([])}
+                  className="text-xs text-white/30 px-2 py-2 active:text-white/60"
+                >
+                  Clear
+                </button>
               </motion.div>
             )}
           </AnimatePresence>
@@ -1687,6 +1733,11 @@ export default function GymClient({ today, initialConfig, initialExercises, init
               <div className="flex items-center justify-between mb-2.5">
                 <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30">Exercise</span>
                 <div className="flex items-center gap-3">
+                  {exercises.length > 0 && (
+                    <button onClick={() => setProgramGridOpen(true)} className="text-[11px] text-white/30 font-mono active:opacity-50">
+                      program
+                    </button>
+                  )}
                   {filteredExercises.length > 1 && (
                     <button onClick={() => setSheetOpen(true)} className="text-[11px] text-white/30 font-mono active:opacity-50">
                       reorder
@@ -3004,6 +3055,15 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                 >
                   Program history
                 </button>
+                {exercises.length > 0 && (
+                  <button
+                    onClick={() => { setShowSettings(false); setProgramGridOpen(true) }}
+                    className="w-full mt-2 rounded-xl py-2.5 text-sm font-semibold text-white/70 active:scale-[0.98] transition-transform"
+                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
+                  >
+                    Assign days &amp; gyms
+                  </button>
+                )}
                 <p className="text-xs text-white/30 mt-1">A periodized block from your lifts &amp; recovery. Your coach can also build one.</p>
               </div>
 
@@ -3136,6 +3196,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
       onInfo={id => setInfoId(id)}
       onClose={() => setSwapOpen(false)}
     />
+    <ProgramGrid open={programGridOpen} exercises={exercises} config={config} onClose={() => setProgramGridOpen(false)} />
     <NewBestBurst best={burst} units={config.units} exercise={currentEx ?? null} onDismiss={() => setBurst(null)} />
     <ExerciseInfoSheet id={infoId} onClose={() => setInfoId(null)} />
     </>
