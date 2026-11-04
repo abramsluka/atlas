@@ -48,9 +48,10 @@ export function PhotoMealCard({
   const [questions, setQuestions] = useState<PhotoRefineQuestion[]>(refineData.questions)
   const [answers, setAnswers] = useState<PhotoRefineAnswer[]>(refineData.answers)
   const [submitting, setSubmitting] = useState(false)
-  const [otherOpen, setOtherOpen] = useState(false)
+  const [otherIndex, setOtherIndex] = useState<number | null>(null)
   const [otherText, setOtherText] = useState('')
-  const [done, setDone] = useState(!isOpen)
+  // A 'done' meal with an unanswered question was reopened by a changed answer
+  const [done, setDone] = useState(!isOpen && refineData.answers.length >= refineData.questions.length)
   const [noteOpen, setNoteOpen] = useState(false)
   const [noteText, setNoteText] = useState(meal.notes ?? '')
   const [favorited, setFavorited] = useState(false)
@@ -59,6 +60,7 @@ export function PhotoMealCard({
   const [coachStreaming, setCoachStreaming] = useState(false)
   const [refineNoKeyProvider, setRefineNoKeyProvider] = useState<KeyProvider | null>(null)
   const [refineAiLimit, setRefineAiLimit] = useState(false)
+  const [refineFailed, setRefineFailed] = useState(false)
   const coachFired = useRef(false)
 
   const refine = useRefinePhotoMeal()
@@ -101,46 +103,55 @@ export function PhotoMealCard({
   }, [])
 
   const currentQuestionIndex = answers.length
-  const currentQuestion = !done && questions[currentQuestionIndex]
 
-  const handleAnswer = useCallback(async (answer: string) => {
-    if (submitting || !currentQuestion) return
+  // Answers question `index`, first or changed: the server truncates to that
+  // point, so everything after it is thrown away and re-derived.
+  const submitAnswer = useCallback(async (index: number, answer: string) => {
+    const q = questions[index]
+    if (!q || submitting) return
+    const prev = { answers, questions, done }
+    setAnswers(a => a.slice(0, index))
+    setQuestions(qs => qs.slice(0, index + 1))
+    setDone(false)
     setSubmitting(true)
-    setOtherOpen(false)
+    setOtherIndex(null)
     setOtherText('')
     setRefineNoKeyProvider(null)
     setRefineAiLimit(false)
+    setRefineFailed(false)
 
     try {
       const result = await refine.mutateAsync({
         id: meal.id,
         date: today,
-        question: currentQuestion.question,
+        question: q.question,
         answer,
+        rewindTo: index,
       })
 
+      setAnswers(a => [...a, { question: q.question, answer }])
       if (result.status === 'question') {
-        setAnswers(prev => [...prev, { question: currentQuestion.question, answer }])
-        setQuestions(prev => [...prev, result.question])
+        setQuestions(qs => [...qs, result.question])
       } else {
         // The mutation's onSuccess writes the refined macros into the
         // food-logs cache, which flows back down as `meal`.
-        setAnswers(prev => [...prev, { question: currentQuestion.question, answer }])
         setDone(true)
         // Fire coach feedback now that refine is complete
+        coachFired.current = false
         streamCoachFeedback(meal.id)
       }
     } catch (err) {
+      // Nothing was saved, so put back what was on screen
+      setAnswers(prev.answers)
+      setQuestions(prev.questions)
+      setDone(prev.done)
       if (err instanceof NoApiKeyClientError) setRefineNoKeyProvider(err.provider)
       else if (err instanceof AiLimitClientError) setRefineAiLimit(true)
+      else setRefineFailed(true)
     } finally {
       setSubmitting(false)
     }
-  }, [submitting, currentQuestion, refine, meal.id, today, streamCoachFeedback])
-
-  const handleSkip = useCallback(async () => {
-    await handleAnswer('[skipped]')
-  }, [handleAnswer])
+  }, [submitting, questions, answers, done, refine, meal.id, today, streamCoachFeedback])
 
   const handleFavorite = async () => {
     try {
@@ -150,40 +161,6 @@ export function PhotoMealCard({
       // silent
     }
   }
-
-  const handleReAnswer = useCallback(async (questionIndex: number, opt: string) => {
-    const q = questions[questionIndex]
-    if (!q || submitting) return
-    setAnswers(prev => prev.slice(0, questionIndex))
-    setQuestions(prev => prev.slice(0, questionIndex + 1))
-    setDone(false)
-    setSubmitting(true)
-    setRefineNoKeyProvider(null)
-    setRefineAiLimit(false)
-    try {
-      const result = await refine.mutateAsync({
-        id: meal.id,
-        date: today,
-        question: q.question,
-        answer: opt,
-        rewindTo: questionIndex,
-      })
-      if (result.status === 'question') {
-        setAnswers(prev => [...prev, { question: q.question, answer: opt }])
-        setQuestions(prev => [...prev, result.question])
-      } else {
-        setAnswers(prev => [...prev, { question: q.question, answer: opt }])
-        setDone(true)
-        coachFired.current = false
-        streamCoachFeedback(meal.id)
-      }
-    } catch (err) {
-      if (err instanceof NoApiKeyClientError) setRefineNoKeyProvider(err.provider)
-      else if (err instanceof AiLimitClientError) setRefineAiLimit(true)
-    } finally {
-      setSubmitting(false)
-    }
-  }, [submitting, questions, refine, meal.id, today, streamCoachFeedback])
 
   const handleSaveNote = async () => {
     try {
@@ -271,6 +248,7 @@ export function PhotoMealCard({
                 const isAnswered = i < answers.length
                 const isActive = i === currentQuestionIndex && !done
                 const selectedAnswer = answers[i]?.answer
+                const typedAnswer = isAnswered && selectedAnswer !== '[skipped]' && !q.options.includes(selectedAnswer)
 
                 if (i > currentQuestionIndex) return null
 
@@ -288,7 +266,7 @@ export function PhotoMealCard({
                             <button
                               key={opt}
                               disabled={submitting}
-                              onClick={() => { if (opt !== selectedAnswer) handleReAnswer(i, opt) }}
+                              onClick={() => { if (opt !== selectedAnswer) submitAnswer(i, opt) }}
                               className={`${chipBase} ${isSelected ? chipAnsweredSelected : chipAnswered} disabled:opacity-50`}
                             >
                               {opt}
@@ -299,38 +277,41 @@ export function PhotoMealCard({
                           <button
                             key={opt}
                             disabled={submitting}
-                            onClick={() => handleAnswer(opt)}
+                            onClick={() => submitAnswer(i, opt)}
                             className={`${chipBase} ${chipIdle} disabled:opacity-50`}
                           >
                             {opt}
                           </button>
                         )
                       })}
-                      {isActive && !otherOpen && (
+                      {typedAnswer && (
+                        <span className={`${chipBase} ${chipAnsweredSelected}`}>{selectedAnswer}</span>
+                      )}
+                      {(isActive || isAnswered) && otherIndex !== i && (
                         <button
                           disabled={submitting}
-                          onClick={() => setOtherOpen(true)}
-                          className={`${chipBase} ${chipIdle} disabled:opacity-50`}
+                          onClick={() => { setOtherText(''); setOtherIndex(i) }}
+                          className={`${chipBase} ${isAnswered ? chipAnswered : chipIdle} disabled:opacity-50`}
                         >
                           Something else
                         </button>
                       )}
                     </div>
-                    {isActive && otherOpen && (
+                    {otherIndex === i && (
                       <div className="flex gap-2">
                         <input
                           autoFocus
                           value={otherText}
                           onChange={e => setOtherText(e.target.value)}
                           onKeyDown={e => {
-                            if (e.key === 'Enter' && otherText.trim()) handleAnswer(otherText.trim())
+                            if (e.key === 'Enter' && otherText.trim()) submitAnswer(i, otherText.trim())
                           }}
                           placeholder="Describe it…"
                           className="flex-1 rounded-[10px] border border-white/[0.12] bg-black/25 px-3 py-2 text-sm text-white placeholder-zinc-600 outline-none focus:border-white/40"
                         />
                         <button
                           disabled={!otherText.trim() || submitting}
-                          onClick={() => otherText.trim() && handleAnswer(otherText.trim())}
+                          onClick={() => otherText.trim() && submitAnswer(i, otherText.trim())}
                           className="rounded-[10px] border border-white/[0.12] bg-white/[0.04] px-3 py-2 text-xs font-semibold text-zinc-300 disabled:opacity-40"
                         >
                           OK
@@ -339,7 +320,7 @@ export function PhotoMealCard({
                     )}
                     {isActive && (
                       <button
-                        onClick={handleSkip}
+                        onClick={() => submitAnswer(i, '[skipped]')}
                         disabled={submitting}
                         className="text-xs text-zinc-600 disabled:opacity-40"
                       >
@@ -357,6 +338,7 @@ export function PhotoMealCard({
               )}
               {refineNoKeyProvider && <NoApiKeyNotice provider={refineNoKeyProvider} />}
               {refineAiLimit && <AiLimitNotice />}
+              {refineFailed && <p className="text-xs text-red-400">Couldn&apos;t update that. Tap it again.</p>}
             </div>
           )}
 

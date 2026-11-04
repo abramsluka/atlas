@@ -64,10 +64,11 @@ export interface PhotoRefineAnswer {
 }
 
 export type PhotoRefineResponse =
-  | { status: 'question'; question: PhotoRefineQuestion }
+  | { status: 'question'; question: PhotoRefineQuestion; ai_raw: FoodLog['ai_raw'] }
   | {
       status: 'final'
       id: string
+      item_name: string
       calories: number
       protein_g: number
       carbs_g: number
@@ -75,6 +76,7 @@ export type PhotoRefineResponse =
       confidence: string
       notes: string
       refine_status: 'done'
+      ai_raw: FoodLog['ai_raw']
     }
 
 export interface FoodItem {

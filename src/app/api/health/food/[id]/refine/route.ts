@@ -36,7 +36,7 @@ QUESTION:
 {"status":"question","question":string,"reasoning":string,"options":[string,...],"calorie_delta":number}
 
 FINAL:
-{"status":"final","calories":int,"protein_g":number,"carbs_g":number,"fat_g":number,"confidence":"low"|"medium"|"high","notes":string}
+{"status":"final","item_name":string,"calories":int,"protein_g":number,"carbs_g":number,"fat_g":number,"confidence":"low"|"medium"|"high","notes":string}
 
 Rules:
 - options: 3-5 short, realistic tappable choices.
@@ -45,6 +45,7 @@ ${PORTION_STYLE_RULES}
 - If the user typed an exact weight or volume in a free-text answer (grams, oz), respect it — that's the one case units are fine.
 - An answer of "[skipped]" means user doesn't know — use a sensible default.
 - FINAL should reflect all corrections from the answers. Adjust macros meaningfully.
+- item_name: include it only when an answer changed what the food actually is. Otherwise omit it.
 - Only ask if it would shift the estimate by >50 kcal and there's a genuinely ambiguous detail left.`
 
 export async function POST(
@@ -161,12 +162,16 @@ export async function POST(
         },
       }
 
-      await db
+      // A rewind can land here on a meal that was already 'done' — reopen it,
+      // otherwise the answer to this new question is rejected as "Refine not open".
+      const { error: saveError } = await db
         .from('food_logs')
-        .update({ ai_raw: updatedAiRaw, updated_at: new Date().toISOString() })
+        .update({ ai_raw: updatedAiRaw, refine_status: 'open', updated_at: new Date().toISOString() })
         .eq('id', id)
 
-      return NextResponse.json({ status: 'question', question: nextQuestion })
+      if (saveError) return NextResponse.json({ error: saveError.message }, { status: 500 })
+
+      return NextResponse.json({ status: 'question', question: nextQuestion, ai_raw: updatedAiRaw })
     }
 
     // Final — update the food log with revised macros
@@ -183,6 +188,7 @@ export async function POST(
     }
 
     const updates = {
+      item_name: parsed.item_name ? String(parsed.item_name) : logRow.item_name,
       calories: Math.round(Number(parsed.calories)),
       protein_g: Number(parsed.protein_g) || 0,
       carbs_g: Number(parsed.carbs_g) || 0,
@@ -206,6 +212,7 @@ export async function POST(
     return NextResponse.json({
       status: 'final',
       id: updated.id,
+      item_name: updated.item_name,
       calories: updated.calories,
       protein_g: updated.protein_g,
       carbs_g: updated.carbs_g,
@@ -213,6 +220,7 @@ export async function POST(
       confidence: updated.confidence,
       notes: updated.notes,
       refine_status: 'done',
+      ai_raw: updated.ai_raw,
     })
   } catch (err) {
     if (isAiLimitError(err)) return aiLimitResponse()

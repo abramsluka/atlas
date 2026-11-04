@@ -345,15 +345,21 @@ export function useRefinePhotoMeal() {
       return res.json()
     },
     onSuccess: (data, { id }) => {
-      if (data.status !== 'final') return
       // Patch by id across every cached day-list rather than the caller's
       // `date` key — the meal's stored date isn't guaranteed to match it
       // (see useUpdateFoodLog). The photo card renders straight from cache.
+      if (data.status !== 'final') {
+        qc.setQueriesData<FoodLog[]>({ queryKey: ['food-logs'] }, (old) =>
+          old?.map(m => m.id === id ? { ...m, ai_raw: data.ai_raw, refine_status: 'open' as const } : m),
+        )
+        return
+      }
       qc.setQueriesData<FoodLog[]>({ queryKey: ['food-logs'] }, (old) =>
         old?.map(m =>
           m.id === id
             ? {
                 ...m,
+                item_name: data.item_name,
                 calories: data.calories,
                 protein_g: data.protein_g,
                 carbs_g: data.carbs_g,
@@ -361,6 +367,7 @@ export function useRefinePhotoMeal() {
                 confidence: data.confidence as FoodLog['confidence'],
                 notes: data.notes,
                 refine_status: 'done' as const,
+                ai_raw: data.ai_raw,
               }
             : m,
         ),
