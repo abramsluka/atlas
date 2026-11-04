@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import type { GymConfig, GymExercise } from '@/features/gym/types'
+import type { GymConfig, GymEntry, GymExercise } from '@/features/gym/types'
 import { useBulkAssignExercises, type ExerciseAssignment } from '@/features/gym/mutations'
 import { SPRING_SHEET } from './motion'
 
@@ -177,7 +177,7 @@ function Body({ exercises, config, onClose }: Omit<Props, 'open'>) {
               </span>
               {columns.map(c => (
                 <div key={c.id} className="text-center px-0.5">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-white/70 leading-tight line-clamp-2 break-words">{c.name}</p>
+                  <p className={`text-[10px] font-bold uppercase tracking-wide leading-tight line-clamp-2 break-words ${(c as GymEntry).hidden ? 'text-white/30' : 'text-white/70'}`}>{c.name}</p>
                   <p className="text-[9px] font-mono text-white/25 mt-0.5">{colCount(c.id)}</p>
                 </div>
               ))}

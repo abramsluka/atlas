@@ -10,7 +10,7 @@ import { useGymConfig, useGymExercises, useAllGymLogs, useGymSessions, useBodyWe
 import { useHealthProfile } from '@/features/health/queries'
 import {
   useSaveGymConfig,
-  useCreateExercise, useUpdateExercise, useDeleteExercise, useReorderExercises,
+  useCreateExercise, useUpdateExercise, useDeleteExercise, useReorderExercises, useBulkAssignExercises,
   useLogSet, useDeleteLog, useFinishWorkout,
   useLogBodyWeight, useLogBodyMeasurement, useUploadPhoto, useDeletePhoto,
 } from '@/features/gym/mutations'
@@ -371,11 +371,15 @@ function ReorderRow({ ex }: { ex: GymExercise }) {
   )
 }
 
-// One gym in settings — rename inline, drag the ⠿ handle to reorder.
-function GymSettingsRow({ gym, draggable, onRename, onRemove }: {
+// One gym in settings — rename inline, drag the ⠿ handle to reorder, hide it from
+// the tab, or copy it. Hide is locked on the last visible gym.
+function GymSettingsRow({ gym, draggable, canHide, onRename, onToggleHidden, onCopy, onRemove }: {
   gym: GymEntry
   draggable: boolean
+  canHide: boolean
   onRename: (name: string) => void
+  onToggleHidden: () => void
+  onCopy: () => void
   onRemove: () => void
 }) {
   const controls = useDragControls()
@@ -399,8 +403,17 @@ function GymSettingsRow({ gym, draggable, onRename, onRemove }: {
       <input
         value={gym.name}
         onChange={e => onRename(e.target.value)}
-        className="flex-1 min-w-0 rounded-xl bg-white/8 border border-white/10 px-4 py-3 text-sm text-white focus:outline-none"
+        className={`flex-1 min-w-0 rounded-xl bg-white/8 border border-white/10 px-4 py-3 text-sm focus:outline-none ${gym.hidden ? 'text-white/35' : 'text-white'}`}
       />
+      <button
+        onClick={onToggleHidden}
+        disabled={!gym.hidden && !canHide}
+        className="rounded-xl bg-white/5 border border-white/10 px-2.5 py-3 text-xs text-white/50 active:opacity-70 disabled:opacity-30"
+      >{gym.hidden ? 'Show' : 'Hide'}</button>
+      <button
+        onClick={onCopy}
+        className="rounded-xl bg-white/5 border border-white/10 px-2.5 py-3 text-xs text-white/50 active:opacity-70"
+      >Copy</button>
       <button
         onClick={onRemove}
         className="rounded-xl bg-white/5 border border-white/10 px-3 py-3 text-white/40 active:opacity-70"
@@ -464,6 +477,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   const createEx = useCreateExercise()
   const updateEx = useUpdateExercise()
   const deleteEx = useDeleteExercise()
+  const bulkAssign = useBulkAssignExercises()
   const logSet = useLogSet()
   const deleteLog = useDeleteLog()
   const logBw = useLogBodyWeight()
@@ -484,7 +498,15 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   }, [])
 
   // Filter state
-  const [filterGym, setFilterGym] = useState<string>(config.gyms[0]?.id ?? 'g_default')
+  // Hidden gyms stay in the config and on their exercises, just off the filter
+  const visibleGyms = useMemo(() => {
+    const visible = config.gyms.filter(g => !g.hidden)
+    return visible.length ? visible : config.gyms
+  }, [config.gyms])
+  const [filterGym, setFilterGym] = useState<string>(visibleGyms[0]?.id ?? 'g_default')
+  useEffect(() => {
+    if (visibleGyms.length && !visibleGyms.some(g => g.id === filterGym)) setFilterGym(visibleGyms[0].id)
+  }, [visibleGyms, filterGym])
   const [filterDay, setFilterDay] = useState<string>(() => {
     const split = computeSplit(config)
     const rot = config.split_rotation
@@ -563,9 +585,9 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     const ex = exercises.find(e => e.id === saved!.exId)
     if (!ex) return
     autoAdvancedRef.current = true // last-exercise restore wins over split auto-advance
-    const exGyms = (ex.gym_ids ?? []).filter(id => config.gyms.some(g => g.id === id))
+    const exGyms = (ex.gym_ids ?? []).filter(id => visibleGyms.some(g => g.id === id))
     const lastGym = readLastGym()
-    if (lastGym && config.gyms.some(g => g.id === lastGym) && (!exGyms.length || exGyms.includes(lastGym))) setFilterGym(lastGym)
+    if (lastGym && visibleGyms.some(g => g.id === lastGym) && (!exGyms.length || exGyms.includes(lastGym))) setFilterGym(lastGym)
     else if (exGyms.length && !exGyms.includes(filterGym)) setFilterGym(exGyms[0])
     const dayId = ex.day_ids?.find(id => config.days.some(d => d.id === id))
     setFilterDay(dayId ?? '')
@@ -582,8 +604,8 @@ export default function GymClient({ today, initialConfig, initialExercises, init
   useEffect(() => {
     if (lastGymResolvedRef.current || !logsFetched || exercises.length === 0) return
     lastGymResolvedRef.current = true
-    if (gymPickedRef.current || config.gyms.length <= 1) return
-    const valid = (id: string | null): id is string => !!id && config.gyms.some(g => g.id === id)
+    if (gymPickedRef.current || visibleGyms.length <= 1) return
+    const valid = (id: string | null): id is string => !!id && visibleGyms.some(g => g.id === id)
     const saved = readLastGym()
     let chosen: string | null = valid(saved) ? saved : null
     if (allLogs.length > 0) {
@@ -593,7 +615,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
       else if (exGyms.length > 1 && !(chosen && exGyms.includes(chosen))) chosen = exGyms[0]
     }
     if (chosen) setFilterGym(chosen)
-  }, [logsFetched, allLogs, exercises, config.gyms])
+  }, [logsFetched, allLogs, exercises, visibleGyms])
 
   // Modals
   const [exModal, setExModal] = useState<ExModalState>(EMPTY_EX_MODAL)
@@ -791,6 +813,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
 
   // Settings local state
   const [settingsGyms, setSettingsGyms] = useState(config.gyms)
+  const [settingsCopies, setSettingsCopies] = useState<{ from: string; to: string }[]>([])
   const [settingsUnits, setSettingsUnits] = useState(config.units)
   const [settingsCelebrate, setSettingsCelebrate] = useState(config.celebrate_pr !== false)
   const [settingsNextTarget, setSettingsNextTarget] = useState(config.show_next_target !== false)
@@ -1088,6 +1111,31 @@ export default function GymClient({ today, initialConfig, initialExercises, init
     setExModal(EMPTY_EX_MODAL)
   }
 
+  const gymNames = (ex: GymExercise) => {
+    const names = (ex.gym_ids ?? []).flatMap(id => config.gyms.find(g => g.id === id)?.name ?? [])
+    return names.length ? names.join(', ') : 'All gyms'
+  }
+
+  const isHere = (ex: GymExercise) => {
+    const gyms = (ex.gym_ids ?? []).filter(id => config.gyms.some(g => g.id === id))
+    return (gyms.length === 0 || gyms.includes(filterGym)) && (!filterDay || (ex.day_ids ?? []).includes(filterDay))
+  }
+
+  // Add flow found one of the user's own exercises: put that row on the current
+  // gym and day instead of creating a duplicate with an empty history.
+  function addExistingHere(ex: GymExercise) {
+    if (!isHere(ex)) {
+      const gyms = (ex.gym_ids ?? []).filter(id => config.gyms.some(g => g.id === id))
+      updateEx.mutate({
+        id: ex.id,
+        gym_ids: gyms.length === 0 || gyms.includes(filterGym) ? ex.gym_ids ?? [] : [...gyms, filterGym],
+        day_ids: !filterDay || (ex.day_ids ?? []).includes(filterDay) ? ex.day_ids ?? [] : [...(ex.day_ids ?? []), filterDay],
+      })
+    }
+    setCurrentExId(ex.id)
+    setExModal(EMPTY_EX_MODAL)
+  }
+
   function confirmDeleteEx() {
     if (!currentEx) return
     if (!confirm(`Delete "${currentEx.name}" and all its logs?`)) return
@@ -1133,11 +1181,21 @@ export default function GymClient({ today, initialConfig, initialExercises, init
       celebrate_pr: settingsCelebrate,
       show_next_target: settingsNextTarget,
     })
+    // A copied gym starts with the source gym's exercises. These are the same
+    // rows, so history and progression stay shared. Empty gym_ids = already everywhere.
+    const copies = settingsCopies.filter(c => settingsGyms.some(g => g.id === c.to))
+    const updates = exercises.flatMap(ex => {
+      const gymIds = ex.gym_ids ?? []
+      const next = copies.reduce((ids, c) => ids.includes(c.from) ? [...ids, c.to] : ids, gymIds)
+      return next.length > gymIds.length ? [{ id: ex.id, gym_ids: next, day_ids: ex.day_ids ?? [] }] : []
+    })
+    if (updates.length) bulkAssign.mutate(updates)
     setShowSettings(false)
   }
 
   function openSettings() {
     setSettingsGyms(config.gyms.map(g => ({ ...g })))
+    setSettingsCopies([])
     setSettingsUnits(config.units)
     setSettingsCelebrate(config.celebrate_pr !== false)
     setSettingsNextTarget(config.show_next_target !== false)
@@ -1686,7 +1744,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
               <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30 w-10 flex-shrink-0">GYM</span>
               {/* Scrolls sideways once there are more gyms than fit */}
               <div className="flex-1 min-w-0 flex rounded-xl bg-white/5 border border-white/8 p-1 gap-1 overflow-x-auto [scrollbar-width:none]">
-                {config.gyms.map((g, i) => (
+                {visibleGyms.map((g, i) => (
                   <motion.button
                     key={g.id}
                     initial={{ opacity: 0, x: -12 }}
@@ -1731,7 +1789,9 @@ export default function GymClient({ today, initialConfig, initialExercises, init
             {/* Exercise chips */}
             <div className="mb-4">
               <div className="flex items-center justify-between mb-2.5">
-                <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30">Exercise</span>
+                <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-white/30">
+                  Exercise{filteredExercises.length > 0 && ` · ${filteredExercises.length}`}
+                </span>
                 <div className="flex items-center gap-3">
                   {exercises.length > 0 && (
                     <button onClick={() => setProgramGridOpen(true)} className="text-[11px] text-white/30 font-mono active:opacity-50">
@@ -2763,6 +2823,9 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                     setPickFlash(f => f + 1)
                   }}
                   onInfo={setInfoId}
+                  own={exModal.mode === 'add' ? exercises : undefined}
+                  describeOwn={ex => isHere(ex) ? `Already here · ${gymNames(ex)}` : `Yours · ${gymNames(ex)} · tap to add here`}
+                  onPickOwn={addExistingHere}
                 />
               </div>
 
@@ -2794,7 +2857,7 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                             ? m.gymIds.filter(id => id !== g.id)
                             : [...m.gymIds, g.id],
                         }))}
-                        className={`rounded-full px-3 py-1.5 text-xs border transition-colors ${selected ? 'bg-white text-black border-transparent' : 'border-white/15 text-white/50'}`}
+                        className={`rounded-full px-3 py-1.5 text-xs border transition-colors ${selected ? 'bg-white text-black border-transparent' : 'border-white/15 text-white/50'} ${g.hidden ? 'opacity-50' : ''}`}
                       >
                         {selected && <span className="mr-1">✓</span>}{g.name}
                       </button>
@@ -3095,7 +3158,14 @@ export default function GymClient({ today, initialConfig, initialExercises, init
                       key={g.id}
                       gym={g}
                       draggable={settingsGyms.length > 1}
+                      canHide={settingsGyms.filter(x => !x.hidden).length > 1}
                       onRename={name => setSettingsGyms(gs => gs.map(x => x.id === g.id ? { ...x, name } : x))}
+                      onToggleHidden={() => setSettingsGyms(gs => gs.map(x => x.id === g.id ? { ...x, hidden: !x.hidden } : x))}
+                      onCopy={() => {
+                        const to = 'g_' + Date.now()
+                        setSettingsCopies(cs => [...cs, { from: g.id, to }])
+                        setSettingsGyms(gs => gs.flatMap(x => x.id === g.id ? [x, { id: to, name: `${g.name} copy` }] : [x]))
+                      }}
                       onRemove={() => setSettingsGyms(gs => gs.length <= 1 ? gs : gs.filter(x => x.id !== g.id))}
                     />
                   ))}

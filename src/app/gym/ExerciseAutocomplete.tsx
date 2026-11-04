@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
-import type { ExerciseLibraryEntry } from '@/features/gym/types'
+import type { ExerciseLibraryEntry, GymExercise } from '@/features/gym/types'
 import { SPRING_SNAPPY } from './motion'
 
 interface Props {
@@ -12,6 +12,9 @@ interface Props {
   onInfo: (id: string) => void
   entries: ExerciseLibraryEntry[]    // slim index, pre-sorted by popularity desc
   linked: boolean                    // current value is a library pick
+  own?: GymExercise[]                // the user's exercises, matched first when adding
+  describeOwn?: (ex: GymExercise) => string
+  onPickOwn?: (ex: GymExercise) => void
 }
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
@@ -38,7 +41,7 @@ function Highlight({ text, q }: { text: string; q: string }) {
   )
 }
 
-export default function ExerciseAutocomplete({ value, onChange, onPick, onInfo, entries, linked }: Props) {
+export default function ExerciseAutocomplete({ value, onChange, onPick, onInfo, entries, linked, own = [], describeOwn, onPickOwn }: Props) {
   const [open, setOpen] = useState(false)
   const reduced = useReducedMotion()
 
@@ -53,6 +56,11 @@ export default function ExerciseAutocomplete({ value, onChange, onPick, onInfo, 
       .slice(0, 8)
       .map(r => r.e)
   }, [entries, q])
+
+  const ownResults = useMemo(
+    () => q.length < 2 ? [] : own.filter(e => norm(e.name).includes(q)).slice(0, 4),
+    [own, q],
+  )
 
   const showList = open && q.length >= 2 && !linked
 
@@ -103,6 +111,16 @@ export default function ExerciseAutocomplete({ value, onChange, onPick, onInfo, 
               className="rounded-xl border border-white/10 max-h-56 overflow-y-auto overscroll-contain divide-y divide-white/[0.05]"
               style={{ background: '#191919', boxShadow: '0 12px 32px rgba(0,0,0,0.55), 0 0 0 1px rgba(0,0,0,0.4)' }}
             >
+              {ownResults.map(ex => (
+                <div
+                  key={ex.id}
+                  className="px-3.5 py-2.5 active:bg-white/[0.06]"
+                  onClick={() => { onPickOwn?.(ex); setOpen(false) }}
+                >
+                  <p className="text-sm truncate"><Highlight text={ex.name} q={value} /></p>
+                  <p className="text-[10px] truncate" style={{ color: 'rgba(74,222,128,0.7)' }}>{describeOwn?.(ex)}</p>
+                </div>
+              ))}
               <AnimatePresence initial={false} mode="popLayout">
                 {results.map((entry, i) => (
                   <motion.div

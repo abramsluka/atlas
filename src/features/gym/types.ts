@@ -1,6 +1,7 @@
 export interface GymEntry {
   id: string
   name: string
+  hidden?: boolean  // off the Gym tab's filter; stays in the config and on its exercises
 }
 
 export interface DayEntry {
