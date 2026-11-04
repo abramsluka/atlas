@@ -9,6 +9,15 @@ export interface ConversationMessage {
 
 export type EntryKind = 'morning' | 'night'
 
+// 5am–9:30pm → day journal (☀️ morning); 9:30pm–5am → night journal (🌙)
+const DAY_START_MINUTE = 5 * 60
+const NIGHT_START_MINUTE = 21 * 60 + 30
+
+export function journalKindAt(date: Date): EntryKind {
+  const minute = date.getHours() * 60 + date.getMinutes()
+  return minute >= DAY_START_MINUTE && minute < NIGHT_START_MINUTE ? 'morning' : 'night'
+}
+
 export interface PlanItem {
   id: string      // stable; crypto.randomUUID() at creation
   text: string    // one action, short

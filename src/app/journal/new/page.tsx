@@ -7,7 +7,7 @@ import { format } from 'date-fns'
 import { useCreateEntry } from '@/features/journal/mutations'
 import { useVoiceRecorder, formatElapsed } from '@/features/journal/useVoiceRecorder'
 import { uploadJournalAudio } from '@/features/journal/uploadAudio'
-import type { EntryKind, PlanItem } from '@/features/journal/types'
+import { journalKindAt, type EntryKind, type PlanItem } from '@/features/journal/types'
 
 const MOOD_EMOJIS: Record<number, string> = {
   1: '😔',
@@ -16,10 +16,6 @@ const MOOD_EMOJIS: Record<number, string> = {
   4: '🙂',
   5: '😄',
 }
-
-// 4am–6pm → day journal (☀️ morning); 6pm–4am → night journal (🌙)
-const MORNING_START_HOUR = 4
-const MORNING_END_HOUR = 18
 
 // Typed morning brain-dump → one plan item per non-empty line
 function linesToPlan(body: string): PlanItem[] {
@@ -51,8 +47,7 @@ export default function NewJournalEntryPage() {
     const now = new Date()
     setToday(format(now, 'yyyy-MM-dd'))
     setTodayDisplay(format(now, 'EEEE, MMMM do, yyyy'))
-    const h = now.getHours()
-    setKind(h >= MORNING_START_HOUR && h < MORNING_END_HOUR ? 'morning' : 'night')
+    setKind(journalKindAt(now))
   }, [])
 
   const isMorning = kind === 'morning'
@@ -137,7 +132,7 @@ export default function NewJournalEntryPage() {
             style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }}
             title="Tap to switch"
           >
-            {isMorning ? '☀️ Morning' : '🌙 Night'}
+            {isMorning ? '☀️ Day' : '🌙 Night'}
           </button>
         </div>
 

@@ -480,7 +480,7 @@ export default function EntryDetail({ initialEntry }: Props) {
               onClick={toggleKind}
               className="flex h-7 w-7 items-center justify-center rounded-full text-sm active:opacity-70 transition-colors"
               style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }}
-              title={isMorning ? 'Morning — tap to switch to night' : 'Night — tap to switch to morning'}
+              title={isMorning ? 'Day — tap to switch to night' : 'Night — tap to switch to day'}
             >
               {isMorning ? '☀️' : '🌙'}
             </button>
