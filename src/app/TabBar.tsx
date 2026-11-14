@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
 const HIDDEN_ON = ['/login', '/journal/new']
 // Pre-app surfaces: a signed-out visitor reading the invite or the API key guide,
@@ -88,11 +88,55 @@ export default function TabBar() {
     } catch {}
   }, [])
 
+  // iOS 26 WebKit bug: after the keyboard closes, the visual viewport keeps a
+  // stale offset, so this bottom:0 bar detaches and scrolls with the page
+  // (worst in the standalone PWA). Two guards: nudge a re-measure when an input
+  // blurs, and pin the bar to the visual viewport's real bottom whenever no
+  // field is focused (while typing, the bar is allowed to sit behind the keyboard).
+  const navRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    const editing = () => {
+      const el = document.activeElement as HTMLElement | null
+      return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
+    }
+    const pin = () => {
+      const nav = navRef.current
+      if (!nav) return
+      const gap = editing() ? 0 : Math.round(window.innerHeight - (vv.height + vv.offsetTop))
+      nav.style.transform = gap > 0 ? `translateY(${-gap}px)` : ''
+    }
+    let t = 0
+    const onFocusOut = () => {
+      clearTimeout(t)
+      // wait for the keyboard to finish animating away, then force a re-measure
+      t = window.setTimeout(() => {
+        if (editing()) return
+        window.scrollTo(window.scrollX, window.scrollY)
+        pin()
+      }, 350)
+    }
+    vv.addEventListener('resize', pin)
+    vv.addEventListener('scroll', pin)
+    window.addEventListener('scroll', pin, { passive: true })
+    document.addEventListener('focusout', onFocusOut)
+    pin()
+    return () => {
+      clearTimeout(t)
+      vv.removeEventListener('resize', pin)
+      vv.removeEventListener('scroll', pin)
+      window.removeEventListener('scroll', pin)
+      document.removeEventListener('focusout', onFocusOut)
+    }
+  }, [pathname])
+
   if (HIDDEN_ON.includes(pathname)) return null
   if (HIDDEN_PREFIXES.some((p) => pathname.startsWith(p))) return null
 
   return (
     <nav
+      ref={navRef}
       className="fixed bottom-0 left-0 right-0 z-50 border-t border-zinc-900 bg-[#050508]"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
