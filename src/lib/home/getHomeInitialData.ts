@@ -1,7 +1,8 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { computeBentoStats, type BentoStats } from '@/lib/home/bentoStats'
 import { computeStreaks, type Streaks } from '@/lib/home/streaks'
-import type { DayPlanData, PlanItem } from '@/features/journal/types'
+import type { DayPlanData } from '@/features/journal/types'
+import { fetchDayPlan } from '@/lib/journal/dayPlan'
 
 type DB = ReturnType<typeof createServiceClient>
 
@@ -31,7 +32,7 @@ export async function getHomeInitialData(db: DB, userId: string, today: string, 
     db.from('daily_briefings').select('content').eq('user_id', userId).eq('date', today).maybeSingle(),
     db.from('weekly_reports').select('id, week_of, report_text, created_at').eq('user_id', userId).order('week_of', { ascending: false }).limit(12),
     computeStreaks(db, userId, tz),
-    db.from('journal_entries').select('id, plan').eq('user_id', userId).eq('date', today).eq('kind', 'morning').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    fetchDayPlan(db, userId, today, tz),
   ])
 
   return {
@@ -46,10 +47,6 @@ export async function getHomeInitialData(db: DB, userId: string, today: string, 
       ? ((weeklyR.value.data as WeeklyReportRow[] | null) ?? [])
       : undefined,
     streaks: streaksR.status === 'fulfilled' ? streaksR.value : undefined,
-    dayPlan: planR.status === 'fulfilled'
-      ? (planR.value.data
-          ? { entryId: (planR.value.data as { id: string }).id, plan: ((planR.value.data as { plan: PlanItem[] | null }).plan ?? []) }
-          : null)
-      : undefined,
+    dayPlan: planR.status === 'fulfilled' ? planR.value : undefined,
   }
 }

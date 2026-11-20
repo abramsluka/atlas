@@ -2,6 +2,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { formatInTimeZone } from 'date-fns-tz'
 import { daysAgoLocal } from '@/lib/date'
 import { getLiveSession } from '@/lib/liveGymSession'
+import { journalDaysFor } from '@/lib/journal/dayPlan'
 
 type DB = ReturnType<typeof createServiceClient>
 
@@ -57,7 +58,7 @@ export async function computeStreaks(db: DB, userId: string, tz: string): Promis
   const [gymR, journalR, foodR, suppR, waterR, profileR, checkinR, liveR] = await Promise.allSettled([
     // gym_logs only has logged_at (timestamptz) → convert to local day below
     db.from('gym_logs').select('logged_at').eq('user_id', userId).gte('logged_at', tsCutoff),
-    db.from('journal_entries').select('date').eq('user_id', userId).gte('date', dateCutoff),
+    db.from('journal_entries').select('date, created_at').eq('user_id', userId).gte('date', dateCutoff),
     db.from('food_logs').select('date').eq('user_id', userId).gte('date', dateCutoff),
     db.from('supplement_logs').select('date').eq('user_id', userId).gte('date', dateCutoff),
     db.from('water_logs').select('date, amount_oz').eq('user_id', userId).gte('date', dateCutoff),
@@ -103,14 +104,21 @@ export async function computeStreaks(db: DB, userId: string, tz: string): Promis
   }
   for (const d of checkinDates) gymDates.add(d)
 
-  // Journal / food / supplements — any row that day counts (date is already local).
+  // Food / supplements — any row that day counts (date is already local).
   const datesFrom = (r: PromiseSettledResult<{ data: Array<{ date: string | null }> | null }>) => {
     const s = new Set<string>()
     const rows = r.status === 'fulfilled' ? (r.value.data ?? []) : []
     for (const row of rows) if (row.date) s.add(row.date)
     return s
   }
-  const journalDates = datesFrom(journalR)
+  // Journal — a midnight-to-3 AM entry also banks the day that's starting
+  // (a late-night plan for tomorrow counts tonight AND tomorrow).
+  const journalDates = new Set<string>()
+  if (journalR.status === 'fulfilled') {
+    for (const row of (journalR.value.data ?? []) as Array<{ date: string | null; created_at: string }>) {
+      if (row.date) for (const d of journalDaysFor(row.date, row.created_at, tz)) journalDates.add(d)
+    }
+  }
   const foodDates = datesFrom(foodR)
   const suppDates = datesFrom(suppR)
 
