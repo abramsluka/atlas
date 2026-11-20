@@ -3,7 +3,9 @@
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { format } from 'date-fns'
+import { format, subHours } from 'date-fns'
+import { DAY_ROLLOVER_HOUR } from '@/lib/date'
+import { rolledDate } from '@/features/food/date'
 import { useCreateEntry } from '@/features/journal/mutations'
 import { useVoiceRecorder, formatElapsed } from '@/features/journal/useVoiceRecorder'
 import { uploadJournalAudio } from '@/features/journal/uploadAudio'
@@ -45,9 +47,14 @@ export default function NewJournalEntryPage() {
 
   useEffect(() => {
     const now = new Date()
-    setToday(format(now, 'yyyy-MM-dd'))
-    setTodayDisplay(format(now, 'EEEE, MMMM do, yyyy'))
-    setKind(journalKindAt(now))
+    // Same 3 AM rollover as the rest of the app, so a 12:30 AM entry lands on
+    // the day home + streaks consider "today" instead of the next calendar day.
+    setToday(rolledDate(now))
+    setTodayDisplay(format(subHours(now, DAY_ROLLOVER_HOUR), 'EEEE, MMMM do, yyyy'))
+    // Home's "Plan your day" opens this with ?kind=morning — a plan is always a
+    // day entry, whatever the clock says.
+    const requested = new URLSearchParams(window.location.search).get('kind')
+    setKind(requested === 'morning' || requested === 'night' ? requested : journalKindAt(now))
   }, [])
 
   const isMorning = kind === 'morning'

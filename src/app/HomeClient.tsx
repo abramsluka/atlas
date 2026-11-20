@@ -776,7 +776,7 @@ function DayPlanCard({ initial }: { initial?: DayPlanData | null }) {
 
   // No morning plan yet — soft nudge to make one
   if (data === null || data.plan.length === 0) {
-    const href = data === null ? '/journal/new' : `/journal/${data.entryId}`
+    const href = data === null ? '/journal/new?kind=morning' : `/journal/${data.entryId}`
     return (
       <button
         onClick={() => router.push(href)}
